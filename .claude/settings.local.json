@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"C:/Users/admin/Flutter/flutter/bin/flutter\" build *)",
+      "Bash(vercel --prod)",
+      "Bash(flutter build *)",
+      "Bash(C:\\\\Users\\\\admin\\\\Flutter\\\\flutter\\\\bin\\\\flutter build *)",
+      "Bash(flutter upgrade *)",
+      "Bash(\"C:\\\\Users\\\\admin\\\\Flutter\\\\flutter\\\\bin\\\\flutter.bat\" analyze *)",
+      "Bash(\"C:\\\\Users\\\\admin\\\\Flutter\\\\flutter\\\\bin\\\\flutter.bat\" build *)",
+      "Bash(python -c ' *)",
+      "Bash(python3 -c \"import pdfplumber; print\\('ok'\\)\")",
+      "Bash(py -c \"import pdfplumber; print\\('ok'\\)\")",
+      "Bash(where python3.exe)",
+      "Bash(where python.exe)",
+      "Bash(ls /c/Python*)",
+      "Read(//c/Users/admin/AppData/Local/Programs/**)",
+      "PowerShell(Get-Command python, python3, py -ErrorAction SilentlyContinue)",
+      "PowerShell(& 'C:\\\\Users\\\\admin\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\python3.exe' -c \"import pdfplumber; print\\('ok'\\)\" 2>&1)",
+      "Bash(pdftotext \"C:/Users/admin/Downloads/Granja Don Chacho Manual de Marca_V2_alta-baja.pdf\" -)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(vercel --version)",
+      "Bash(cmd /c build_web.bat)",
+      "Bash(curl -sI \"https://web-six-indol-svg13avcfl.vercel.app/index.html\")",
+      "Bash(curl -sI \"https://web-six-indol-svg13avcfl.vercel.app/main.dart.js\")",
+      "Bash(curl -sI \"https://web-six-indol-svg13avcfl.vercel.app/flutter_bootstrap.js\")",
+      "Bash(powershell -NoProfile -ExecutionPolicy Bypass -File \"cache_bust.ps1\")",
+      "Bash(build_web.bat)"
+    ]
+  }
+}

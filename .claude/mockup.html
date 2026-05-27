@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Don Chacho — Mockup Nueva Paleta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* ── TOKENS MARCA ── */
+  :root {
+    --cream:    #E7DAD0;
+    --brown-md: #51321E;
+    --brown-dk: #261108;
+    --red-brand:#4B2521;
+    --terracota:#E39156;
+
+    --bg:       #EDE4DC;      /* cream oscurecida para scaffold */
+    --surface:  #F5EFE8;      /* cream clara para cards */
+    --card:     #FDFAF6;      /* blanco cálido */
+    --border:   #D9CCBF;
+    --divider:  #EAE0D5;
+
+    --txt-1:    #261108;
+    --txt-2:    #51321E;
+    --txt-hint: #9B8470;
+
+    --success:  #2E7D32;
+    --success-bg:#E8F5E9;
+    --warning:  #B45309;
+    --warning-bg:#FEF3C7;
+    --danger:   #4B2521;
+    --danger-bg:#FCE8E6;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Figtree', sans-serif;
+    background: var(--bg);
+    color: var(--txt-1);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px 80px;
+    gap: 48px;
+  }
+
+  h2 {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--txt-hint);
+    margin-bottom: 12px;
+  }
+
+  /* ── PHONE FRAME ── */
+  .phone {
+    width: 390px;
+    background: var(--bg);
+    border-radius: 44px;
+    box-shadow: 0 32px 80px rgba(38,17,8,.22), 0 2px 8px rgba(38,17,8,.1);
+    overflow: hidden;
+    border: 8px solid var(--brown-dk);
+    position: relative;
+  }
+
+  /* ── APP BAR ── */
+  .appbar {
+    background: var(--card);
+    padding: 20px 20px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+  }
+  .appbar-title { font-size: 20px; font-weight: 700; color: var(--txt-1); letter-spacing: -.3px; }
+  .appbar-icon {
+    width: 36px; height: 36px;
+    background: var(--cream);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--brown-md); font-size: 18px;
+  }
+
+  /* ── BODY ── */
+  .body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+
+  /* ── KPI ROW ── */
+  .kpi-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .kpi-card {
+    background: var(--card);
+    border-radius: 14px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+  }
+  .kpi-label { font-size: 11px; font-weight: 600; color: var(--txt-hint); letter-spacing: .5px; text-transform: uppercase; margin-bottom: 4px; }
+  .kpi-value { font-size: 22px; font-weight: 800; color: var(--txt-1); line-height: 1; }
+  .kpi-sub { font-size: 11px; color: var(--txt-2); margin-top: 2px; font-weight: 500; }
+
+  /* Accent KPI */
+  .kpi-card.accent {
+    background: var(--red-brand);
+    border-color: transparent;
+  }
+  .kpi-card.accent .kpi-label { color: rgba(231,218,208,.65); }
+  .kpi-card.accent .kpi-value { color: var(--cream); }
+  .kpi-card.accent .kpi-sub { color: rgba(231,218,208,.7); }
+
+  /* ── SECTION HEADER ── */
+  .section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 4px;
+  }
+  .section-title { font-size: 15px; font-weight: 700; color: var(--txt-1); }
+  .section-action { font-size: 12px; font-weight: 600; color: var(--terracota); }
+
+  /* ── REMITO CARD ── */
+  .remito-card {
+    background: var(--card);
+    border-radius: 14px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .remito-icon {
+    width: 40px; height: 40px;
+    background: var(--cream);
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+  .remito-info { flex: 1; }
+  .remito-name { font-size: 14px; font-weight: 700; color: var(--txt-1); }
+  .remito-meta { font-size: 12px; color: var(--txt-hint); margin-top: 2px; }
+  .remito-right { text-align: right; }
+  .remito-amount { font-size: 15px; font-weight: 800; color: var(--txt-1); }
+
+  /* ── PILL ── */
+  .pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-top: 4px;
+  }
+  .pill-warning { background: var(--warning-bg); color: var(--warning); }
+  .pill-success { background: var(--success-bg); color: var(--success); }
+  .pill-danger  { background: var(--danger-bg);  color: var(--red-brand); }
+
+  /* ── FAB ── */
+  .fab-wrap { position: relative; height: 0; }
+  .fab {
+    position: absolute;
+    bottom: -28px; right: 16px;
+    width: 56px; height: 56px;
+    background: var(--red-brand);
+    border-radius: 18px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--cream);
+    font-size: 26px;
+    box-shadow: 0 6px 20px rgba(75,37,33,.45);
+  }
+
+  /* ── BOTTOM NAV ── */
+  .bottom-nav {
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    display: flex;
+    padding: 10px 0 18px;
+  }
+  .nav-item {
+    flex: 1;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    font-size: 11px; font-weight: 600;
+    color: var(--txt-hint);
+    cursor: pointer;
+  }
+  .nav-item.active { color: var(--red-brand); }
+  .nav-icon { font-size: 22px; }
+
+  /* ── DIVIDER ── */
+  .div { height: 1px; background: var(--divider); margin: 4px 0; }
+
+  /* ── PALETTE SWATCHES (fuera del phone) ── */
+  .palette { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .swatch { width: 64px; text-align: center; }
+  .swatch-circle {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    border: 2px solid rgba(0,0,0,.08);
+    margin-bottom: 6px;
+  }
+  .swatch-hex { font-size: 10px; font-weight: 600; color: var(--txt-2); font-family: monospace; }
+  .swatch-name { font-size: 10px; color: var(--txt-hint); }
+
+  /* ── SIDE BY SIDE ── */
+  .compare { display: flex; gap: 32px; align-items: flex-start; flex-wrap: wrap; justify-content: center; }
+  .compare-col { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .compare-label { font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--txt-hint); }
+
+  /* OLD PHONE */
+  .phone.old { border-color: #8E0000; }
+  .old .appbar { background: #fff; }
+  .old .kpi-card.accent { background: #C62828; }
+  .old .fab { background: #C62828; box-shadow: 0 6px 20px rgba(198,40,40,.45); }
+  .old .nav-item.active { color: #C62828; }
+  .old .section-action { color: #C62828; }
+
+  body { font-size: 14px; }
+</style>
+</head>
+<body>
+
+<h2>Paleta del Manual de Marca</h2>
+<div class="palette">
+  <div class="swatch">
+    <div class="swatch-circle" style="background:#E7DAD0"></div>
+    <div class="swatch-hex">#E7DAD0</div>
+    <div class="swatch-name">Cream</div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-circle" style="background:#51321E"></div>
+    <div class="swatch-hex">#51321E</div>
+    <div class="swatch-name">Brown Md</div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-circle" style="background:#261108"></div>
+    <div class="swatch-hex">#261108</div>
+    <div class="swatch-name">Brown Dk</div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-circle" style="background:#4B2521"></div>
+    <div class="swatch-hex">#4B2521</div>
+    <div class="swatch-name">Red Brand</div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-circle" style="background:#E39156"></div>
+    <div class="swatch-hex">#E39156</div>
+    <div class="swatch-name">Terracota</div>
+  </div>
+</div>
+
+<div class="compare">
+
+  <!-- NUEVA -->
+  <div class="compare-col">
+    <div class="compare-label">Nueva — Manual de Marca</div>
+    <div class="phone">
+      <div class="appbar">
+        <div class="appbar-title">Don Chacho</div>
+        <div class="appbar-icon">⚙️</div>
+      </div>
+
+      <div class="body">
+
+        <!-- Semana header -->
+        <div class="section-header">
+          <span style="font-size:13px;color:var(--txt-hint);font-weight:600;">← Semana 28 abr – 04 may</span>
+          <span style="font-size:13px;color:var(--txt-hint);font-weight:600;">→</span>
+        </div>
+
+        <!-- KPIs -->
+        <div class="kpi-row">
+          <div class="kpi-card accent">
+            <div class="kpi-label">Saldo total</div>
+            <div class="kpi-value">$2.840.000</div>
+            <div class="kpi-sub">12 vencidos</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Ganancia neta</div>
+            <div class="kpi-value">$348.500</div>
+            <div class="kpi-sub">semana actual</div>
+          </div>
+        </div>
+
+        <div class="kpi-row">
+          <div class="kpi-card">
+            <div class="kpi-label">Kg Novillo</div>
+            <div class="kpi-value">4.280</div>
+            <div class="kpi-sub">$2.140 / kg</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Kg Cerdo</div>
+            <div class="kpi-value">1.060</div>
+            <div class="kpi-sub">$1.850 / kg</div>
+          </div>
+        </div>
+
+        <div class="div"></div>
+
+        <!-- Remitos recientes -->
+        <div class="section-header">
+          <span class="section-title">Remitos recientes</span>
+          <span class="section-action">Ver todos</span>
+        </div>
+
+        <div class="remito-card">
+          <div class="remito-icon">🥩</div>
+          <div class="remito-info">
+            <div class="remito-name">Carnicería El Gaucho</div>
+            <div class="remito-meta">R-0142 · 04/05/2026</div>
+            <span class="pill pill-warning">Vence en 3 días</span>
+          </div>
+          <div class="remito-right">
+            <div class="remito-amount">$284.000</div>
+          </div>
+        </div>
+
+        <div class="remito-card">
+          <div class="remito-icon">🐷</div>
+          <div class="remito-info">
+            <div class="remito-name">Sup. La Esquina</div>
+            <div class="remito-meta">R-0141 · 02/05/2026</div>
+            <span class="pill pill-success">Pagado</span>
+          </div>
+          <div class="remito-right">
+            <div class="remito-amount">$195.000</div>
+          </div>
+        </div>
+
+        <div class="remito-card">
+          <div class="remito-icon">🥩</div>
+          <div class="remito-info">
+            <div class="remito-name">Cárnicas Norte</div>
+            <div class="remito-meta">R-0139 · 28/04/2026</div>
+            <span class="pill pill-danger">Vencido 8d</span>
+          </div>
+          <div class="remito-right">
+            <div class="remito-amount">$412.000</div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="fab-wrap"><div class="fab">＋</div></div>
+
+      <div style="height:28px"></div>
+
+      <div class="bottom-nav">
+        <div class="nav-item active">
+          <div class="nav-icon">🏠</div>
+          Inicio
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon">👥</div>
+          Vendedores
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon">🔍</div>
+          Consultas
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon">📋</div>
+          Bandeja
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEJA -->
+  <div class="compare-col">
+    <div class="compare-label">Actual</div>
+    <div class="phone old" style="
+      --bg:#F5F3F0;
+      --surface:#FAF8F5;
+      --card:#FFFFFF;
+      --border:#E0DDD8;
+      --divider:#F0EDE8;
+      --txt-1:#1A1A1A;
+      --txt-2:#6B6B6B;
+      --txt-hint:#9E9E9E;
+      --cream:#F5F3F0;
+      --red-brand:#C62828;
+      --terracota:#C62828;
+      --warning-bg:#FFF8E1;
+      --warning:#F57F17;
+      --success-bg:#E8F5E9;
+      --success:#2E7D32;
+      --danger-bg:#FFEBEE;
+    ">
+      <div class="appbar old">
+        <div class="appbar-title">Don Chacho</div>
+        <div class="appbar-icon" style="background:#F5F3F0">⚙️</div>
+      </div>
+
+      <div class="body">
+
+        <div class="section-header">
+          <span style="font-size:13px;color:var(--txt-hint);font-weight:600;">← Semana 28 abr – 04 may</span>
+          <span style="font-size:13px;color:var(--txt-hint);font-weight:600;">→</span>
+        </div>
+
+        <div class="kpi-row">
+          <div class="kpi-card accent">
+            <div class="kpi-label">Saldo total</div>
+            <div class="kpi-value">$2.840.000</div>
+            <div class="kpi-sub">12 vencidos</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Ganancia neta</div>
+            <div class="kpi-value">$348.500</div>
+            <div class="kpi-sub">semana actual</div>
+          </div>
+        </div>
+
+        <div class="kpi-row">
+          <div class="kpi-card">
+            <div class="kpi-label">Kg Novillo</div>
+            <div class="kpi-value">4.280</div>
+            <div class="kpi-sub">$2.140 / kg</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Kg Cerdo</div>
+            <div class="kpi-value">1.060</div>
+            <div class="kpi-sub">$1.850 / kg</div>
+          </div>
+        </div>
+
+        <div class="div"></div>
+
+        <div class="section-header">
+          <span class="section-title">Remitos recientes</span>
+          <span class="section-action">Ver todos</span>
+        </div>
+
+        <div class="remito-card">
+          <div class="remito-icon" style="background:#F5F3F0">🥩</div>
+          <div class="remito-info">
+            <div class="remito-name">Carnicería El Gaucho</div>
+            <div class="remito-meta">R-0142 · 04/05/2026</div>
+            <span class="pill pill-warning">Vence en 3 días</span>
+          </div>
+          <div class="remito-right">
+            <div class="remito-amount">$284.000</div>
+          </div>
+        </div>
+
+        <div class="remito-card">
+          <div class="remito-icon" style="background:#F5F3F0">🐷</div>
+          <div class="remito-info">
+            <div class="remito-name">Sup. La Esquina</div>
+            <div class="remito-meta">R-0141 · 02/05/2026</div>
+            <span class="pill pill-success">Pagado</span>
+          </div>
+          <div class="remito-right">
+            <div class="remito-amount">$195.000</div>
+          </div>
+        </div>
+
+        <div class="remito-card">
+          <div class="remito-icon" style="background:#F5F3F0">🥩</div>
+          <div class="remito-info">
+            <div class="remito-name">Cárnicas Norte</div>
+            <div class="remito-meta">R-0139 · 28/04/2026</div>
+            <span class="pill pill-danger">Vencido 8d</span>
+          </div>
+          <div class="remito-right">
+            <div class="remito-amount">$412.000</div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="fab-wrap"><div class="fab">＋</div></div>
+
+      <div style="height:28px"></div>
+
+      <div class="bottom-nav">
+        <div class="nav-item active">
+          <div class="nav-icon">🏠</div>
+          Inicio
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon">👥</div>
+          Vendedores
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon">🔍</div>
+          Consultas
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon">📋</div>
+          Bandeja
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

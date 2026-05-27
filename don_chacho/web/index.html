@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Granja Don Chacho - Matarife - Venta de medias reses">
+
+  <!-- Meta tags específicos para iOS PWA -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Don Chacho">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#C62828">
+
+  <!-- Viewport que funciona bien en iPhone -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+
+  <!-- Íconos para iOS (se usan cuando "Agregar a pantalla de inicio") -->
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="icons/Icon-512.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>Granja Don Chacho</title>
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    #splash {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #ffffff;
+      z-index: 9999;
+      transition: opacity 0.3s ease;
+    }
+    #splash.fade-out {
+      opacity: 0;
+      pointer-events: none;
+    }
+    #splash img {
+      width: 120px;
+      height: 120px;
+      border-radius: 24px;
+      object-fit: cover;
+    }
+    #splash .splash-title {
+      margin-top: 18px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 22px;
+      font-weight: 600;
+      color: #1a1a1a;
+      letter-spacing: 0.2px;
+    }
+    #splash .splash-spinner {
+      margin-top: 24px;
+      width: 36px;
+      height: 36px;
+      border: 3px solid #f0f0f0;
+      border-top-color: #C62828;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    #splash .splash-loading {
+      margin-top: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 13px;
+      color: #6b7280;
+    }
+  </style>
+</head>
+<body>
+  <div id="splash">
+    <img src="icons/Icon-192.png" alt="Granja Don Chacho">
+    <span class="splash-title">Granja Don Chacho</span>
+    <div class="splash-spinner"></div>
+    <span class="splash-loading">Cargando...</span>
+  </div>
+
+  <script src="flutter_bootstrap.js" async></script>
+
+  <script>
+    (function () {
+      function hideSplash() {
+        var splash = document.getElementById('splash');
+        if (!splash || splash.dataset.hidden) return;
+        splash.dataset.hidden = '1';
+        splash.classList.add('fade-out');
+        setTimeout(function () {
+          if (splash.parentNode) splash.parentNode.removeChild(splash);
+        }, 350);
+      }
+
+      // Flutter dispara este evento cuando pinta el primer frame
+      window.addEventListener('flutter-first-frame', hideSplash, { once: true });
+
+      // Fallback: ocultar después de 8 segundos si el evento no llega
+      setTimeout(hideSplash, 8000);
+    })();
+  </script>
+</body>
+</html>
