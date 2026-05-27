@@ -8,6 +8,7 @@
 // - Saldos vencidos y por vencer
 // ============================================================
 
+import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -15,6 +16,11 @@ import '../models/models.dart';
 import '../utils/formatters.dart';
 
 class EstadoCuentaService {
+  static Future<pw.MemoryImage> _loadLogo() async {
+    final bytes = await rootBundle.load('assets/logo.png');
+    return pw.MemoryImage(bytes.buffer.asUint8List());
+  }
+
   static Future<void> generarYCompartir({
     required Cliente cliente,
     Vendedor? vendedor,
@@ -22,12 +28,14 @@ class EstadoCuentaService {
     required List<Pago> pagos,
     required double saldoTotal,
   }) async {
+    final logo = await _loadLogo();
     final pdf = _generarPdf(
       cliente: cliente,
       vendedor: vendedor,
       remitos: remitos,
       pagos: pagos,
       saldoTotal: saldoTotal,
+      logo: logo,
     );
 
     final bytes = await pdf.save();
@@ -44,6 +52,7 @@ class EstadoCuentaService {
     required List<Remito> remitos,
     required List<Pago> pagos,
     required double saldoTotal,
+    required pw.MemoryImage logo,
   }) {
     final pdf = pw.Document();
     final ahora = DateTime.now();
@@ -144,7 +153,7 @@ class EstadoCuentaService {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(40),
-        header: (context) => _buildHeader(cliente, vendedor),
+        header: (context) => _buildHeader(cliente, vendedor, logo),
         footer: (context) => _buildFooter(context),
         build: (context) => [
           pw.SizedBox(height: 16),
@@ -382,25 +391,31 @@ class EstadoCuentaService {
     return pdf;
   }
 
-  static pw.Widget _buildHeader(Cliente cliente, Vendedor? vendedor) {
+  static pw.Widget _buildHeader(Cliente cliente, Vendedor? vendedor, pw.MemoryImage logo) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
+            pw.Row(
               children: [
-                pw.Text('GRANJA DON CHACHO',
-                    style: pw.TextStyle(
-                      fontSize: 20,
-                      fontWeight: pw.FontWeight.bold,
-                      color: PdfColor.fromHex('#C62828'),
-                    )),
-                pw.Text('Matarife - Venta de medias reses',
-                    style: const pw.TextStyle(
-                        fontSize: 9, color: PdfColors.grey600)),
+                pw.Image(logo, width: 50, height: 50),
+                pw.SizedBox(width: 10),
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text('DON CHACHO',
+                        style: pw.TextStyle(
+                          fontSize: 20,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColor.fromHex('#3B1508'),
+                        )),
+                    pw.Text('Matarife - Venta de medias reses',
+                        style: const pw.TextStyle(
+                            fontSize: 9, color: PdfColors.grey600)),
+                  ],
+                ),
               ],
             ),
             pw.Container(
@@ -495,7 +510,7 @@ class EstadoCuentaService {
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
             pw.Text(
-              'Granja Don Chacho - Estado de cuenta generado el ${formatFecha(DateTime.now())}',
+              'Don Chacho - Estado de cuenta generado el ${formatFecha(DateTime.now())}',
               style:
                   const pw.TextStyle(fontSize: 7, color: PdfColors.grey400),
             ),
@@ -553,6 +568,7 @@ class EstadoCuentaService {
     required List<Remito> remitos,
     required List<Pago> pagos,
   }) async {
+    final logo = await _loadLogo();
     final pdf = pw.Document();
     final ahora = DateTime.now();
 
@@ -623,18 +639,24 @@ class EstadoCuentaService {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                pw.Row(
                   children: [
-                    pw.Text('GRANJA DON CHACHO',
-                        style: pw.TextStyle(
-                          fontSize: 18,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColor.fromHex('#C62828'),
-                        )),
-                    pw.Text('Matarife - Venta de medias reses',
-                        style: const pw.TextStyle(
-                            fontSize: 9, color: PdfColors.grey500)),
+                    pw.Image(logo, width: 46, height: 46),
+                    pw.SizedBox(width: 10),
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text('DON CHACHO',
+                            style: pw.TextStyle(
+                              fontSize: 18,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColor.fromHex('#3B1508'),
+                            )),
+                        pw.Text('Matarife - Venta de medias reses',
+                            style: const pw.TextStyle(
+                                fontSize: 9, color: PdfColors.grey500)),
+                      ],
+                    ),
                   ],
                 ),
                 pw.Container(
@@ -902,6 +924,7 @@ class EstadoCuentaService {
     required String clienteNombre,
     String? remitoNumero, // si ya fue confirmada
   }) async {
+    final logo = await _loadLogo();
     final pdf = pw.Document();
     final ahora = DateTime.now();
 
@@ -913,7 +936,7 @@ class EstadoCuentaService {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(40),
-        header: (_) => _buildNdpHeader(ndp, clienteNombre, remitoNumero),
+        header: (_) => _buildNdpHeader(ndp, clienteNombre, remitoNumero, logo),
         footer: (ctx) => pw.Column(
           children: [
             pw.Divider(color: PdfColors.grey300, thickness: 0.5),
@@ -922,7 +945,7 @@ class EstadoCuentaService {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text(
-                  'Granja Don Chacho - ${ndp.numeroFormateado} - ${formatFecha(ahora)}',
+                  'Don Chacho - ${ndp.numeroFormateado} - ${formatFecha(ahora)}',
                   style: const pw.TextStyle(
                       fontSize: 7, color: PdfColors.grey400),
                 ),
@@ -1048,25 +1071,31 @@ class EstadoCuentaService {
   }
 
   static pw.Widget _buildNdpHeader(
-      NotaPedido ndp, String clienteNombre, String? remitoNumero) {
+      NotaPedido ndp, String clienteNombre, String? remitoNumero, pw.MemoryImage logo) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
+            pw.Row(
               children: [
-                pw.Text('GRANJA DON CHACHO',
-                    style: pw.TextStyle(
-                      fontSize: 20,
-                      fontWeight: pw.FontWeight.bold,
-                      color: PdfColor.fromHex('#C62828'),
-                    )),
-                pw.Text('Matarife - Venta de medias reses',
-                    style: const pw.TextStyle(
-                        fontSize: 9, color: PdfColors.grey600)),
+                pw.Image(logo, width: 50, height: 50),
+                pw.SizedBox(width: 10),
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text('DON CHACHO',
+                        style: pw.TextStyle(
+                          fontSize: 20,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColor.fromHex('#3B1508'),
+                        )),
+                    pw.Text('Matarife - Venta de medias reses',
+                        style: const pw.TextStyle(
+                            fontSize: 9, color: PdfColors.grey600)),
+                  ],
+                ),
               ],
             ),
             pw.Container(
@@ -1172,6 +1201,7 @@ class EstadoCuentaService {
     required double porcentaje,
     required double comision,
   }) async {
+    final logo = await _loadLogo();
     final pdf = pw.Document();
 
     pdf.addPage(
@@ -1186,7 +1216,7 @@ class EstadoCuentaService {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text(
-                  'Granja Don Chacho - Liquidación de comisión generada el ${formatFecha(DateTime.now())}',
+                  'Don Chacho - Liquidación de comisión generada el ${formatFecha(DateTime.now())}',
                   style: const pw.TextStyle(
                       fontSize: 7, color: PdfColors.grey400),
                 ),
@@ -1204,18 +1234,24 @@ class EstadoCuentaService {
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
-              pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
+              pw.Row(
                 children: [
-                  pw.Text('GRANJA DON CHACHO',
-                      style: pw.TextStyle(
-                        fontSize: 14,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColor.fromHex('#C62828'),
-                      )),
-                  pw.Text('Liquidación de comisión',
-                      style: const pw.TextStyle(
-                          fontSize: 10, color: PdfColors.grey600)),
+                  pw.Image(logo, width: 40, height: 40),
+                  pw.SizedBox(width: 10),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text('DON CHACHO',
+                          style: pw.TextStyle(
+                            fontSize: 14,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColor.fromHex('#3B1508'),
+                          )),
+                      pw.Text('Liquidación de comisión',
+                          style: const pw.TextStyle(
+                              fontSize: 10, color: PdfColors.grey600)),
+                    ],
+                  ),
                 ],
               ),
               pw.Text(formatFecha(DateTime.now()),

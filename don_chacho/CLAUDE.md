@@ -215,31 +215,48 @@ Pantallas que lo implementan: `remito_form_screen.dart`, `pago_form_screen.dart`
 - Aplica FIFO para encontrar el primer remito realmente pendiente (no el más antiguo saldado)
 - Fix v16: antes tomaba el remito más antiguo aunque estuviera pagado
 
+## REPOSITORIO
+
+- **GitHub**: https://github.com/milifs/matarife-system
+- **Rama principal**: `main`
+- **Flujo de trabajo**: siempre crear una rama por feature/fix → Pull Request → merge a main. Nunca commitear directo a main.
+
+```bash
+# Clonar el repo (primera vez en una máquina nueva)
+git clone https://github.com/milifs/matarife-system.git
+cd matarife-system/don_chacho
+flutter pub get
+
+# Flujo de cambios
+git checkout -b nombre-del-feature   # crear rama
+# ... hacer cambios ...
+git add <archivos>
+git commit -m "descripción del cambio"
+git push origin nombre-del-feature
+# Abrir Pull Request en GitHub antes de mergear a main
+```
+
 ## PROCEDIMIENTO DE ACTUALIZACIÓN / DEPLOY
 
 ```bash
-# En C:\App Joaco\don_chacho_v17\don_chacho
+# Ruta local Mac: /Users/milifernandezsabate/Projects/matarife-system/don_chacho
 
-# 1. Setup inicial (solo la primera vez en carpeta nueva)
-flutter create . --platforms=web
-# Copiar index.html y manifest.json PWA a web/
-flutter pub add intl:^0.20.2
+# 1. Setup inicial (solo la primera vez en máquina nueva)
 flutter pub get
 
 # 2. Probar local (modo desarrollo, sin compilar)
 flutter run -d chrome
 
 # 3. Compilar para producción (usar el script, NO flutter build web plano)
-build_web.bat          # Windows
-# ./build_web.sh       # Linux/Mac
+./build_web.sh         # Mac/Linux
+# build_web.bat        # Windows
 
 # 4. Probar build local antes de subir
-cd build\web
+cd build/web
 npx serve .            # abre en http://localhost:3000
-# (python no está instalado en esta máquina)
 
 # 5. Deployar a Vercel
-cd build\web
+cd build/web
 vercel --prod
 ```
 

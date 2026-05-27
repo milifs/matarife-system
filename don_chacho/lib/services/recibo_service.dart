@@ -5,6 +5,7 @@
 // Solo muestra: cliente, medios de pago, total, saldos
 // ============================================================
 
+import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -13,6 +14,11 @@ import '../models/models.dart';
 import '../utils/formatters.dart';
 
 class ReciboService {
+  static Future<pw.MemoryImage> _loadLogo() async {
+    final bytes = await rootBundle.load('assets/logo.png');
+    return pw.MemoryImage(bytes.buffer.asUint8List());
+  }
+
   /// Genera el PDF del recibo y abre el diálogo de compartir/imprimir
   static Future<void> generarYCompartirRecibo({
     required Pago pago,
@@ -24,6 +30,7 @@ class ReciboService {
     List<Remito> remitosCliente = const [],
     List<Pago> pagosCliente = const [],
   }) async {
+    final logo = await _loadLogo();
     final pdf = _generarPdf(
       pago: pago,
       medios: medios,
@@ -33,6 +40,7 @@ class ReciboService {
       saldoNuevo: saldoNuevo,
       remitosCliente: remitosCliente,
       pagosCliente: pagosCliente,
+      logo: logo,
     );
 
     final bytes = await pdf.save();
@@ -53,6 +61,7 @@ class ReciboService {
     required double saldoAnterior,
     required double saldoNuevo,
   }) async {
+    final logo = await _loadLogo();
     final pdf = _generarPdf(
       pago: pago,
       medios: medios,
@@ -60,6 +69,7 @@ class ReciboService {
       vendedor: vendedor,
       saldoAnterior: saldoAnterior,
       saldoNuevo: saldoNuevo,
+      logo: logo,
     );
 
     await Printing.layoutPdf(
@@ -76,6 +86,7 @@ class ReciboService {
     required double saldoAnterior,
     required double saldoNuevo,
   }) async {
+    final logo = await _loadLogo();
     final pdf = _generarPdf(
       pago: pago,
       medios: medios,
@@ -83,6 +94,7 @@ class ReciboService {
       vendedor: vendedor,
       saldoAnterior: saldoAnterior,
       saldoNuevo: saldoNuevo,
+      logo: logo,
     );
     return pdf.save();
   }
@@ -112,6 +124,7 @@ class ReciboService {
     required double saldoNuevo,
     List<Remito> remitosCliente = const [],
     List<Pago> pagosCliente = const [],
+    required pw.MemoryImage logo,
   }) {
     final pdf = pw.Document();
 
@@ -127,21 +140,27 @@ class ReciboService {
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  pw.Row(
                     children: [
-                      pw.Text('GRANJA DON CHACHO',
-                          style: pw.TextStyle(
-                            fontSize: 22,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColor.fromHex('#C62828'),
-                          )),
-                      pw.SizedBox(height: 4),
-                      pw.Text('Matarife - Venta de medias reses',
-                          style: const pw.TextStyle(
-                            fontSize: 10,
-                            color: PdfColors.grey600,
-                          )),
+                      pw.Image(logo, width: 52, height: 52),
+                      pw.SizedBox(width: 10),
+                      pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text('DON CHACHO',
+                              style: pw.TextStyle(
+                                fontSize: 22,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColor.fromHex('#3B1508'),
+                              )),
+                          pw.SizedBox(height: 4),
+                          pw.Text('Matarife - Venta de medias reses',
+                              style: const pw.TextStyle(
+                                fontSize: 10,
+                                color: PdfColors.grey600,
+                              )),
+                        ],
+                      ),
                     ],
                   ),
                   pw.Container(
@@ -375,7 +394,7 @@ class ReciboService {
               pw.SizedBox(height: 8),
               pw.Center(
                 child: pw.Text(
-                  'Granja Don Chacho - Recibo generado el ${formatFecha(DateTime.now())}',
+                  'Don Chacho - Recibo generado el ${formatFecha(DateTime.now())}',
                   style: const pw.TextStyle(
                     fontSize: 8,
                     color: PdfColors.grey400,
