@@ -1692,14 +1692,39 @@ class _StatColumn extends StatelessWidget {
 // ═══════════════════════════════════════════
 // TAB 4: DIRECTORIO DE CLIENTES CON UBICACIÓN
 // ═══════════════════════════════════════════
-class _DirectorioTab extends StatelessWidget {
+class _DirectorioTab extends StatefulWidget {
   const _DirectorioTab();
+
+  @override
+  State<_DirectorioTab> createState() => _DirectorioTabState();
+}
+
+class _DirectorioTabState extends State<_DirectorioTab> {
+  final _busquedaCtrl = TextEditingController();
+  String _busqueda = '';
+
+  @override
+  void dispose() {
+    _busquedaCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<AppProvider>(
       builder: (context, app, _) {
-        final clientes = app.clientes.toList();
+        final clientes = app.clientes.toList()
+          ..sort((a, b) => a.nombreRazonSocial
+              .toLowerCase()
+              .compareTo(b.nombreRazonSocial.toLowerCase()));
+
+        final clientesFiltrados = _busqueda.isEmpty
+            ? clientes
+            : clientes
+                .where((c) => c.nombreRazonSocial
+                    .toLowerCase()
+                    .contains(_busqueda.toLowerCase()))
+                .toList();
 
         if (clientes.isEmpty) {
           return const Center(
@@ -1708,11 +1733,44 @@ class _DirectorioTab extends StatelessWidget {
           );
         }
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: clientes.length,
-          itemBuilder: (context, index) {
-            final c = clientes[index];
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: TextField(
+                controller: _busquedaCtrl,
+                decoration: InputDecoration(
+                  hintText: 'Buscar cliente...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _busqueda.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () => setState(() {
+                            _busquedaCtrl.clear();
+                            _busqueda = '';
+                          }),
+                        )
+                      : null,
+                  isDense: true,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 10),
+                ),
+                onChanged: (v) => setState(() => _busqueda = v),
+              ),
+            ),
+            Expanded(
+              child: clientesFiltrados.isEmpty
+                  ? const Center(
+                      child: Text('Sin resultados',
+                          style:
+                              TextStyle(color: AppTheme.textSecondary)))
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      itemCount: clientesFiltrados.length,
+                      itemBuilder: (context, index) {
+                        final c = clientesFiltrados[index];
             final vendedor = app.vendedorPorId(c.vendedorId);
             final tieneUbicacion =
                 c.ubicacion.isNotEmpty || c.ubicacionUrl.isNotEmpty;
@@ -1820,6 +1878,9 @@ class _DirectorioTab extends StatelessWidget {
               ),
             );
           },
+                    ),
+            ),
+          ],
         );
       },
     );
