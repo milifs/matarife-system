@@ -1460,6 +1460,14 @@ class _HistorialTabState extends State<_HistorialTab> {
                                       fontSize: 11,
                                       color: AppTheme.textSecondary),
                                 ),
+                                if (esPago && item.pago?.registradoPor != null)
+                                  Text(
+                                    'Registrado por ${item.pago!.registradoPor}',
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                  ),
                                 if (esNdp && item.ndp != null)
                                   Text(
                                     item.ndp!.esConfirmado

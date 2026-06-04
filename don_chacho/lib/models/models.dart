@@ -232,6 +232,7 @@ class Pago {
   double montoTotal;
   double netoRecibido;
   final DateTime creadoEn;
+  String? registradoPor; // nombre_completo del usuario que registró el pago
 
   Pago({
     String? id,
@@ -241,6 +242,7 @@ class Pago {
     required this.montoTotal,
     required this.netoRecibido,
     DateTime? creadoEn,
+    this.registradoPor,
   })  : id = id ?? _uuid.v4(),
         creadoEn = creadoEn ?? DateTime.now();
 
@@ -255,6 +257,7 @@ class Pago {
         'monto_total': montoTotal,
         'neto_recibido': netoRecibido,
         'creado_en': creadoEn.toIso8601String(),
+        if (registradoPor != null) 'registrado_por': registradoPor,
       };
 
   factory Pago.fromMap(Map<String, dynamic> map) => Pago(
@@ -265,6 +268,7 @@ class Pago {
         montoTotal: (map['monto_total'] ?? 0).toDouble(),
         netoRecibido: (map['neto_recibido'] ?? 0).toDouble(),
         creadoEn: DateTime.tryParse(map['creado_en'] ?? '') ?? DateTime.now(),
+        registradoPor: map['registrado_por'],
       );
 }
 

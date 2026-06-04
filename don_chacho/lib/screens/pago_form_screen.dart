@@ -508,6 +508,8 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
       fecha: _fechaPago,
       montoTotal: _montoTotal,
       netoRecibido: _netoRecibido,
+      registradoPor: widget.pagoInicial?.registradoPor ??
+          context.read<AppProvider>().usuarioActual?.nombreCompleto,
     );
 
     if (_esEdicion) {
@@ -618,6 +620,7 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
       fecha: _fechaPago,
       montoTotal: _montoTotal,
       netoRecibido: _netoRecibido,
+      registradoPor: app.usuarioActual?.nombreCompleto,
     );
 
     await app.agregarPago(pago, medios);
