@@ -1579,7 +1579,7 @@ class _HistorialTabState extends State<_HistorialTab> {
       saldoAnterior: saldoAnterior,
       saldoNuevo: saldoActual,
       remitosCliente: app.remitos
-          .where((r) => r.clienteId == pago.clienteId)
+          .where((r) => r.clienteId == pago.clienteId && r.esConfirmado)
           .toList(),
       pagosCliente: app.pagos
           .where((p) => p.clienteId == pago.clienteId)

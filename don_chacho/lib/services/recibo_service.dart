@@ -52,53 +52,6 @@ class ReciboService {
     );
   }
 
-  /// Solo genera el PDF y lo muestra en vista previa
-  static Future<void> previsualizarRecibo({
-    required Pago pago,
-    required List<PagoMedio> medios,
-    required Cliente cliente,
-    Vendedor? vendedor,
-    required double saldoAnterior,
-    required double saldoNuevo,
-  }) async {
-    final logo = await _loadLogo();
-    final pdf = _generarPdf(
-      pago: pago,
-      medios: medios,
-      cliente: cliente,
-      vendedor: vendedor,
-      saldoAnterior: saldoAnterior,
-      saldoNuevo: saldoNuevo,
-      logo: logo,
-    );
-
-    await Printing.layoutPdf(
-      onLayout: (_) => pdf.save(),
-    );
-  }
-
-  /// Genera los bytes del PDF (para almacenar/referenciar)
-  static Future<List<int>> generarPdfBytes({
-    required Pago pago,
-    required List<PagoMedio> medios,
-    required Cliente cliente,
-    Vendedor? vendedor,
-    required double saldoAnterior,
-    required double saldoNuevo,
-  }) async {
-    final logo = await _loadLogo();
-    final pdf = _generarPdf(
-      pago: pago,
-      medios: medios,
-      cliente: cliente,
-      vendedor: vendedor,
-      saldoAnterior: saldoAnterior,
-      saldoNuevo: saldoNuevo,
-      logo: logo,
-    );
-    return pdf.save();
-  }
-
   /// Abre WhatsApp con un mensaje predeterminado
   static Future<void> enviarPorWhatsApp({
     required String telefono,
@@ -378,14 +331,12 @@ class ReciboService {
 
               pw.SizedBox(height: 16),
 
-              // ── Detalle de deuda pendiente (si hay datos) ──
-              if (remitosCliente.isNotEmpty) ...[
-                _buildDetalleDeuda(
-                  cliente: cliente,
-                  remitosCliente: remitosCliente,
-                  pagosCliente: pagosCliente,
-                ),
-              ],
+              // ── Detalle de deuda pendiente (siempre presente) ──
+              _buildDetalleDeuda(
+                cliente: cliente,
+                remitosCliente: remitosCliente,
+                pagosCliente: pagosCliente,
+              ),
 
               pw.Spacer(),
 

@@ -637,7 +637,7 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
       saldoAnterior: saldoAnterior,
       saldoNuevo: saldoNuevo,
       remitosCliente: app.remitos
-          .where((r) => r.clienteId == _clienteId!)
+          .where((r) => r.clienteId == _clienteId! && r.esConfirmado)
           .toList(),
       pagosCliente: app.pagos
           .where((p) => p.clienteId == _clienteId!)
