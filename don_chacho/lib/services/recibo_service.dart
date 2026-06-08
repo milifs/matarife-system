@@ -436,7 +436,10 @@ class ReciboService {
 
     // FIFO: simular aplicación de pagos a remitos
     final remitosOrd = [...remitosCliente];
-    remitosOrd.sort((a, b) => a.fecha.compareTo(b.fecha));
+    remitosOrd.sort((a, b) {
+      final cmp = a.fecha.compareTo(b.fecha);
+      return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
+    });
     final pagosOrd = [...pagosCliente];
     pagosOrd.sort((a, b) => a.fecha.compareTo(b.fecha));
 

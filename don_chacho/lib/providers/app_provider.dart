@@ -477,7 +477,10 @@ class AppProvider extends ChangeNotifier {
       if (remitosCliente.isEmpty) continue;
 
       // Ordenar por fecha ascendente para aplicar FIFO
-      remitosCliente.sort((a, b) => a.fecha.compareTo(b.fecha));
+      remitosCliente.sort((a, b) {
+        final cmp = a.fecha.compareTo(b.fecha);
+        return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
+      });
 
       // Calcular cuánto se ha pagado en total
       final totalPagos = _pagos
@@ -537,7 +540,10 @@ class AppProvider extends ChangeNotifier {
       final remitosCliente = _remitos
           .where((r) => r.clienteId == cliente.id && r.esConfirmado)
           .toList()
-        ..sort((a, b) => a.fecha.compareTo(b.fecha));
+        ..sort((a, b) {
+          final cmp = a.fecha.compareTo(b.fecha);
+          return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
+        });
 
       if (remitosCliente.isEmpty) continue;
 
@@ -585,7 +591,10 @@ class AppProvider extends ChangeNotifier {
       final remitosCliente = _remitos
           .where((r) => r.clienteId == cliente.id && r.esConfirmado)
           .toList()
-        ..sort((a, b) => a.fecha.compareTo(b.fecha));
+        ..sort((a, b) {
+          final cmp = a.fecha.compareTo(b.fecha);
+          return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
+        });
 
       if (remitosCliente.isEmpty) continue;
 
@@ -631,7 +640,10 @@ class AppProvider extends ChangeNotifier {
     final remitosCliente = _remitos
         .where((r) => r.clienteId == clienteId && r.esConfirmado)
         .toList()
-      ..sort((a, b) => a.fecha.compareTo(b.fecha));
+      ..sort((a, b) {
+        final cmp = a.fecha.compareTo(b.fecha);
+        return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
+      });
 
     final totalPagos = _pagos
         .where((p) => p.clienteId == clienteId)

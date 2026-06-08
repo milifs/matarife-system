@@ -106,9 +106,9 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
           final vendedor = app.vendedorPorId(_cliente.vendedorId);
           final saldo = app.getSaldoCliente(_cliente.id);
 
-          // Obtener remitos del cliente
+          // Obtener remitos del cliente (solo confirmados, igual que _recalcularSaldos)
           final remitosCliente = app.remitos
-              .where((r) => r.clienteId == _cliente.id)
+              .where((r) => r.clienteId == _cliente.id && r.esConfirmado)
               .toList();
 
           // Obtener pagos del cliente
@@ -127,7 +127,10 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
 
           // Ordenar remitos del más antiguo al más nuevo para aplicar FIFO
           final remitosOrdenados = [...remitosCliente];
-          remitosOrdenados.sort((a, b) => a.fecha.compareTo(b.fecha));
+          remitosOrdenados.sort((a, b) {
+            final cmp = a.fecha.compareTo(b.fecha);
+            return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
+          });
 
           for (final remito in remitosOrdenados) {
             if (pagosAplicados >= remito.totalPesos) {

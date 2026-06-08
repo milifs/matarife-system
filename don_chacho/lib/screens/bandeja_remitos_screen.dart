@@ -26,6 +26,7 @@ class BandejaRemitosScreen extends StatefulWidget {
 class _BandejaRemitosScreenState extends State<BandejaRemitosScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
+  bool _procesando = false;
 
   @override
   void initState() {
@@ -217,13 +218,19 @@ class _BandejaRemitosScreenState extends State<BandejaRemitosScreen>
   // ─────────────────────────────────────────
 
   Future<void> _confirmarRemito(Remito remito) async {
-    final app = context.read<AppProvider>();
-    await app.confirmarRemito(remito.id, widget.usuarioActual.id);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${remito.numeroFormateado} confirmado'),
-        backgroundColor: AppTheme.success,
-      ));
+    if (_procesando) return;
+    setState(() => _procesando = true);
+    try {
+      final app = context.read<AppProvider>();
+      await app.confirmarRemito(remito.id, widget.usuarioActual.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${remito.numeroFormateado} confirmado'),
+          backgroundColor: AppTheme.success,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _procesando = false);
     }
   }
 
@@ -275,7 +282,7 @@ class _BandejaRemitosScreenState extends State<BandejaRemitosScreen>
   // ─────────────────────────────────────────
 
   Future<void> _confirmarNdp(NotaPedido ndp) async {
-    final app = context.read<AppProvider>();
+    if (_procesando) return;
 
     // Si el cliente es texto libre, pedir que elija de lista antes de confirmar
     String? clienteId = ndp.clienteId;
@@ -284,19 +291,25 @@ class _BandejaRemitosScreenState extends State<BandejaRemitosScreen>
       if (clienteId == null) return; // canceló
     }
 
-    final remito = await app.confirmarNotaPedido(
-        ndp, clienteId, widget.usuarioActual.id);
+    setState(() => _procesando = true);
+    try {
+      final app = context.read<AppProvider>();
+      final remito = await app.confirmarNotaPedido(
+          ndp, clienteId, widget.usuarioActual.id);
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-          remito != null
-              ? '${ndp.numeroFormateado} confirmada → ${remito.numeroFormateado}'
-              : 'Error al confirmar la nota de pedido',
-        ),
-        backgroundColor:
-            remito != null ? AppTheme.success : AppTheme.danger,
-      ));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            remito != null
+                ? '${ndp.numeroFormateado} confirmada → ${remito.numeroFormateado}'
+                : 'Error al confirmar la nota de pedido',
+          ),
+          backgroundColor:
+              remito != null ? AppTheme.success : AppTheme.danger,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _procesando = false);
     }
   }
 

@@ -59,7 +59,10 @@ class EstadoCuentaService {
 
     // Ordenar remitos y pagos por fecha (FIFO)
     final remitosOrdenados = [...remitos];
-    remitosOrdenados.sort((a, b) => a.fecha.compareTo(b.fecha));
+    remitosOrdenados.sort((a, b) {
+      final cmp = a.fecha.compareTo(b.fecha);
+      return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
+    });
     final pagosOrdenados = [...pagos];
     pagosOrdenados.sort((a, b) => a.fecha.compareTo(b.fecha));
 
@@ -591,7 +594,10 @@ class EstadoCuentaService {
 
       // FIFO para deuda por remito
       final remitosOrd = [...remitosCliente];
-      remitosOrd.sort((a, b) => a.fecha.compareTo(b.fecha));
+      remitosOrd.sort((a, b) {
+        final cmp = a.fecha.compareTo(b.fecha);
+        return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
+      });
       final detalleDeuda = <Map<String, dynamic>>[];
       double pagosApl = totalPagos;
       for (final r in remitosOrd) {
