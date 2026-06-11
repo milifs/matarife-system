@@ -62,20 +62,53 @@ class ConsultasScreen extends StatelessWidget {
 // ═══════════════════════════════════════════
 // TAB 1: VENCIDOS
 // ═══════════════════════════════════════════
-class _VencidosTab extends StatelessWidget {
+class _VencidosTab extends StatefulWidget {
   const _VencidosTab();
+
+  @override
+  State<_VencidosTab> createState() => _VencidosTabState();
+}
+
+class _VencidosTabState extends State<_VencidosTab> {
+  String? _filtroVendedorId;
 
   @override
   Widget build(BuildContext context) {
     return Consumer<AppProvider>(
       builder: (context, app, _) {
-        final vencidos = app.todosRemitosVencidos();
+        var vencidos = app.todosRemitosVencidos();
+        if (_filtroVendedorId != null) {
+          final clientesVendedor =
+              app.clientesDeVendedor(_filtroVendedorId!).map((c) => c.id).toSet();
+          vencidos = vencidos
+              .where((m) => clientesVendedor.contains((m['cliente'] as Cliente).id))
+              .toList();
+        }
         final totalDeuda = vencidos.fold<double>(
             0, (sum, m) => sum + (m['deuda'] as double));
 
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // ── Filtro vendedor ──
+            DropdownButtonFormField<String?>(
+              value: _filtroVendedorId,
+              decoration: const InputDecoration(
+                labelText: 'Vendedor',
+                border: OutlineInputBorder(),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              items: [
+                const DropdownMenuItem(value: null, child: Text('Todos')),
+                ...app.vendedores.map((v) => DropdownMenuItem(
+                      value: v.id,
+                      child: Text(v.nombreCompleto),
+                    )),
+              ],
+              onChanged: (v) => setState(() => _filtroVendedorId = v),
+            ),
+            const SizedBox(height: 12),
             // ── Resumen ──
             Card(
               color: AppTheme.danger.withOpacity(0.08),
