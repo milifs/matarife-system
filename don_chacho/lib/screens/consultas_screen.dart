@@ -219,6 +219,24 @@ class _VencidosTabState extends State<_VencidosTab> {
                                       style: const TextStyle(
                                           fontSize: 11,
                                           color: AppTheme.textHint)),
+                                if (cliente.ubicacionUrl.isNotEmpty)
+                                  GestureDetector(
+                                    onTap: () async {
+                                      final uri = Uri.parse(cliente.ubicacionUrl);
+                                      if (await canLaunchUrl(uri)) {
+                                        await launchUrl(uri,
+                                            mode: LaunchMode.externalApplication);
+                                      }
+                                    },
+                                    child: const Text(
+                                      'Ver en Maps',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.blue,
+                                        decoration: TextDecoration.underline,
+                                      ),
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
