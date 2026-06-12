@@ -361,6 +361,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (novillo == null || cerdo == null) return;
 
                   app.guardarCostoSemana(CostoSemanal(
+                    id: costoExistente?.id,
                     semanaInicio: _lunesRef,
                     costoPorKgNovillo: novillo,
                     costoPorKgCerdo: cerdo,
