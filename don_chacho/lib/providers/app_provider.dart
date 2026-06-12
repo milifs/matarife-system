@@ -697,6 +697,24 @@ class AppProvider extends ChangeNotifier {
     return resultado;
   }
 
+  /// Cantidad de medias reses vendidas en la semana por tipo de carne
+  Map<String, int> mediasVendidasSemanasPorTipo([DateTime? semana]) {
+    final inicio = _inicioSemana(semana ?? DateTime.now());
+    final fin = inicio.add(const Duration(days: 7));
+    final remitosSemana = _remitos
+        .where((r) => r.esConfirmado && !r.fecha.isBefore(inicio) && r.fecha.isBefore(fin));
+
+    final resultado = <String, int>{};
+    for (final remito in remitosSemana) {
+      final items = _remitoItems[remito.id] ?? [];
+      for (final item in items) {
+        final tipo = _normalizarTipo(item.tipoCarne);
+        resultado[tipo] = (resultado[tipo] ?? 0) + item.cantidadMedias;
+      }
+    }
+    return resultado;
+  }
+
   /// Venta en pesos por tipo de carne en la semana
   Map<String, double> ventaSemanasPorTipo([DateTime? semana]) {
     final inicio = _inicioSemana(semana ?? DateTime.now());
