@@ -181,8 +181,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               ? formatPesos(costoSemana.costoPorKgNovillo)
                               : '--',
                           valueColor: AppTheme.textPrimary,
-                          badge: costoSemana == null ? 'Cargar' : null,
-                          badgeType: StatusType.warning,
+                          badge: costoSemana == null ? 'Cargar' : 'Editar',
+                          badgeType: costoSemana == null ? StatusType.warning : StatusType.info,
                           onBadgeTap: () =>
                               _mostrarCargaCosto(context, app),
                         ),
@@ -195,8 +195,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               ? formatPesos(costoSemana.costoPorKgCerdo)
                               : '--',
                           valueColor: AppTheme.textPrimary,
-                          badge: costoSemana == null ? 'Cargar' : null,
-                          badgeType: StatusType.warning,
+                          badge: costoSemana == null ? 'Cargar' : 'Editar',
+                          badgeType: costoSemana == null ? StatusType.warning : StatusType.info,
                           onBadgeTap: () =>
                               _mostrarCargaCosto(context, app),
                         ),
