@@ -101,11 +101,17 @@ class _AppWrapperState extends State<AppWrapper> {
     }
   }
 
-  void _onLogin(dynamic user) {
+  Future<void> _onLogin(dynamic user) async {
     final usuario = user as Usuario;
+    setState(() => _verificandoSesion = true);
     context.read<AppProvider>().setUsuario(usuario);
-    context.read<AppProvider>().cargarDatos();
-    setState(() => _usuario = usuario);
+    await context.read<AppProvider>().cargarDatos();
+    if (mounted) {
+      setState(() {
+        _usuario = usuario;
+        _verificandoSesion = false;
+      });
+    }
   }
 
   void _onLogout() async {
