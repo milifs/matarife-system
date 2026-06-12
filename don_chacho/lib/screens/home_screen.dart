@@ -88,11 +88,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
           final vencidos = app.clientesConSaldoVencido();
           final kgPorTipo = app.kgVendidosSemanasPorTipo(_semanaRef);
+          final mediasPorTipo = app.mediasVendidasSemanasPorTipo(_semanaRef);
           final gananciaPorTipo = app.gananciaSemanalPorTipo(_semanaRef);
           final costoSemana = app.costoParaFecha(_semanaRef);
 
           final kgNovillo = kgPorTipo['Novillo'] ?? 0;
           final kgCerdo = kgPorTipo['Cerdo'] ?? 0;
+          final mediasNovillo = mediasPorTipo['Novillo'] ?? 0;
+          final mediasCerdo = mediasPorTipo['Cerdo'] ?? 0;
           final gananciaNovillo = gananciaPorTipo['Novillo'] ?? 0;
           final gananciaCerdo = gananciaPorTipo['Cerdo'] ?? 0;
           final gananciaTotal = gananciaNovillo + gananciaCerdo;
@@ -157,6 +160,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           label: 'Kg novillo semana',
                           value: formatKg(kgNovillo),
                           valueColor: AppTheme.textPrimary,
+                          subtitle: mediasNovillo > 0 ? '$mediasNovillo medias' : null,
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -165,6 +169,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           label: 'Kg cerdo semana',
                           value: formatKg(kgCerdo),
                           valueColor: AppTheme.textPrimary,
+                          subtitle: mediasCerdo > 0 ? '$mediasCerdo medias' : null,
                         ),
                       ),
                     ],
@@ -181,10 +186,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               ? formatPesos(costoSemana.costoPorKgNovillo)
                               : '--',
                           valueColor: AppTheme.textPrimary,
-                          badge: (costoSemana == null && _esSemanaActual)
-                              ? 'Cargar'
-                              : null,
-                          badgeType: StatusType.warning,
+                          badge: costoSemana == null ? 'Cargar' : 'Editar',
+                          badgeType: costoSemana == null ? StatusType.warning : StatusType.info,
                           onBadgeTap: () =>
                               _mostrarCargaCosto(context, app),
                         ),
@@ -197,10 +200,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               ? formatPesos(costoSemana.costoPorKgCerdo)
                               : '--',
                           valueColor: AppTheme.textPrimary,
-                          badge: (costoSemana == null && _esSemanaActual)
-                              ? 'Cargar'
-                              : null,
-                          badgeType: StatusType.warning,
+                          badge: costoSemana == null ? 'Cargar' : 'Editar',
+                          badgeType: costoSemana == null ? StatusType.warning : StatusType.info,
                           onBadgeTap: () =>
                               _mostrarCargaCosto(context, app),
                         ),
@@ -365,6 +366,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (novillo == null || cerdo == null) return;
 
                   app.guardarCostoSemana(CostoSemanal(
+                    id: costoExistente?.id,
                     semanaInicio: _lunesRef,
                     costoPorKgNovillo: novillo,
                     costoPorKgCerdo: cerdo,
@@ -388,6 +390,7 @@ class _KpiCard extends StatelessWidget {
   final String label;
   final String value;
   final Color valueColor;
+  final String? subtitle;
   final String? badge;
   final StatusType? badgeType;
   final VoidCallback? onBadgeTap;
@@ -396,6 +399,7 @@ class _KpiCard extends StatelessWidget {
     required this.label,
     required this.value,
     required this.valueColor,
+    this.subtitle,
     this.badge,
     this.badgeType,
     this.onBadgeTap,
@@ -422,6 +426,12 @@ class _KpiCard extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: valueColor)),
             ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 2),
+              Text(subtitle!,
+                  style: const TextStyle(
+                      fontSize: 11, color: AppTheme.textSecondary)),
+            ],
             if (badge != null) ...[
               const SizedBox(height: 6),
               GestureDetector(
