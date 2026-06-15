@@ -349,7 +349,8 @@ class _GananciasTabState extends State<_GananciasTab> {
 
         final gananciaNovillo = ventaNovillo - costoNovillo;
         final gananciaCerdo = ventaCerdo - costoCerdo;
-        final gananciaTotal = gananciaNovillo + gananciaCerdo;
+        final descuentoTransf = app.descuentoTransferenciasRango(desdeNorm, hastaNorm);
+        final gananciaTotal = gananciaNovillo + gananciaCerdo - descuentoTransf;
 
         return ListView(
           padding: const EdgeInsets.all(16),
@@ -503,6 +504,27 @@ class _GananciasTabState extends State<_GananciasTab> {
                             ],
                           ),
                         ),
+                    ],
+                    if (descuentoTransf > 0) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Desc. transferencias',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.textSecondary),
+                          ),
+                          Text(
+                            '-${formatPesos(descuentoTransf)}',
+                            style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: AppTheme.danger),
+                          ),
+                        ],
+                      ),
                     ],
                     if (faltanCostos) ...[
                       const SizedBox(height: 12),

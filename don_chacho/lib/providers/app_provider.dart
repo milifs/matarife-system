@@ -750,6 +750,22 @@ class AppProvider extends ChangeNotifier {
     return resultado;
   }
 
+  /// Descuento total por comisión de transferencias en los pagos de la semana de [semana]
+  double descuentoTransferenciasSemana([DateTime? semana]) {
+    final inicio = _inicioSemana(semana ?? DateTime.now());
+    final fin = inicio.add(const Duration(days: 7));
+    return _pagos
+        .where((p) => !p.fecha.isBefore(inicio) && p.fecha.isBefore(fin))
+        .fold<double>(0, (sum, p) => sum + (p.montoTotal - p.netoRecibido));
+  }
+
+  /// Descuento total por comisión de transferencias en los pagos de un rango de fechas
+  double descuentoTransferenciasRango(DateTime desde, DateTime hasta) {
+    return _pagos
+        .where((p) => !p.fecha.isBefore(desde) && !p.fecha.isAfter(hasta))
+        .fold<double>(0, (sum, p) => sum + (p.montoTotal - p.netoRecibido));
+  }
+
   String _normalizarTipo(String tipo) {
     final t = tipo.toLowerCase().trim();
     if (t.contains('cerdo')) return 'Cerdo';

@@ -98,7 +98,8 @@ class _HomeScreenState extends State<HomeScreen> {
           final mediasCerdo = mediasPorTipo['Cerdo'] ?? 0;
           final gananciaNovillo = gananciaPorTipo['Novillo'] ?? 0;
           final gananciaCerdo = gananciaPorTipo['Cerdo'] ?? 0;
-          final gananciaTotal = gananciaNovillo + gananciaCerdo;
+          final descuentoTransf = app.descuentoTransferenciasSemana(_semanaRef);
+          final gananciaTotal = gananciaNovillo + gananciaCerdo - descuentoTransf;
 
           return RefreshIndicator(
             onRefresh: () => app.cargarDatos(),
@@ -235,6 +236,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
+
+                  // ── Descuento transferencias ──
+                  if (descuentoTransf > 0) ...[
+                    _KpiCard(
+                      label: 'Desc. transferencias',
+                      value: '-${formatPesos(descuentoTransf)}',
+                      valueColor: AppTheme.danger,
+                    ),
+                    const SizedBox(height: 10),
+                  ],
 
                   // ── Ganancia total ──
                   _KpiCard(
