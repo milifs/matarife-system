@@ -615,19 +615,21 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
             ))
         .toList();
 
+    // Calcular saldos históricos antes de guardar el pago
+    final saldoAnterior = app.getSaldoCliente(_clienteId!);
+    final saldoNuevo = saldoAnterior - _montoTotal;
+
     final pago = Pago(
       clienteId: _clienteId!,
       fecha: _fechaPago,
       montoTotal: _montoTotal,
       netoRecibido: _netoRecibido,
       registradoPor: app.usuarioActual?.nombreCompleto,
+      saldoAnterior: saldoAnterior,
+      saldoNuevo: saldoNuevo,
     );
 
     await app.agregarPago(pago, medios);
-
-    // Generar y compartir recibo PDF
-    final saldoAnterior = app.getSaldoCliente(_clienteId!) + _montoTotal;
-    final saldoNuevo = saldoAnterior - _montoTotal;
 
     await ReciboService.generarYCompartirRecibo(
       pago: pago,

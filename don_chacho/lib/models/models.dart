@@ -233,6 +233,8 @@ class Pago {
   double netoRecibido;
   final DateTime creadoEn;
   String? registradoPor; // nombre_completo del usuario que registró el pago
+  double? saldoAnterior; // saldo del cliente antes de aplicar este pago
+  double? saldoNuevo;    // saldo resultante después de aplicar este pago
 
   Pago({
     String? id,
@@ -243,6 +245,8 @@ class Pago {
     required this.netoRecibido,
     DateTime? creadoEn,
     this.registradoPor,
+    this.saldoAnterior,
+    this.saldoNuevo,
   })  : id = id ?? _uuid.v4(),
         creadoEn = creadoEn ?? DateTime.now();
 
@@ -258,6 +262,8 @@ class Pago {
         'neto_recibido': netoRecibido,
         'creado_en': creadoEn.toIso8601String(),
         if (registradoPor != null) 'registrado_por': registradoPor,
+        if (saldoAnterior != null) 'saldo_anterior': saldoAnterior,
+        if (saldoNuevo != null) 'saldo_nuevo': saldoNuevo,
       };
 
   factory Pago.fromMap(Map<String, dynamic> map) => Pago(
@@ -269,6 +275,8 @@ class Pago {
         netoRecibido: (map['neto_recibido'] ?? 0).toDouble(),
         creadoEn: DateTime.tryParse(map['creado_en'] ?? '') ?? DateTime.now(),
         registradoPor: map['registrado_por'],
+        saldoAnterior: map['saldo_anterior'] != null ? (map['saldo_anterior'] as num).toDouble() : null,
+        saldoNuevo: map['saldo_nuevo'] != null ? (map['saldo_nuevo'] as num).toDouble() : null,
       );
 }
 

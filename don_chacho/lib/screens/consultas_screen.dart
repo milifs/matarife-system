@@ -1623,8 +1623,10 @@ class _HistorialTabState extends State<_HistorialTab> {
     final vendedor = app.vendedorPorId(cliente.vendedorId);
     final medios = await app.getMediosDePago(pago.id);
 
+    // Usar saldos históricos guardados si existen; si no, estimar con datos actuales
     final saldoActual = app.getSaldoCliente(pago.clienteId);
-    final saldoAnterior = saldoActual + pago.montoTotal;
+    final saldoAnterior = pago.saldoAnterior ?? (saldoActual + pago.montoTotal);
+    final saldoNuevo = pago.saldoNuevo ?? saldoActual;
 
     await ReciboService.generarYCompartirRecibo(
       pago: pago,
@@ -1632,7 +1634,7 @@ class _HistorialTabState extends State<_HistorialTab> {
       cliente: cliente,
       vendedor: vendedor,
       saldoAnterior: saldoAnterior,
-      saldoNuevo: saldoActual,
+      saldoNuevo: saldoNuevo,
       remitosCliente: app.remitos
           .where((r) => r.clienteId == pago.clienteId && r.esConfirmado)
           .toList(),
