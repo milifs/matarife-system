@@ -1595,6 +1595,9 @@ class _HistorialTabState extends State<_HistorialTab> {
             '?')
         : (ndp.clienteNombreLibre ?? '?');
 
+    final cliente = ndp.clienteId != null ? app.clientePorId(ndp.clienteId!) : null;
+    final vendedor = cliente != null ? app.vendedorPorId(cliente.vendedorId) : null;
+
     String? remitoNumero;
     if (ndp.remitoId != null) {
       try {
@@ -1608,6 +1611,7 @@ class _HistorialTabState extends State<_HistorialTab> {
       ndp: ndp,
       clienteNombre: clienteNombre,
       remitoNumero: remitoNumero,
+      vendedorNombre: vendedor?.nombreCompleto,
     );
   }
 
@@ -1753,6 +1757,7 @@ class _DirectorioTab extends StatefulWidget {
 class _DirectorioTabState extends State<_DirectorioTab> {
   final _busquedaCtrl = TextEditingController();
   String _busqueda = '';
+  String? _filtroVendedorId;
 
   @override
   void dispose() {
@@ -1769,13 +1774,16 @@ class _DirectorioTabState extends State<_DirectorioTab> {
               .toLowerCase()
               .compareTo(b.nombreRazonSocial.toLowerCase()));
 
-        final clientesFiltrados = _busqueda.isEmpty
-            ? clientes
-            : clientes
-                .where((c) => c.nombreRazonSocial
-                    .toLowerCase()
-                    .contains(_busqueda.toLowerCase()))
-                .toList();
+        var clientesFiltrados = _filtroVendedorId != null
+            ? clientes.where((c) => c.vendedorId == _filtroVendedorId).toList()
+            : clientes;
+        if (_busqueda.isNotEmpty) {
+          clientesFiltrados = clientesFiltrados
+              .where((c) => c.nombreRazonSocial
+                  .toLowerCase()
+                  .contains(_busqueda.toLowerCase()))
+              .toList();
+        }
 
         if (clientes.isEmpty) {
           return const Center(
@@ -1811,6 +1819,29 @@ class _DirectorioTabState extends State<_DirectorioTab> {
                 onChanged: (v) => setState(() => _busqueda = v),
               ),
             ),
+            if (app.vendedores.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: DropdownButtonFormField<String?>(
+                  value: _filtroVendedorId,
+                  decoration: InputDecoration(
+                    labelText: 'Vendedor',
+                    isDense: true,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                  ),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('Todos')),
+                    ...app.vendedores.map((v) => DropdownMenuItem(
+                          value: v.id,
+                          child: Text(v.nombreCompleto),
+                        )),
+                  ],
+                  onChanged: (v) => setState(() => _filtroVendedorId = v),
+                ),
+              ),
             Expanded(
               child: clientesFiltrados.isEmpty
                   ? const Center(

@@ -172,6 +172,11 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
                   !(m['saldado'] as bool) && (m['diasVencido'] as int) > 0)
               .length;
 
+          final deudaVencida = remitosConEstado
+              .where((m) =>
+                  !(m['saldado'] as bool) && (m['diasVencido'] as int) > 0)
+              .fold<double>(0, (s, m) => s + (m['deuda'] as double));
+
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -274,16 +279,16 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
                             MainAxisAlignment.spaceAround,
                         children: [
                           _Stat(
-                              label: 'Total remitos',
-                              value: formatPesos(totalRemitos)),
-                          _Stat(
-                              label: 'Total pagado',
-                              value: formatPesos(totalPagos),
-                              color: AppTheme.success),
-                          _Stat(
                             label: 'Saldo',
                             value: formatPesos(saldo),
                             color: saldo > 0
+                                ? AppTheme.danger
+                                : AppTheme.success,
+                          ),
+                          _Stat(
+                            label: 'Deuda vencida',
+                            value: formatPesos(deudaVencida),
+                            color: deudaVencida > 0
                                 ? AppTheme.danger
                                 : AppTheme.success,
                           ),

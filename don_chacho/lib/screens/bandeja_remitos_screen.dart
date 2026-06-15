@@ -450,6 +450,9 @@ class _BandejaRemitosScreenState extends State<BandejaRemitosScreen>
             '?')
         : (ndp.clienteNombreLibre ?? '?');
 
+    final cliente = ndp.clienteId != null ? app.clientePorId(ndp.clienteId!) : null;
+    final vendedor = cliente != null ? app.vendedorPorId(cliente.vendedorId) : null;
+
     String? remitoNumero;
     if (ndp.esConfirmado && ndp.remitoId != null) {
       try {
@@ -463,6 +466,7 @@ class _BandejaRemitosScreenState extends State<BandejaRemitosScreen>
       ndp: ndp,
       clienteNombre: clienteNombre,
       remitoNumero: remitoNumero,
+      vendedorNombre: vendedor?.nombreCompleto,
     );
   }
 }
@@ -595,6 +599,9 @@ class _NdpCard extends StatelessWidget {
             '?')
         : (ndp.clienteNombreLibre ?? '?');
 
+    final cliente = ndp.clienteId != null ? app.clientePorId(ndp.clienteId!) : null;
+    final vendedor = cliente != null ? app.vendedorPorId(cliente.vendedorId) : null;
+
     final StatusType statusType;
     final String statusText;
     if (ndp.esConfirmado) {
@@ -647,6 +654,10 @@ class _NdpCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(clienteNombre,
                 style: const TextStyle(fontSize: 13)),
+            if (vendedor != null)
+              Text('Vendedor: ${vendedor.nombreCompleto}',
+                  style: const TextStyle(
+                      fontSize: 11, color: AppTheme.textSecondary)),
             if (ndp.clienteId == null && ndp.esPendiente)
               const Text('Cliente texto libre — requiere asignación al confirmar',
                   style: TextStyle(

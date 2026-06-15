@@ -929,6 +929,7 @@ class EstadoCuentaService {
     required NotaPedido ndp,
     required String clienteNombre,
     String? remitoNumero, // si ya fue confirmada
+    String? vendedorNombre,
   }) async {
     final logo = await _loadLogo();
     final pdf = pw.Document();
@@ -942,7 +943,7 @@ class EstadoCuentaService {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(40),
-        header: (_) => _buildNdpHeader(ndp, clienteNombre, remitoNumero, logo),
+        header: (_) => _buildNdpHeader(ndp, clienteNombre, remitoNumero, logo, vendedorNombre: vendedorNombre),
         footer: (ctx) => pw.Column(
           children: [
             pw.Divider(color: PdfColors.grey300, thickness: 0.5),
@@ -1077,7 +1078,7 @@ class EstadoCuentaService {
   }
 
   static pw.Widget _buildNdpHeader(
-      NotaPedido ndp, String clienteNombre, String? remitoNumero, pw.MemoryImage logo) {
+      NotaPedido ndp, String clienteNombre, String? remitoNumero, pw.MemoryImage logo, {String? vendedorNombre}) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
@@ -1166,6 +1167,12 @@ class EstadoCuentaService {
                       style: pw.TextStyle(
                           fontSize: 13,
                           fontWeight: pw.FontWeight.bold)),
+                  if (vendedorNombre != null) ...[
+                    pw.SizedBox(height: 2),
+                    pw.Text('Vendedor: $vendedorNombre',
+                        style: const pw.TextStyle(
+                            fontSize: 9, color: PdfColors.grey600)),
+                  ],
                 ],
               ),
               pw.Text(
