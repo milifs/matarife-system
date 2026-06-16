@@ -2800,6 +2800,7 @@ class _ReporteTabState extends State<_ReporteTab> {
               2: FlexColumnWidth(1),    // Descripción
               3: FixedColumnWidth(90),  // Monto
               4: FixedColumnWidth(80),  // Estado
+              5: FixedColumnWidth(90),  // Saldo
             },
             children: [
               // Header
@@ -2812,86 +2813,101 @@ class _ReporteTabState extends State<_ReporteTab> {
                   _TH('Descripción'),
                   _TH('Monto'),
                   _TH('Estado'),
+                  _TH('Saldo'),
                 ],
               ),
-              // Filas
-              ...movimientos.map((mov) {
-                final esRemito = mov.esRemito;
-                final color =
-                    esRemito ? const Color(0xFFB71C1C) : const Color(0xFF2E7D32);
-                final descripcion = esRemito ? 'Remito' : 'Pago';
-                final montoStr = formatPesos(mov.monto);
+              // Filas con saldo acumulado
+              ...() {
+                double saldoAcum = 0;
+                return movimientos.map((mov) {
+                  final esRemito = mov.esRemito;
+                  saldoAcum += esRemito ? mov.monto : -mov.monto;
 
-                String estadoStr = '';
-                Color estadoColor = Colors.transparent;
-                Color estadoFg = Colors.black;
+                  final color =
+                      esRemito ? const Color(0xFFB71C1C) : const Color(0xFF2E7D32);
+                  final descripcion = esRemito ? 'Remito' : 'Pago';
+                  final montoStr = formatPesos(mov.monto);
+                  final saldoColor = saldoAcum > 0
+                      ? const Color(0xFFB71C1C)
+                      : const Color(0xFF2E7D32);
 
-                if (esRemito) {
-                  final deudaPend = deudaRemito[mov.remitoId] ?? 0;
-                  if (deudaPend <= 0) {
-                    estadoStr = 'Pagado';
-                    estadoColor = const Color(0xFFE8F5E9);
-                    estadoFg = const Color(0xFF2E7D32);
-                  } else {
-                    final vencimiento =
-                        mov.remitoFecha!.add(Duration(days: plazo));
-                    final diasVenc =
-                        hoy.difference(vencimiento).inDays;
-                    if (diasVenc > 0) {
-                      estadoStr = 'Vencido $diasVenc d.';
-                      estadoColor = const Color(0xFFFFEBEE);
-                      estadoFg = const Color(0xFFB71C1C);
-                    } else if (diasVenc >= -3) {
-                      estadoStr = 'Por vencer';
-                      estadoColor = const Color(0xFFFFF8E1);
-                      estadoFg = const Color(0xFFF57F17);
-                    } else {
-                      estadoStr = 'Al día';
+                  String estadoStr = '';
+                  Color estadoColor = Colors.transparent;
+                  Color estadoFg = Colors.black;
+
+                  if (esRemito) {
+                    final deudaPend = deudaRemito[mov.remitoId] ?? 0;
+                    if (deudaPend <= 0) {
+                      estadoStr = 'Pagado';
                       estadoColor = const Color(0xFFE8F5E9);
                       estadoFg = const Color(0xFF2E7D32);
+                    } else {
+                      final vencimiento =
+                          mov.remitoFecha!.add(Duration(days: plazo));
+                      final diasVenc =
+                          hoy.difference(vencimiento).inDays;
+                      if (diasVenc > 0) {
+                        estadoStr = 'Vencido $diasVenc d.';
+                        estadoColor = const Color(0xFFFFEBEE);
+                        estadoFg = const Color(0xFFB71C1C);
+                      } else if (diasVenc >= -3) {
+                        estadoStr = 'Por vencer';
+                        estadoColor = const Color(0xFFFFF8E1);
+                        estadoFg = const Color(0xFFF57F17);
+                      } else {
+                        estadoStr = 'Al día';
+                        estadoColor = const Color(0xFFE8F5E9);
+                        estadoFg = const Color(0xFF2E7D32);
+                      }
                     }
                   }
-                }
 
-                return TableRow(
-                  children: [
-                    _TD(
-                      formatFecha(mov.fecha),
-                      align: TextAlign.center,
-                    ),
-                    _TD(mov.id, align: TextAlign.center),
-                    _TD(descripcion),
-                    _TD(
-                      montoStr,
-                      color: color,
-                      bold: true,
-                      align: TextAlign.right,
-                    ),
-                    esRemito
-                        ? Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 6),
-                            child: Container(
+                  return TableRow(
+                    children: [
+                      _TD(
+                        formatFecha(mov.fecha),
+                        align: TextAlign.center,
+                      ),
+                      _TD(mov.id, align: TextAlign.center),
+                      _TD(descripcion),
+                      _TD(
+                        montoStr,
+                        color: color,
+                        bold: true,
+                        align: TextAlign.right,
+                      ),
+                      esRemito
+                          ? Padding(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 5, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: estadoColor,
-                                borderRadius: BorderRadius.circular(5),
+                                  horizontal: 4, vertical: 6),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 5, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: estadoColor,
+                                  borderRadius: BorderRadius.circular(5),
+                                ),
+                                child: Text(
+                                  estadoStr,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      color: estadoFg,
+                                      fontWeight: FontWeight.w600),
+                                ),
                               ),
-                              child: Text(
-                                estadoStr,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                    fontSize: 10,
-                                    color: estadoFg,
-                                    fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                  ],
+                            )
+                          : const SizedBox.shrink(),
+                      _TD(
+                        formatPesos(saldoAcum),
+                        color: saldoColor,
+                        bold: true,
+                        align: TextAlign.right,
+                      ),
+                    ],
                 );
-              }),
+              }).toList();
+              }(),
             ],
           ),
           const SizedBox(height: 16),
