@@ -21,7 +21,7 @@ class ConsultasScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 7,
+      length: 8,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Consultas'),
@@ -40,6 +40,7 @@ class ConsultasScreen extends StatelessWidget {
               Tab(text: 'Directorio'),
               Tab(text: 'Comisiones'),
               Tab(text: 'Eliminados'),
+              Tab(text: 'Reporte'),
             ],
           ),
         ),
@@ -52,6 +53,7 @@ class ConsultasScreen extends StatelessWidget {
             _DirectorioTab(),
             _ComisionesTab(),
             _EliminadosTab(),
+            _ReporteTab(),
           ],
         ),
       ),
@@ -2613,5 +2615,393 @@ class _EliminadosTab extends StatelessWidget {
       default:
         return medio;
     }
+  }
+}
+
+// ═══════════════════════════════════════════
+// TAB 8: REPORTE POR CLIENTE
+// ═══════════════════════════════════════════
+class _ReporteTab extends StatefulWidget {
+  const _ReporteTab();
+
+  @override
+  State<_ReporteTab> createState() => _ReporteTabState();
+}
+
+class _ReporteTabState extends State<_ReporteTab> {
+  String? _clienteId;
+  String _busqueda = '';
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AppProvider>(
+      builder: (context, app, _) {
+        // Selector de cliente
+        final clientesOrdenados = [...app.clientes]
+          ..sort((a, b) => a.nombreRazonSocial
+              .toLowerCase()
+              .compareTo(b.nombreRazonSocial.toLowerCase()));
+        final clientesFiltrados = _busqueda.isEmpty
+            ? clientesOrdenados
+            : clientesOrdenados
+                .where((c) => c.nombreRazonSocial
+                    .toLowerCase()
+                    .contains(_busqueda.toLowerCase()))
+                .toList();
+
+        Widget body;
+        if (_clienteId == null) {
+          body = const Center(
+            child: Text('Seleccioná un cliente para ver el reporte',
+                style: TextStyle(color: AppTheme.textHint)),
+          );
+        } else {
+          final cliente = app.clientePorId(_clienteId!);
+          if (cliente == null) {
+            body = const Center(child: Text('Cliente no encontrado'));
+          } else {
+            body = _buildReporte(app, cliente);
+          }
+        }
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Column(
+                children: [
+                  TextField(
+                    decoration: const InputDecoration(
+                      labelText: 'Buscar cliente',
+                      prefixIcon: Icon(Icons.search, size: 20),
+                      border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      isDense: true,
+                    ),
+                    onChanged: (v) => setState(() => _busqueda = v),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String?>(
+                    value: _clienteId,
+                    decoration: const InputDecoration(
+                      labelText: 'Cliente',
+                      border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      isDense: true,
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                          value: null, child: Text('— Seleccionar —')),
+                      ...clientesFiltrados.map((c) => DropdownMenuItem(
+                            value: c.id,
+                            child: Text(c.nombreRazonSocial,
+                                overflow: TextOverflow.ellipsis),
+                          )),
+                    ],
+                    onChanged: (v) => setState(() => _clienteId = v),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(child: body),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildReporte(AppProvider app, Cliente cliente) {
+    final hoy = DateTime.now();
+    final plazo = cliente.plazoPagoDias;
+
+    // Remitos confirmados del cliente, ordenados cronológicamente
+    final remitos = app.remitosConfirmados
+        .where((r) => r.clienteId == cliente.id)
+        .toList()
+      ..sort((a, b) => a.fecha.compareTo(b.fecha));
+
+    // Pagos del cliente, ordenados cronológicamente
+    final pagos = app.pagos
+        .where((p) => p.clienteId == cliente.id)
+        .toList()
+      ..sort((a, b) => a.fecha.compareTo(b.fecha));
+
+    // Construir lista unificada de movimientos
+    final movimientos = <_Movimiento>[];
+    for (final r in remitos) {
+      movimientos.add(_Movimiento(
+        fecha: r.fecha,
+        id: r.numeroFormateado,
+        esRemito: true,
+        monto: r.totalPesos,
+        remitoFecha: r.fecha,
+        remitoId: r.id,
+      ));
+    }
+    for (final p in pagos) {
+      movimientos.add(_Movimiento(
+        fecha: p.fecha,
+        id: p.numeroFormateado,
+        esRemito: false,
+        monto: p.montoTotal,
+      ));
+    }
+    movimientos.sort((a, b) {
+      final cmp = a.fecha.compareTo(b.fecha);
+      if (cmp != 0) return cmp;
+      // remitos antes que pagos del mismo día
+      if (a.esRemito && !b.esRemito) return -1;
+      if (!a.esRemito && b.esRemito) return 1;
+      return 0;
+    });
+
+    // Calcular deuda pendiente por remito (FIFO) para marcar vencidos
+    final deudaRemito = <String, double>{};
+    for (final r in remitos) {
+      deudaRemito[r.id] = r.totalPesos;
+    }
+    double pagoRestante =
+        pagos.fold(0.0, (sum, p) => sum + p.montoTotal);
+    for (final r in remitos) {
+      if (pagoRestante <= 0) break;
+      final deuda = deudaRemito[r.id]!;
+      if (pagoRestante >= deuda) {
+        pagoRestante -= deuda;
+        deudaRemito[r.id] = 0;
+      } else {
+        deudaRemito[r.id] = deuda - pagoRestante;
+        pagoRestante = 0;
+      }
+    }
+
+    final saldo = app.getSaldoCliente(cliente.id);
+
+    if (movimientos.isEmpty) {
+      return const Center(
+        child: Text('Sin movimientos para este cliente',
+            style: TextStyle(color: AppTheme.textHint)),
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Tabla
+          Table(
+            border: TableBorder.all(color: const Color(0xFFE0E0E0), width: 1),
+            columnWidths: const {
+              0: FixedColumnWidth(78),  // Fecha
+              1: FixedColumnWidth(72),  // ID
+              2: FlexColumnWidth(1),    // Descripción
+              3: FixedColumnWidth(90),  // Monto
+              4: FixedColumnWidth(80),  // Estado
+            },
+            children: [
+              // Header
+              TableRow(
+                decoration:
+                    const BoxDecoration(color: Color(0xFFF5F5F5)),
+                children: const [
+                  _TH('Fecha'),
+                  _TH('ID'),
+                  _TH('Descripción'),
+                  _TH('Monto'),
+                  _TH('Estado'),
+                ],
+              ),
+              // Filas
+              ...movimientos.map((mov) {
+                final esRemito = mov.esRemito;
+                final color =
+                    esRemito ? const Color(0xFFB71C1C) : const Color(0xFF2E7D32);
+                final descripcion = esRemito ? 'Remito' : 'Pago';
+                final montoStr = formatPesos(mov.monto);
+
+                String estadoStr = '';
+                Color estadoColor = Colors.transparent;
+                Color estadoFg = Colors.black;
+
+                if (esRemito) {
+                  final deudaPend = deudaRemito[mov.remitoId] ?? 0;
+                  if (deudaPend <= 0) {
+                    estadoStr = 'Pagado';
+                    estadoColor = const Color(0xFFE8F5E9);
+                    estadoFg = const Color(0xFF2E7D32);
+                  } else {
+                    final vencimiento =
+                        mov.remitoFecha!.add(Duration(days: plazo));
+                    final diasVenc =
+                        hoy.difference(vencimiento).inDays;
+                    if (diasVenc > 0) {
+                      estadoStr = 'Vencido $diasVenc d.';
+                      estadoColor = const Color(0xFFFFEBEE);
+                      estadoFg = const Color(0xFFB71C1C);
+                    } else if (diasVenc >= -3) {
+                      estadoStr = 'Por vencer';
+                      estadoColor = const Color(0xFFFFF8E1);
+                      estadoFg = const Color(0xFFF57F17);
+                    } else {
+                      estadoStr = 'Al día';
+                      estadoColor = const Color(0xFFE8F5E9);
+                      estadoFg = const Color(0xFF2E7D32);
+                    }
+                  }
+                }
+
+                return TableRow(
+                  children: [
+                    _TD(
+                      formatFecha(mov.fecha),
+                      align: TextAlign.center,
+                    ),
+                    _TD(mov.id, align: TextAlign.center),
+                    _TD(descripcion),
+                    _TD(
+                      montoStr,
+                      color: color,
+                      bold: true,
+                      align: TextAlign.right,
+                    ),
+                    esRemito
+                        ? Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 6),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 5, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: estadoColor,
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: Text(
+                                estadoStr,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    color: estadoFg,
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ],
+                );
+              }),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Saldo pendiente
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: saldo > 0
+                  ? const Color(0xFFFFEBEE)
+                  : const Color(0xFFE8F5E9),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: saldo > 0
+                    ? const Color(0xFFEF9A9A)
+                    : const Color(0xFFA5D6A7),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Saldo pendiente',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: saldo > 0
+                        ? const Color(0xFFB71C1C)
+                        : const Color(0xFF2E7D32),
+                  ),
+                ),
+                Text(
+                  formatPesos(saldo),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: saldo > 0
+                        ? const Color(0xFFB71C1C)
+                        : const Color(0xFF2E7D32),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Modelo interno para unificar remitos y pagos
+class _Movimiento {
+  final DateTime fecha;
+  final String id;
+  final bool esRemito;
+  final double monto;
+  final DateTime? remitoFecha;
+  final String? remitoId;
+
+  const _Movimiento({
+    required this.fecha,
+    required this.id,
+    required this.esRemito,
+    required this.monto,
+    this.remitoFecha,
+    this.remitoId,
+  });
+}
+
+// Widgets auxiliares para la tabla
+class _TH extends StatelessWidget {
+  final String text;
+  const _TH(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+            fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
+}
+
+class _TD extends StatelessWidget {
+  final String text;
+  final Color? color;
+  final bool bold;
+  final TextAlign align;
+
+  const _TD(this.text,
+      {this.color, this.bold = false, this.align = TextAlign.left});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+      child: Text(
+        text,
+        textAlign: align,
+        style: TextStyle(
+          fontSize: 11,
+          color: color ?? Colors.black87,
+          fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+    );
   }
 }
