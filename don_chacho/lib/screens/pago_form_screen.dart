@@ -512,10 +512,23 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
           context.read<AppProvider>().usuarioActual?.nombreCompleto,
     );
 
-    if (_esEdicion) {
-      await context.read<AppProvider>().actualizarPago(pago, medios);
-    } else {
-      await context.read<AppProvider>().agregarPago(pago, medios);
+    try {
+      if (_esEdicion) {
+        await context.read<AppProvider>().actualizarPago(pago, medios);
+      } else {
+        await context.read<AppProvider>().agregarPago(pago, medios);
+      }
+    } catch (e) {
+      setState(() => _guardando = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al guardar pago: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
     }
 
     setState(() => _guardando = false);
@@ -629,7 +642,20 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
       saldoNuevo: saldoNuevo,
     );
 
-    await app.agregarPago(pago, medios);
+    try {
+      await app.agregarPago(pago, medios);
+    } catch (e) {
+      setState(() => _guardando = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al guardar pago: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
 
     await ReciboService.generarYCompartirRecibo(
       pago: pago,
@@ -650,7 +676,7 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text('Pago guardado y recibo generado'),
           backgroundColor: AppTheme.success,
         ),

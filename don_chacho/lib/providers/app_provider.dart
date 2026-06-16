@@ -369,6 +369,7 @@ class AppProvider extends ChangeNotifier {
     } catch (e) {
       _error = 'Error al registrar pago: $e';
       notifyListeners();
+      rethrow;
     }
   }
 
