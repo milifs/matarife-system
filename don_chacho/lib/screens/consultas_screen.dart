@@ -2795,12 +2795,11 @@ class _ReporteTabState extends State<_ReporteTab> {
           Table(
             border: TableBorder.all(color: const Color(0xFFE0E0E0), width: 1),
             columnWidths: const {
-              0: FixedColumnWidth(78),  // Fecha
-              1: FixedColumnWidth(72),  // ID
-              2: FlexColumnWidth(1),    // Descripción
-              3: FixedColumnWidth(90),  // Monto
-              4: FixedColumnWidth(80),  // Estado
-              5: FixedColumnWidth(90),  // Saldo
+              0: FixedColumnWidth(82),   // Fecha
+              1: FixedColumnWidth(64),   // ID
+              2: FlexColumnWidth(1),     // Monto
+              3: FixedColumnWidth(82),   // Estado
+              4: FlexColumnWidth(1),     // Saldo
             },
             children: [
               // Header
@@ -2810,7 +2809,6 @@ class _ReporteTabState extends State<_ReporteTab> {
                 children: const [
                   _TH('Fecha'),
                   _TH('ID'),
-                  _TH('Descripción'),
                   _TH('Monto'),
                   _TH('Estado'),
                   _TH('Saldo'),
@@ -2825,7 +2823,6 @@ class _ReporteTabState extends State<_ReporteTab> {
 
                   final color =
                       esRemito ? const Color(0xFFB71C1C) : const Color(0xFF2E7D32);
-                  final descripcion = esRemito ? 'Remito' : 'Pago';
                   final montoStr = formatPesos(mov.monto);
                   final saldoColor = saldoAcum > 0
                       ? const Color(0xFFB71C1C)
@@ -2869,7 +2866,6 @@ class _ReporteTabState extends State<_ReporteTab> {
                         align: TextAlign.center,
                       ),
                       _TD(mov.id, align: TextAlign.center),
-                      _TD(descripcion),
                       _TD(
                         montoStr,
                         color: color,
