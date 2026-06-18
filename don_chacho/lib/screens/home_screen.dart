@@ -20,11 +20,14 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   DateTime _semanaRef = DateTime.now();
+  bool _ofuscado = false;
 
   DateTime get _lunesRef {
     final d = _semanaRef.subtract(Duration(days: _semanaRef.weekday - 1));
     return DateTime(d.year, d.month, d.day);
   }
+
+  String _ocultar(String valor) => _ofuscado ? '••••' : valor;
 
   bool get _esSemanaActual {
     final hoy = DateTime.now();
@@ -52,6 +55,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
             ),
+          IconButton(
+            icon: Icon(
+                _ofuscado ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+            tooltip: _ofuscado ? 'Mostrar valores' : 'Ocultar valores',
+            onPressed: () => setState(() => _ofuscado = !_ofuscado),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => context.read<AppProvider>().cargarDatos(),
@@ -159,18 +168,18 @@ class _HomeScreenState extends State<HomeScreen> {
                       Expanded(
                         child: _KpiCard(
                           label: 'Kg novillo semana',
-                          value: formatKg(kgNovillo),
+                          value: _ocultar(formatKg(kgNovillo)),
                           valueColor: AppTheme.textPrimary,
-                          subtitle: mediasNovillo > 0 ? '$mediasNovillo medias' : null,
+                          subtitle: !_ofuscado && mediasNovillo > 0 ? '$mediasNovillo medias' : null,
                         ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: _KpiCard(
                           label: 'Kg cerdo semana',
-                          value: formatKg(kgCerdo),
+                          value: _ocultar(formatKg(kgCerdo)),
                           valueColor: AppTheme.textPrimary,
-                          subtitle: mediasCerdo > 0 ? '$mediasCerdo medias' : null,
+                          subtitle: !_ofuscado && mediasCerdo > 0 ? '$mediasCerdo medias' : null,
                         ),
                       ),
                     ],
@@ -184,7 +193,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: _KpiCard(
                           label: 'Costo/kg novillo',
                           value: costoSemana != null
-                              ? formatPesos(costoSemana.costoPorKgNovillo)
+                              ? _ocultar(formatPesos(costoSemana.costoPorKgNovillo))
                               : '--',
                           valueColor: AppTheme.textPrimary,
                           badge: costoSemana == null ? 'Cargar' : 'Editar',
@@ -198,7 +207,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: _KpiCard(
                           label: 'Costo/kg cerdo',
                           value: costoSemana != null
-                              ? formatPesos(costoSemana.costoPorKgCerdo)
+                              ? _ocultar(formatPesos(costoSemana.costoPorKgCerdo))
                               : '--',
                           valueColor: AppTheme.textPrimary,
                           badge: costoSemana == null ? 'Cargar' : 'Editar',
@@ -218,7 +227,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: _KpiCard(
                           label: 'Ganancia novillo',
                           value: costoSemana != null
-                              ? formatPesos(gananciaNovillo)
+                              ? _ocultar(formatPesos(gananciaNovillo))
                               : '--',
                           valueColor: AppTheme.success,
                         ),
@@ -228,7 +237,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: _KpiCard(
                           label: 'Ganancia cerdo',
                           value: costoSemana != null
-                              ? formatPesos(gananciaCerdo)
+                              ? _ocultar(formatPesos(gananciaCerdo))
                               : '--',
                           valueColor: AppTheme.success,
                         ),
@@ -241,7 +250,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (descuentoTransf > 0) ...[
                     _KpiCard(
                       label: 'Desc. transferencias',
-                      value: '-${formatPesos(descuentoTransf)}',
+                      value: _ocultar('-${formatPesos(descuentoTransf)}'),
                       valueColor: AppTheme.danger,
                     ),
                     const SizedBox(height: 10),
@@ -251,7 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   _KpiCard(
                     label: 'Ganancia total semanal',
                     value: costoSemana != null
-                        ? formatPesos(gananciaTotal)
+                        ? _ocultar(formatPesos(gananciaTotal))
                         : '--',
                     valueColor: AppTheme.success,
                     badge: costoSemana == null
