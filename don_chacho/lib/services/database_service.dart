@@ -19,7 +19,6 @@ class DatabaseService {
     final data = await _client
         .from('vendedores')
         .select()
-        .eq('activo', true)
         .order('apellido');
     return data.map((e) => Vendedor.fromMap(e)).toList();
   }
@@ -41,8 +40,7 @@ class DatabaseService {
   }
 
   Future<void> deleteVendedor(String id) async {
-    // Soft delete: marca como inactivo
-    await _client.from('vendedores').update({'activo': false}).eq('id', id);
+    await _client.from('vendedores').delete().eq('id', id);
   }
 
   // ═══════════════════════════════════════════
