@@ -2444,6 +2444,35 @@ class _EliminadosTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Column(
+        children: [
+          const TabBar(
+            tabs: [
+              Tab(text: 'Pagos'),
+              Tab(text: 'Remitos'),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _PagosEliminadosList(),
+                _RemitosEliminadosList(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PagosEliminadosList extends StatelessWidget {
+  const _PagosEliminadosList();
+
+  @override
+  Widget build(BuildContext context) {
     return Consumer<AppProvider>(
       builder: (context, app, _) {
         final lista = app.pagosEliminados;
@@ -2615,6 +2644,120 @@ class _EliminadosTab extends StatelessWidget {
       default:
         return medio;
     }
+  }
+}
+
+class _RemitosEliminadosList extends StatelessWidget {
+  const _RemitosEliminadosList();
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AppProvider>(
+      builder: (context, app, _) {
+        final lista = app.remitosEliminados;
+        if (lista.isEmpty) {
+          return const Center(
+            child: Text('No hay remitos eliminados',
+                style: TextStyle(color: AppTheme.textHint)),
+          );
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: lista.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          itemBuilder: (context, i) {
+            final re = lista[i];
+            final cliente = app.clientePorId(re.clienteId);
+            final nombreCliente =
+                cliente?.nombreRazonSocial ?? '(cliente eliminado)';
+            return Card(
+              elevation: 1,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: const BorderSide(color: Color(0xFFEEEEEE))),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppTheme.danger.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            re.numeroFormateado,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: AppTheme.danger,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          formatPesos(re.totalPesos),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                        const Spacer(),
+                        Text(
+                          formatFecha(re.eliminadoEn),
+                          style: const TextStyle(
+                              fontSize: 11, color: AppTheme.textHint),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.person_outline,
+                            size: 14, color: AppTheme.textHint),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(nombreCliente,
+                              style: const TextStyle(fontSize: 13)),
+                        ),
+                        Text(
+                          'Fecha remito: ${formatFecha(re.fecha)}',
+                          style: const TextStyle(
+                              fontSize: 11, color: AppTheme.textHint),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${formatKg(re.totalKg)} kg',
+                      style: const TextStyle(
+                          fontSize: 12, color: AppTheme.textHint),
+                    ),
+                    if (re.eliminadoPor != null) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          const Icon(Icons.delete_outline,
+                              size: 13, color: AppTheme.textHint),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Eliminado por ${re.eliminadoPor}',
+                            style: const TextStyle(
+                                fontSize: 11, color: AppTheme.textHint),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 }
 

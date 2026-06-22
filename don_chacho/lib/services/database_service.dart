@@ -265,6 +265,18 @@ class DatabaseService {
     return data.map((e) => PagoEliminado.fromMap(e)).toList();
   }
 
+  Future<void> insertRemitoEliminado(RemitoEliminado re) async {
+    await _client.from('remitos_eliminados').insert(re.toMap());
+  }
+
+  Future<List<RemitoEliminado>> getRemitoEliminados() async {
+    final data = await _client
+        .from('remitos_eliminados')
+        .select()
+        .order('eliminado_en', ascending: false);
+    return data.map((e) => RemitoEliminado.fromMap(e)).toList();
+  }
+
   // ═══════════════════════════════════════════
   // COSTOS SEMANALES
   // ═══════════════════════════════════════════

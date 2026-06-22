@@ -598,6 +598,60 @@ class PagoEliminado {
 }
 
 // ─────────────────────────────────────────────
+// REMITO ELIMINADO (audit log)
+// ─────────────────────────────────────────────
+class RemitoEliminado {
+  final String id;
+  final String remitoId;
+  final String clienteId;
+  final DateTime fecha;
+  final int numero;
+  final double totalKg;
+  final double totalPesos;
+  final DateTime eliminadoEn;
+  final String? eliminadoPor;
+
+  RemitoEliminado({
+    String? id,
+    required this.remitoId,
+    required this.clienteId,
+    required this.fecha,
+    required this.numero,
+    required this.totalKg,
+    required this.totalPesos,
+    DateTime? eliminadoEn,
+    this.eliminadoPor,
+  })  : id = id ?? _uuid.v4(),
+        eliminadoEn = eliminadoEn ?? DateTime.now();
+
+  String get numeroFormateado => 'R-${numero.toString().padLeft(4, '0')}';
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'remito_id': remitoId,
+        'cliente_id': clienteId,
+        'fecha': fecha.toIso8601String(),
+        'numero': numero,
+        'total_kg': totalKg,
+        'total_pesos': totalPesos,
+        'eliminado_por': eliminadoPor,
+      };
+
+  factory RemitoEliminado.fromMap(Map<String, dynamic> map) => RemitoEliminado(
+        id: map['id'],
+        remitoId: map['remito_id'] ?? '',
+        clienteId: map['cliente_id'] ?? '',
+        fecha: DateTime.tryParse(map['fecha'] ?? '') ?? DateTime.now(),
+        numero: map['numero'] ?? 0,
+        totalKg: (map['total_kg'] ?? 0).toDouble(),
+        totalPesos: (map['total_pesos'] ?? 0).toDouble(),
+        eliminadoEn:
+            DateTime.tryParse(map['eliminado_en'] ?? '') ?? DateTime.now(),
+        eliminadoPor: map['eliminado_por'],
+      );
+}
+
+// ─────────────────────────────────────────────
 // PERMISO (catálogo fijo)
 // ─────────────────────────────────────────────
 class Permiso {

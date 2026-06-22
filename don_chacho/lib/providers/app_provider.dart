@@ -19,6 +19,7 @@ class AppProvider extends ChangeNotifier {
   List<Pago> _pagos = [];
   List<NotaPedido> _notasPedido = [];
   List<PagoEliminado> _pagosEliminados = [];
+  List<RemitoEliminado> _remitosEliminados = [];
   CostoSemanal? _costoSemanaActual;
   bool _loading = false;
   String? _error;
@@ -52,6 +53,7 @@ class AppProvider extends ChangeNotifier {
   List<Pago> get pagos => _pagos;
   List<NotaPedido> get notasPedido => _notasPedido;
   List<PagoEliminado> get pagosEliminados => _pagosEliminados;
+  List<RemitoEliminado> get remitosEliminados => _remitosEliminados;
   List<NotaPedido> get notasPedidoPendientes =>
       _notasPedido.where((n) => n.esPendiente).toList();
   CostoSemanal? get costoSemanaActual => _costoSemanaActual;
@@ -106,6 +108,7 @@ class AppProvider extends ChangeNotifier {
         _db.getRemitos(),
         _db.getPagos(),
         _db.getPagosEliminados(),
+        _db.getRemitoEliminados(),
         _db.getNotasPedido(),
         _db.getCostoSemana(DateTime.now()),
         _db.getAllCostosSemana(),
@@ -115,9 +118,10 @@ class AppProvider extends ChangeNotifier {
       _remitos = results[2] as List<Remito>;
       _pagos = results[3] as List<Pago>;
       _pagosEliminados = results[4] as List<PagoEliminado>;
-      _notasPedido = results[5] as List<NotaPedido>;
-      _costoSemanaActual = results[6] as CostoSemanal?;
-      _costosSemanales = results[7] as List<CostoSemanal>;
+      _remitosEliminados = results[5] as List<RemitoEliminado>;
+      _notasPedido = results[6] as List<NotaPedido>;
+      _costoSemanaActual = results[7] as CostoSemanal?;
+      _costosSemanales = results[8] as List<CostoSemanal>;
 
       // Items de remito en una sola query, agrupados en memoria
       _remitoItems.clear();
@@ -288,8 +292,20 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> eliminarRemito(String remitoId) async {
+  Future<void> eliminarRemito(String remitoId, {String? eliminadoPor}) async {
     try {
+      final remito = _remitos.firstWhere((r) => r.id == remitoId);
+      final re = RemitoEliminado(
+        remitoId: remitoId,
+        clienteId: remito.clienteId,
+        fecha: remito.fecha,
+        numero: remito.numero,
+        totalKg: remito.totalKg,
+        totalPesos: remito.totalPesos,
+        eliminadoPor: eliminadoPor,
+      );
+      await _db.insertRemitoEliminado(re);
+      _remitosEliminados.insert(0, re);
       await _db.deleteRemito(remitoId);
       _remitos.removeWhere((r) => r.id == remitoId);
       _remitoItems.remove(remitoId);

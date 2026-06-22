@@ -631,7 +631,11 @@ class _RemitoFormScreenState extends State<RemitoFormScreen> {
     if (confirmado != true) return;
 
     setState(() => _guardando = true);
-    await context.read<AppProvider>().eliminarRemito(widget.remitoInicial!.id);
+    final app = context.read<AppProvider>();
+    await app.eliminarRemito(
+      widget.remitoInicial!.id,
+      eliminadoPor: app.usuarioActual?.nombreCompleto,
+    );
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
