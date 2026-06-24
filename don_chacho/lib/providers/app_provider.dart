@@ -682,6 +682,41 @@ class AppProvider extends ChangeNotifier {
     return vencidos;
   }
 
+  /// Monto total vencido para un cliente (FIFO)
+  double saldoVencidoCliente(String clienteId) {
+    final cliente = _clientes.firstWhere(
+      (c) => c.id == clienteId,
+      orElse: () => Cliente(
+          nombreRazonSocial: '', telefono: '', vendedorId: '', plazoPagoDias: 0),
+    );
+    final remitosCliente = _remitos
+        .where((r) => r.clienteId == clienteId && r.esConfirmado)
+        .toList()
+      ..sort((a, b) {
+        final cmp = a.fecha.compareTo(b.fecha);
+        return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
+      });
+
+    final totalPagos = _pagos
+        .where((p) => p.clienteId == clienteId)
+        .fold<double>(0, (s, p) => s + p.montoTotal);
+
+    double pagosRestantes = totalPagos;
+    double vencido = 0;
+    final ahora = DateTime.now();
+    for (final r in remitosCliente) {
+      if (pagosRestantes >= r.totalPesos) {
+        pagosRestantes -= r.totalPesos;
+      } else {
+        final deuda = r.totalPesos - pagosRestantes;
+        pagosRestantes = 0;
+        final vencimiento = r.fecha.add(Duration(days: cliente.plazoPagoDias));
+        if (ahora.difference(vencimiento).inDays > 0) vencido += deuda;
+      }
+    }
+    return vencido;
+  }
+
   DateTime _inicioSemana(DateTime ref) {
     final d = ref.subtract(Duration(days: ref.weekday - 1));
     return DateTime(d.year, d.month, d.day);

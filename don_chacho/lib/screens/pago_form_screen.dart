@@ -86,6 +86,8 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
     final app = context.watch<AppProvider>();
     final saldoCliente =
         _clienteId != null ? app.getSaldoCliente(_clienteId!) : 0.0;
+    final saldoVencido =
+        _clienteId != null ? app.saldoVencidoCliente(_clienteId!) : 0.0;
     final cliente =
         _clienteId != null ? app.clientePorId(_clienteId!) : null;
     final vendedor = cliente != null
@@ -249,37 +251,88 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(14),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Column(
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(cliente.nombreRazonSocial,
-                            style: const TextStyle(
-                                fontSize: 15, fontWeight: FontWeight.w500)),
-                        if (vendedor != null)
-                          Text('Vendedor: ${vendedor.nombreCompleto}',
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppTheme.textSecondary)),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(cliente.nombreRazonSocial,
+                                style: const TextStyle(
+                                    fontSize: 15, fontWeight: FontWeight.w500)),
+                            if (vendedor != null)
+                              Text('Vendedor: ${vendedor.nombreCompleto}',
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppTheme.textSecondary)),
+                          ],
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            const Text('Saldo pendiente',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppTheme.textSecondary)),
+                            Text(
+                              formatPesos(saldoCliente),
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: saldoCliente > 0
+                                    ? AppTheme.danger
+                                    : AppTheme.success,
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
+                    const Divider(height: 18),
+                    Row(
                       children: [
-                        const Text('Saldo pendiente',
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: AppTheme.textSecondary)),
-                        Text(
-                          formatPesos(saldoCliente),
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: saldoCliente > 0
-                                ? AppTheme.danger
-                                : AppTheme.success,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Saldo vencido',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppTheme.textSecondary)),
+                              Text(
+                                formatPesos(saldoVencido),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: saldoVencido > 0
+                                      ? AppTheme.danger
+                                      : AppTheme.success,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              const Text('Saldo restante',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppTheme.textSecondary)),
+                              Text(
+                                formatPesos(saldoCliente - _montoTotal),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: (saldoCliente - _montoTotal) > 0
+                                      ? AppTheme.danger
+                                      : AppTheme.success,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -421,28 +474,6 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
                       ),
                     ],
                   ),
-                  if (_clienteId != null && !_esEdicion) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Saldo restante',
-                            style: TextStyle(
-                                fontSize: 13,
-                                color: AppTheme.textSecondary)),
-                        Text(
-                          formatPesos(saldoCliente - _montoTotal),
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: (saldoCliente - _montoTotal) > 0
-                                ? AppTheme.danger
-                                : AppTheme.success,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
                 ],
               ),
             ),

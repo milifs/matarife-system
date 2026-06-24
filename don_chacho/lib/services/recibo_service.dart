@@ -79,6 +79,26 @@ class ReciboService {
     List<Pago> pagosCliente = const [],
     required pw.MemoryImage logo,
   }) {
+    // Calcular saldo vencido con FIFO
+    final ahora = DateTime.now();
+    final remitosOrdFifo = [...remitosCliente]
+      ..sort((a, b) {
+        final cmp = a.fecha.compareTo(b.fecha);
+        return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
+      });
+    double pagosRestantesFifo = pagosCliente.fold(0.0, (s, p) => s + p.montoTotal);
+    double saldoVencido = 0;
+    for (final r in remitosOrdFifo) {
+      if (pagosRestantesFifo >= r.totalPesos) {
+        pagosRestantesFifo -= r.totalPesos;
+      } else {
+        final deuda = r.totalPesos - pagosRestantesFifo;
+        pagosRestantesFifo = 0;
+        final vencimiento = r.fecha.add(Duration(days: cliente.plazoPagoDias));
+        if (ahora.difference(vencimiento).inDays > 0) saldoVencido += deuda;
+      }
+    }
+
     final pdf = pw.Document();
 
     pdf.addPage(
@@ -325,6 +345,25 @@ class ReciboService {
                         ),
                       ],
                     ),
+                    if (saldoVencido > 0) ...[
+                      pw.SizedBox(height: 6),
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text('Saldo vencido',
+                              style: const pw.TextStyle(
+                                  fontSize: 11, color: PdfColors.grey600)),
+                          pw.Text(
+                            formatPesos(saldoVencido),
+                            style: pw.TextStyle(
+                              fontSize: 11,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColor.fromHex('#C62828'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
