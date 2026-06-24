@@ -659,7 +659,15 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
             ))
         .toList();
 
-    // Calcular saldos históricos antes de guardar el pago
+    // Capturar remitos y pagos ANTES de guardar (para que la tabla del recibo
+    // muestre el estado previo al pago, no el posterior)
+    final remitosParaRecibo = app.remitos
+        .where((r) => r.clienteId == _clienteId! && r.esConfirmado)
+        .toList();
+    final pagosParaRecibo = app.pagos
+        .where((p) => p.clienteId == _clienteId!)
+        .toList();
+
     final saldoAnterior = app.getSaldoCliente(_clienteId!);
     final saldoNuevo = saldoAnterior - _montoTotal;
 
@@ -695,12 +703,8 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
       vendedor: vendedor,
       saldoAnterior: saldoAnterior,
       saldoNuevo: saldoNuevo,
-      remitosCliente: app.remitos
-          .where((r) => r.clienteId == _clienteId! && r.esConfirmado)
-          .toList(),
-      pagosCliente: app.pagos
-          .where((p) => p.clienteId == _clienteId!)
-          .toList(),
+      remitosCliente: remitosParaRecibo,
+      pagosCliente: pagosParaRecibo,
     );
 
     setState(() => _guardando = false);

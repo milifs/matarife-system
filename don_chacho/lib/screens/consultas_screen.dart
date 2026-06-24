@@ -1662,8 +1662,9 @@ class _HistorialTabState extends State<_HistorialTab> {
       remitosCliente: app.remitos
           .where((r) => r.clienteId == pago.clienteId && r.esConfirmado)
           .toList(),
+      // Excluir el pago actual para que la tabla muestre el estado PREVIO al pago
       pagosCliente: app.pagos
-          .where((p) => p.clienteId == pago.clienteId)
+          .where((p) => p.clienteId == pago.clienteId && p.id != pago.id)
           .toList(),
     );
   }
