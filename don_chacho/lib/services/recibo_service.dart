@@ -86,7 +86,8 @@ class ReciboService {
         final cmp = a.fecha.compareTo(b.fecha);
         return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
       });
-    double pagosRestantesFifo = pagosCliente.fold(0.0, (s, p) => s + p.montoTotal);
+    // Incluir el pago actual para reflejar el saldo vencido post-pago
+    double pagosRestantesFifo = pagosCliente.fold(0.0, (s, p) => s + p.montoTotal) + pago.montoTotal;
     double saldoVencido = 0;
     for (final r in remitosOrdFifo) {
       if (pagosRestantesFifo >= r.totalPesos) {
