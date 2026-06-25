@@ -19,7 +19,6 @@ class DatabaseService {
     final data = await _client
         .from('vendedores')
         .select()
-        .eq('activo', true)
         .order('apellido');
     return data.map((e) => Vendedor.fromMap(e)).toList();
   }
@@ -41,8 +40,7 @@ class DatabaseService {
   }
 
   Future<void> deleteVendedor(String id) async {
-    // Soft delete: marca como inactivo
-    await _client.from('vendedores').update({'activo': false}).eq('id', id);
+    await _client.from('vendedores').delete().eq('id', id);
   }
 
   // ═══════════════════════════════════════════
@@ -265,6 +263,18 @@ class DatabaseService {
         .select()
         .order('eliminado_en', ascending: false);
     return data.map((e) => PagoEliminado.fromMap(e)).toList();
+  }
+
+  Future<void> insertRemitoEliminado(RemitoEliminado re) async {
+    await _client.from('remitos_eliminados').insert(re.toMap());
+  }
+
+  Future<List<RemitoEliminado>> getRemitoEliminados() async {
+    final data = await _client
+        .from('remitos_eliminados')
+        .select()
+        .order('eliminado_en', ascending: false);
+    return data.map((e) => RemitoEliminado.fromMap(e)).toList();
   }
 
   // ═══════════════════════════════════════════

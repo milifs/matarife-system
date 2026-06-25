@@ -19,6 +19,7 @@ class AppProvider extends ChangeNotifier {
   List<Pago> _pagos = [];
   List<NotaPedido> _notasPedido = [];
   List<PagoEliminado> _pagosEliminados = [];
+  List<RemitoEliminado> _remitosEliminados = [];
   CostoSemanal? _costoSemanaActual;
   bool _loading = false;
   String? _error;
@@ -52,6 +53,7 @@ class AppProvider extends ChangeNotifier {
   List<Pago> get pagos => _pagos;
   List<NotaPedido> get notasPedido => _notasPedido;
   List<PagoEliminado> get pagosEliminados => _pagosEliminados;
+  List<RemitoEliminado> get remitosEliminados => _remitosEliminados;
   List<NotaPedido> get notasPedidoPendientes =>
       _notasPedido.where((n) => n.esPendiente).toList();
   CostoSemanal? get costoSemanaActual => _costoSemanaActual;
@@ -106,6 +108,7 @@ class AppProvider extends ChangeNotifier {
         _db.getRemitos(),
         _db.getPagos(),
         _db.getPagosEliminados(),
+        _db.getRemitoEliminados(),
         _db.getNotasPedido(),
         _db.getCostoSemana(DateTime.now()),
         _db.getAllCostosSemana(),
@@ -115,9 +118,10 @@ class AppProvider extends ChangeNotifier {
       _remitos = results[2] as List<Remito>;
       _pagos = results[3] as List<Pago>;
       _pagosEliminados = results[4] as List<PagoEliminado>;
-      _notasPedido = results[5] as List<NotaPedido>;
-      _costoSemanaActual = results[6] as CostoSemanal?;
-      _costosSemanales = results[7] as List<CostoSemanal>;
+      _remitosEliminados = results[5] as List<RemitoEliminado>;
+      _notasPedido = results[6] as List<NotaPedido>;
+      _costoSemanaActual = results[7] as CostoSemanal?;
+      _costosSemanales = results[8] as List<CostoSemanal>;
 
       // Items de remito en una sola query, agrupados en memoria
       _remitoItems.clear();
@@ -288,8 +292,20 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> eliminarRemito(String remitoId) async {
+  Future<void> eliminarRemito(String remitoId, {String? eliminadoPor}) async {
     try {
+      final remito = _remitos.firstWhere((r) => r.id == remitoId);
+      final re = RemitoEliminado(
+        remitoId: remitoId,
+        clienteId: remito.clienteId,
+        fecha: remito.fecha,
+        numero: remito.numero,
+        totalKg: remito.totalKg,
+        totalPesos: remito.totalPesos,
+        eliminadoPor: eliminadoPor,
+      );
+      await _db.insertRemitoEliminado(re);
+      _remitosEliminados.insert(0, re);
       await _db.deleteRemito(remitoId);
       _remitos.removeWhere((r) => r.id == remitoId);
       _remitoItems.remove(remitoId);
@@ -369,6 +385,7 @@ class AppProvider extends ChangeNotifier {
     } catch (e) {
       _error = 'Error al registrar pago: $e';
       notifyListeners();
+      rethrow;
     }
   }
 
@@ -665,6 +682,41 @@ class AppProvider extends ChangeNotifier {
     return vencidos;
   }
 
+  /// Monto total vencido para un cliente (FIFO)
+  double saldoVencidoCliente(String clienteId) {
+    final cliente = _clientes.firstWhere(
+      (c) => c.id == clienteId,
+      orElse: () => Cliente(
+          nombreRazonSocial: '', telefono: '', vendedorId: '', plazoPagoDias: 0),
+    );
+    final remitosCliente = _remitos
+        .where((r) => r.clienteId == clienteId && r.esConfirmado)
+        .toList()
+      ..sort((a, b) {
+        final cmp = a.fecha.compareTo(b.fecha);
+        return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
+      });
+
+    final totalPagos = _pagos
+        .where((p) => p.clienteId == clienteId)
+        .fold<double>(0, (s, p) => s + p.montoTotal);
+
+    double pagosRestantes = totalPagos;
+    double vencido = 0;
+    final ahora = DateTime.now();
+    for (final r in remitosCliente) {
+      if (pagosRestantes >= r.totalPesos) {
+        pagosRestantes -= r.totalPesos;
+      } else {
+        final deuda = r.totalPesos - pagosRestantes;
+        pagosRestantes = 0;
+        final vencimiento = r.fecha.add(Duration(days: cliente.plazoPagoDias));
+        if (ahora.difference(vencimiento).inDays > 0) vencido += deuda;
+      }
+    }
+    return vencido;
+  }
+
   DateTime _inicioSemana(DateTime ref) {
     final d = ref.subtract(Duration(days: ref.weekday - 1));
     return DateTime(d.year, d.month, d.day);
@@ -748,6 +800,22 @@ class AppProvider extends ChangeNotifier {
       resultado[tipo] = venta - (kg * costo.costoPorTipo(tipo));
     }
     return resultado;
+  }
+
+  /// Descuento total por comisión de transferencias en los pagos de la semana de [semana]
+  double descuentoTransferenciasSemana([DateTime? semana]) {
+    final inicio = _inicioSemana(semana ?? DateTime.now());
+    final fin = inicio.add(const Duration(days: 7));
+    return _pagos
+        .where((p) => !p.fecha.isBefore(inicio) && p.fecha.isBefore(fin))
+        .fold<double>(0, (sum, p) => sum + (p.montoTotal - p.netoRecibido));
+  }
+
+  /// Descuento total por comisión de transferencias en los pagos de un rango de fechas
+  double descuentoTransferenciasRango(DateTime desde, DateTime hasta) {
+    return _pagos
+        .where((p) => !p.fecha.isBefore(desde) && !p.fecha.isAfter(hasta))
+        .fold<double>(0, (sum, p) => sum + (p.montoTotal - p.netoRecibido));
   }
 
   String _normalizarTipo(String tipo) {

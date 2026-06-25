@@ -233,6 +233,8 @@ class Pago {
   double netoRecibido;
   final DateTime creadoEn;
   String? registradoPor; // nombre_completo del usuario que registró el pago
+  double? saldoAnterior; // saldo del cliente antes de aplicar este pago
+  double? saldoNuevo;    // saldo resultante después de aplicar este pago
 
   Pago({
     String? id,
@@ -243,6 +245,8 @@ class Pago {
     required this.netoRecibido,
     DateTime? creadoEn,
     this.registradoPor,
+    this.saldoAnterior,
+    this.saldoNuevo,
   })  : id = id ?? _uuid.v4(),
         creadoEn = creadoEn ?? DateTime.now();
 
@@ -258,6 +262,8 @@ class Pago {
         'neto_recibido': netoRecibido,
         'creado_en': creadoEn.toIso8601String(),
         if (registradoPor != null) 'registrado_por': registradoPor,
+        if (saldoAnterior != null) 'saldo_anterior': saldoAnterior,
+        if (saldoNuevo != null) 'saldo_nuevo': saldoNuevo,
       };
 
   factory Pago.fromMap(Map<String, dynamic> map) => Pago(
@@ -269,6 +275,8 @@ class Pago {
         netoRecibido: (map['neto_recibido'] ?? 0).toDouble(),
         creadoEn: DateTime.tryParse(map['creado_en'] ?? '') ?? DateTime.now(),
         registradoPor: map['registrado_por'],
+        saldoAnterior: map['saldo_anterior'] != null ? (map['saldo_anterior'] as num).toDouble() : null,
+        saldoNuevo: map['saldo_nuevo'] != null ? (map['saldo_nuevo'] as num).toDouble() : null,
       );
 }
 
@@ -587,6 +595,60 @@ class PagoEliminado {
       eliminadoPor: map['eliminado_por'],
     );
   }
+}
+
+// ─────────────────────────────────────────────
+// REMITO ELIMINADO (audit log)
+// ─────────────────────────────────────────────
+class RemitoEliminado {
+  final String id;
+  final String remitoId;
+  final String clienteId;
+  final DateTime fecha;
+  final int numero;
+  final double totalKg;
+  final double totalPesos;
+  final DateTime eliminadoEn;
+  final String? eliminadoPor;
+
+  RemitoEliminado({
+    String? id,
+    required this.remitoId,
+    required this.clienteId,
+    required this.fecha,
+    required this.numero,
+    required this.totalKg,
+    required this.totalPesos,
+    DateTime? eliminadoEn,
+    this.eliminadoPor,
+  })  : id = id ?? _uuid.v4(),
+        eliminadoEn = eliminadoEn ?? DateTime.now();
+
+  String get numeroFormateado => 'R-${numero.toString().padLeft(4, '0')}';
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'remito_id': remitoId,
+        'cliente_id': clienteId,
+        'fecha': fecha.toIso8601String(),
+        'numero': numero,
+        'total_kg': totalKg,
+        'total_pesos': totalPesos,
+        'eliminado_por': eliminadoPor,
+      };
+
+  factory RemitoEliminado.fromMap(Map<String, dynamic> map) => RemitoEliminado(
+        id: map['id'],
+        remitoId: map['remito_id'] ?? '',
+        clienteId: map['cliente_id'] ?? '',
+        fecha: DateTime.tryParse(map['fecha'] ?? '') ?? DateTime.now(),
+        numero: map['numero'] ?? 0,
+        totalKg: (map['total_kg'] ?? 0).toDouble(),
+        totalPesos: (map['total_pesos'] ?? 0).toDouble(),
+        eliminadoEn:
+            DateTime.tryParse(map['eliminado_en'] ?? '') ?? DateTime.now(),
+        eliminadoPor: map['eliminado_por'],
+      );
 }
 
 // ─────────────────────────────────────────────
