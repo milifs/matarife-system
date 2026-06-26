@@ -375,7 +375,7 @@ class ReciboService {
               _buildDetalleDeuda(
                 cliente: cliente,
                 remitosCliente: remitosCliente,
-                pagosCliente: pagosCliente,
+                pagosCliente: [...pagosCliente, pago],
               ),
 
               pw.Spacer(),
