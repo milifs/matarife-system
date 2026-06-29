@@ -303,6 +303,26 @@ class _MainShellState extends State<MainShell> {
                     );
                   },
                 ),
+              if (app.esAdmin) ...[
+                const Divider(height: 1),
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: AppTheme.primary.withOpacity(0.1),
+                    child: const Icon(Icons.assignment_outlined,
+                        color: AppTheme.primary),
+                  ),
+                  title: const Text('Nueva nota de pedido'),
+                  subtitle: const Text('Cargar pedido para confirmar'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const NotaPedidoFormScreen()),
+                    );
+                  },
+                ),
+              ],
               if (tiene('crear_pago')) ...[
                 const Divider(height: 1),
                 ListTile(
