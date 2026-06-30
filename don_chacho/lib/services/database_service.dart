@@ -277,6 +277,24 @@ class DatabaseService {
     return data.map((e) => RemitoEliminado.fromMap(e)).toList();
   }
 
+  Future<void> insertNotaPedidoEliminada(NotaPedidoEliminada ne) async {
+    await _client.from('notas_pedido_eliminadas').insert(ne.toMap());
+  }
+
+  Future<List<NotaPedidoEliminada>> getNotasPedidoEliminadas() async {
+    // Tolerante a que la tabla aún no exista (migración no corrida):
+    // devuelve lista vacía en vez de romper la carga inicial.
+    try {
+      final data = await _client
+          .from('notas_pedido_eliminadas')
+          .select()
+          .order('eliminado_en', ascending: false);
+      return data.map((e) => NotaPedidoEliminada.fromMap(e)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   // ═══════════════════════════════════════════
   // COSTOS SEMANALES
   // ═══════════════════════════════════════════

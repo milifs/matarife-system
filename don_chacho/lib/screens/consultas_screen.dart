@@ -2451,13 +2451,15 @@ class _EliminadosTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Column(
         children: [
           const TabBar(
+            isScrollable: true,
             tabs: [
               Tab(text: 'Pagos'),
               Tab(text: 'Remitos'),
+              Tab(text: 'Notas de Pedido'),
             ],
           ),
           Expanded(
@@ -2465,6 +2467,7 @@ class _EliminadosTab extends StatelessWidget {
               children: [
                 _PagosEliminadosList(),
                 _RemitosEliminadosList(),
+                _NotasPedidoEliminadasList(),
               ],
             ),
           ),
@@ -2755,6 +2758,152 @@ class _RemitosEliminadosList extends StatelessWidget {
                           ),
                         ],
                       ),
+                    ],
+                    if (re.observacion != null &&
+                        re.observacion!.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      _observacionBox(re.observacion!),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// Caja amarilla reutilizable para mostrar la observación de una baja
+Widget _observacionBox(String texto) {
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(8),
+    decoration: BoxDecoration(
+      color: const Color(0xFFFFFDE7),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: const Color(0xFFFFEE58)),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.comment_outlined,
+            size: 13, color: Color(0xFFF57F17)),
+        const SizedBox(width: 5),
+        Expanded(
+          child: Text(texto, style: const TextStyle(fontSize: 12)),
+        ),
+      ],
+    ),
+  );
+}
+
+class _NotasPedidoEliminadasList extends StatelessWidget {
+  const _NotasPedidoEliminadasList();
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AppProvider>(
+      builder: (context, app, _) {
+        final lista = app.notasPedidoEliminadas;
+        if (lista.isEmpty) {
+          return const Center(
+            child: Text('No hay notas de pedido eliminadas',
+                style: TextStyle(color: AppTheme.textHint)),
+          );
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: lista.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          itemBuilder: (context, i) {
+            final ne = lista[i];
+            final nombreCliente = ne.clienteNombre ?? '(sin cliente)';
+            return Card(
+              elevation: 1,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: const BorderSide(color: Color(0xFFEEEEEE))),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppTheme.danger.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            ne.numeroFormateado,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: AppTheme.danger,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          formatPesos(ne.totalPesos),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                        const Spacer(),
+                        Text(
+                          formatFecha(ne.eliminadoEn),
+                          style: const TextStyle(
+                              fontSize: 11, color: AppTheme.textHint),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.person_outline,
+                            size: 14, color: AppTheme.textHint),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(nombreCliente,
+                              style: const TextStyle(fontSize: 13)),
+                        ),
+                        Text(
+                          'Fecha: ${formatFecha(ne.fecha)}',
+                          style: const TextStyle(
+                              fontSize: 11, color: AppTheme.textHint),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${formatKg(ne.totalKg)} kg',
+                      style: const TextStyle(
+                          fontSize: 12, color: AppTheme.textHint),
+                    ),
+                    if (ne.eliminadoPor != null) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          const Icon(Icons.delete_outline,
+                              size: 13, color: AppTheme.textHint),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Eliminado por ${ne.eliminadoPor}',
+                            style: const TextStyle(
+                                fontSize: 11, color: AppTheme.textHint),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (ne.observacion != null &&
+                        ne.observacion!.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      _observacionBox(ne.observacion!),
                     ],
                   ],
                 ),

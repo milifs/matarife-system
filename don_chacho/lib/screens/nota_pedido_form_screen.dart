@@ -140,11 +140,29 @@ class _NotaPedidoFormScreenState extends State<NotaPedidoFormScreen> {
   }
 
   Future<void> _confirmarEliminar() async {
+    final obsCtrl = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Eliminar nota de pedido'),
-        content: const Text('¿Seguro que querés eliminar esta nota de pedido?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('¿Seguro que querés eliminar esta nota de pedido?'),
+            const SizedBox(height: 14),
+            TextField(
+              controller: obsCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Observación (opcional)',
+                hintText: 'Ej: pedido duplicado, error de carga...',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 2,
+              textCapitalization: TextCapitalization.sentences,
+            ),
+          ],
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -156,10 +174,20 @@ class _NotaPedidoFormScreenState extends State<NotaPedidoFormScreen> {
         ],
       ),
     );
-    if (ok == true && mounted) {
-      await context
-          .read<AppProvider>()
-          .eliminarNotaPedido(widget.ndpInicial!.id);
+    if (ok != true) {
+      obsCtrl.dispose();
+      return;
+    }
+    final observacion =
+        obsCtrl.text.trim().isEmpty ? null : obsCtrl.text.trim();
+    obsCtrl.dispose();
+    if (mounted) {
+      final app = context.read<AppProvider>();
+      await app.eliminarNotaPedido(
+        widget.ndpInicial!.id,
+        observacion: observacion,
+        eliminadoPor: app.usuarioActual?.nombreCompleto,
+      );
       if (mounted) Navigator.pop(context);
     }
   }

@@ -20,6 +20,7 @@ class AppProvider extends ChangeNotifier {
   List<NotaPedido> _notasPedido = [];
   List<PagoEliminado> _pagosEliminados = [];
   List<RemitoEliminado> _remitosEliminados = [];
+  List<NotaPedidoEliminada> _notasPedidoEliminadas = [];
   CostoSemanal? _costoSemanaActual;
   bool _loading = false;
   String? _error;
@@ -54,6 +55,8 @@ class AppProvider extends ChangeNotifier {
   List<NotaPedido> get notasPedido => _notasPedido;
   List<PagoEliminado> get pagosEliminados => _pagosEliminados;
   List<RemitoEliminado> get remitosEliminados => _remitosEliminados;
+  List<NotaPedidoEliminada> get notasPedidoEliminadas =>
+      _notasPedidoEliminadas;
   List<NotaPedido> get notasPedidoPendientes =>
       _notasPedido.where((n) => n.esPendiente).toList();
   CostoSemanal? get costoSemanaActual => _costoSemanaActual;
@@ -110,6 +113,7 @@ class AppProvider extends ChangeNotifier {
         _db.getPagosEliminados(),
         _db.getRemitoEliminados(),
         _db.getNotasPedido(),
+        _db.getNotasPedidoEliminadas(),
         _db.getCostoSemana(DateTime.now()),
         _db.getAllCostosSemana(),
       ]);
@@ -120,8 +124,9 @@ class AppProvider extends ChangeNotifier {
       _pagosEliminados = results[4] as List<PagoEliminado>;
       _remitosEliminados = results[5] as List<RemitoEliminado>;
       _notasPedido = results[6] as List<NotaPedido>;
-      _costoSemanaActual = results[7] as CostoSemanal?;
-      _costosSemanales = results[8] as List<CostoSemanal>;
+      _notasPedidoEliminadas = results[7] as List<NotaPedidoEliminada>;
+      _costoSemanaActual = results[8] as CostoSemanal?;
+      _costosSemanales = results[9] as List<CostoSemanal>;
 
       // Items de remito en una sola query, agrupados en memoria
       _remitoItems.clear();
@@ -292,7 +297,8 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> eliminarRemito(String remitoId, {String? eliminadoPor}) async {
+  Future<void> eliminarRemito(String remitoId,
+      {String? observacion, String? eliminadoPor}) async {
     try {
       final remito = _remitos.firstWhere((r) => r.id == remitoId);
       final re = RemitoEliminado(
@@ -302,10 +308,15 @@ class AppProvider extends ChangeNotifier {
         numero: remito.numero,
         totalKg: remito.totalKg,
         totalPesos: remito.totalPesos,
+        observacion: observacion,
         eliminadoPor: eliminadoPor,
       );
-      await _db.insertRemitoEliminado(re);
-      _remitosEliminados.insert(0, re);
+      // Auditoría best-effort: si la columna observacion aún no existe
+      // (migración no corrida) no debe impedir la eliminación.
+      try {
+        await _db.insertRemitoEliminado(re);
+        _remitosEliminados.insert(0, re);
+      } catch (_) {}
       await _db.deleteRemito(remitoId);
       _remitos.removeWhere((r) => r.id == remitoId);
       _remitoItems.remove(remitoId);
@@ -880,8 +891,31 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> eliminarNotaPedido(String ndpId) async {
+  Future<void> eliminarNotaPedido(String ndpId,
+      {String? observacion, String? eliminadoPor}) async {
     try {
+      final ndp = _notasPedido.firstWhere((n) => n.id == ndpId);
+      final nombreCliente = ndp.clienteId != null
+          ? clientePorId(ndp.clienteId!)?.nombreRazonSocial
+          : ndp.clienteNombreLibre;
+      final ne = NotaPedidoEliminada(
+        notaPedidoId: ndpId,
+        numero: ndp.numero,
+        fecha: ndp.fecha,
+        clienteId: ndp.clienteId,
+        clienteNombre: nombreCliente,
+        estado: ndp.estado,
+        totalKg: ndp.totalKg,
+        totalPesos: ndp.totalPesos,
+        observacion: observacion,
+        eliminadoPor: eliminadoPor,
+      );
+      // Auditoría best-effort: si la tabla aún no existe (migración no
+      // corrida) no debe impedir la eliminación de la nota.
+      try {
+        await _db.insertNotaPedidoEliminada(ne);
+        _notasPedidoEliminadas.insert(0, ne);
+      } catch (_) {}
       await _db.deleteNotaPedido(ndpId);
       _notasPedido.removeWhere((n) => n.id == ndpId);
       notifyListeners();

@@ -608,12 +608,30 @@ class _RemitoFormScreenState extends State<RemitoFormScreen> {
   }
 
   Future<void> _confirmarEliminar() async {
+    final obsCtrl = TextEditingController();
     final confirmado = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Eliminar remito'),
-        content: Text(
-            '¿Seguro que querés eliminar el remito ${widget.remitoInicial!.numeroFormateado}? Esta acción no se puede deshacer.'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+                '¿Seguro que querés eliminar el remito ${widget.remitoInicial!.numeroFormateado}? Esta acción no se puede deshacer.'),
+            const SizedBox(height: 14),
+            TextField(
+              controller: obsCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Observación (opcional)',
+                hintText: 'Ej: remito duplicado, error de carga...',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 2,
+              textCapitalization: TextCapitalization.sentences,
+            ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -628,12 +646,20 @@ class _RemitoFormScreenState extends State<RemitoFormScreen> {
       ),
     );
 
-    if (confirmado != true) return;
+    if (confirmado != true) {
+      obsCtrl.dispose();
+      return;
+    }
+
+    final observacion =
+        obsCtrl.text.trim().isEmpty ? null : obsCtrl.text.trim();
+    obsCtrl.dispose();
 
     setState(() => _guardando = true);
     final app = context.read<AppProvider>();
     await app.eliminarRemito(
       widget.remitoInicial!.id,
+      observacion: observacion,
       eliminadoPor: app.usuarioActual?.nombreCompleto,
     );
 

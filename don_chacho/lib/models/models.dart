@@ -608,6 +608,7 @@ class RemitoEliminado {
   final int numero;
   final double totalKg;
   final double totalPesos;
+  final String? observacion;
   final DateTime eliminadoEn;
   final String? eliminadoPor;
 
@@ -619,6 +620,7 @@ class RemitoEliminado {
     required this.numero,
     required this.totalKg,
     required this.totalPesos,
+    this.observacion,
     DateTime? eliminadoEn,
     this.eliminadoPor,
   })  : id = id ?? _uuid.v4(),
@@ -634,6 +636,7 @@ class RemitoEliminado {
         'numero': numero,
         'total_kg': totalKg,
         'total_pesos': totalPesos,
+        'observacion': observacion,
         'eliminado_por': eliminadoPor,
       };
 
@@ -645,6 +648,74 @@ class RemitoEliminado {
         numero: map['numero'] ?? 0,
         totalKg: (map['total_kg'] ?? 0).toDouble(),
         totalPesos: (map['total_pesos'] ?? 0).toDouble(),
+        observacion: map['observacion'],
+        eliminadoEn:
+            DateTime.tryParse(map['eliminado_en'] ?? '') ?? DateTime.now(),
+        eliminadoPor: map['eliminado_por'],
+      );
+}
+
+// ─────────────────────────────────────────────
+// NOTA DE PEDIDO ELIMINADA (audit log)
+// ─────────────────────────────────────────────
+class NotaPedidoEliminada {
+  final String id;
+  final String notaPedidoId;
+  final int numero;
+  final DateTime fecha;
+  final String? clienteId;
+  final String? clienteNombre;
+  final String? estado;
+  final double totalKg;
+  final double totalPesos;
+  final String? observacion;
+  final DateTime eliminadoEn;
+  final String? eliminadoPor;
+
+  NotaPedidoEliminada({
+    String? id,
+    required this.notaPedidoId,
+    required this.numero,
+    required this.fecha,
+    this.clienteId,
+    this.clienteNombre,
+    this.estado,
+    required this.totalKg,
+    required this.totalPesos,
+    this.observacion,
+    DateTime? eliminadoEn,
+    this.eliminadoPor,
+  })  : id = id ?? _uuid.v4(),
+        eliminadoEn = eliminadoEn ?? DateTime.now();
+
+  String get numeroFormateado => 'NP-${numero.toString().padLeft(4, '0')}';
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'nota_pedido_id': notaPedidoId,
+        'numero': numero,
+        'fecha': fecha.toIso8601String(),
+        'cliente_id': clienteId,
+        'cliente_nombre': clienteNombre,
+        'estado': estado,
+        'total_kg': totalKg,
+        'total_pesos': totalPesos,
+        'observacion': observacion,
+        'eliminado_por': eliminadoPor,
+      };
+
+  factory NotaPedidoEliminada.fromMap(Map<String, dynamic> map) =>
+      NotaPedidoEliminada(
+        id: map['id'],
+        notaPedidoId: map['nota_pedido_id'] ?? '',
+        numero: map['numero'] ?? 0,
+        fecha: DateTime.tryParse(map['fecha'] ?? '') ?? DateTime.now(),
+        clienteId: map['cliente_id'],
+        clienteNombre: map['cliente_nombre'],
+        estado: map['estado'],
+        totalKg: (map['total_kg'] ?? 0).toDouble(),
+        totalPesos: (map['total_pesos'] ?? 0).toDouble(),
+        observacion: map['observacion'],
         eliminadoEn:
             DateTime.tryParse(map['eliminado_en'] ?? '') ?? DateTime.now(),
         eliminadoPor: map['eliminado_por'],
