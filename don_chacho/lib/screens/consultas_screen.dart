@@ -1438,16 +1438,8 @@ class _HistorialTabState extends State<_HistorialTab> {
                                 const EdgeInsets.symmetric(
                                     horizontal: 14, vertical: 4),
                             onTap: () {
-                              if (item.tipo == 'remito' &&
-                                  app.tienePermiso('editar_remito')) {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => RemitoFormScreen(
-                                        remitoInicial: item.remito),
-                                  ),
-                                );
-                              } else if (item.tipo == 'pago' &&
+                              // Los remitos NO se editan desde el Historial.
+                              if (item.tipo == 'pago' &&
                                   app.tienePermiso('editar_pago')) {
                                 Navigator.push(
                                   context,
@@ -1647,10 +1639,23 @@ class _HistorialTabState extends State<_HistorialTab> {
     final vendedor = app.vendedorPorId(cliente.vendedorId);
     final medios = await app.getMediosDePago(pago.id);
 
-    // Usar saldos históricos guardados si existen; si no, estimar con datos actuales
-    final saldoActual = app.getSaldoCliente(pago.clienteId);
-    final saldoAnterior = pago.saldoAnterior ?? (saldoActual + pago.montoTotal);
-    final saldoNuevo = pago.saldoNuevo ?? saldoActual;
+    // Usar saldos históricos guardados si existen; si no, reconstruir el saldo
+    // AL MOMENTO de este pago. No usar el saldo actual del cliente: ese ya
+    // refleja los pagos posteriores, y haría que un recibo reimpreso muestre
+    // el mismo "saldo restante" en pagos distintos.
+    final totalRemitos = app.remitos
+        .where((r) => r.clienteId == pago.clienteId && r.esConfirmado)
+        .fold<double>(0, (s, r) => s + r.totalPesos);
+    final pagosHastaEste = app.pagos
+        .where((p) => p.clienteId == pago.clienteId)
+        .where((p) {
+          final cmp = p.fecha.compareTo(pago.fecha);
+          return cmp != 0 ? cmp < 0 : p.numero <= pago.numero;
+        })
+        .fold<double>(0, (s, p) => s + p.montoTotal);
+    final saldoNuevoCalc = totalRemitos - pagosHastaEste;
+    final saldoAnterior = pago.saldoAnterior ?? (saldoNuevoCalc + pago.montoTotal);
+    final saldoNuevo = pago.saldoNuevo ?? saldoNuevoCalc;
 
     await ReciboService.generarYCompartirRecibo(
       pago: pago,
