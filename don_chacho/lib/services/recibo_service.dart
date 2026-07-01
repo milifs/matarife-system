@@ -25,8 +25,7 @@ class ReciboService {
     required List<PagoMedio> medios,
     required Cliente cliente,
     Vendedor? vendedor,
-    required double saldoAnterior,
-    required double saldoNuevo,
+    double? saldoActual,
     List<Remito> remitosCliente = const [],
     List<Pago> pagosCliente = const [],
   }) async {
@@ -36,8 +35,7 @@ class ReciboService {
       medios: medios,
       cliente: cliente,
       vendedor: vendedor,
-      saldoAnterior: saldoAnterior,
-      saldoNuevo: saldoNuevo,
+      saldoActual: saldoActual,
       remitosCliente: remitosCliente,
       pagosCliente: pagosCliente,
       logo: logo,
@@ -73,8 +71,7 @@ class ReciboService {
     required List<PagoMedio> medios,
     required Cliente cliente,
     Vendedor? vendedor,
-    required double saldoAnterior,
-    required double saldoNuevo,
+    double? saldoActual,
     List<Remito> remitosCliente = const [],
     List<Pago> pagosCliente = const [],
     required pw.MemoryImage logo,
@@ -160,7 +157,7 @@ class ReciboService {
                               fontWeight: pw.FontWeight.bold),
                         ),
                         pw.Text(
-                          'Fecha: ${formatFecha(pago.fecha)}',
+                          'Fecha: ${formatFecha(pago.fecha)} ${_formatHora(pago.creadoEn)}',
                           style: const pw.TextStyle(fontSize: 10),
                         ),
                       ],
@@ -297,74 +294,44 @@ class ReciboService {
                 child: pw.Column(
                   children: [
                     pw.Row(
-                      mainAxisAlignment:
-                          pw.MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
-                        pw.Text('Saldo anterior',
-                            style: const pw.TextStyle(
-                                fontSize: 11, color: PdfColors.grey600)),
-                        pw.Text(formatPesos(saldoAnterior),
-                            style: const pw.TextStyle(fontSize: 11)),
-                      ],
-                    ),
-                    pw.SizedBox(height: 4),
-                    pw.Row(
-                      mainAxisAlignment:
-                          pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        pw.Text('Pago realizado',
-                            style: const pw.TextStyle(
-                                fontSize: 11, color: PdfColors.grey600)),
-                        pw.Text('-${formatPesos(pago.montoTotal)}',
-                            style: pw.TextStyle(
-                              fontSize: 11,
-                              color: PdfColor.fromHex('#2E7D32'),
-                            )),
-                      ],
-                    ),
-                    pw.SizedBox(height: 6),
-                    pw.Divider(color: PdfColors.grey300, thickness: 0.5),
-                    pw.SizedBox(height: 6),
-                    pw.Row(
-                      mainAxisAlignment:
-                          pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        pw.Text('SALDO RESTANTE',
+                        pw.Text('SALDO RESTANTE TOTAL',
                             style: pw.TextStyle(
                               fontSize: 12,
                               fontWeight: pw.FontWeight.bold,
                             )),
                         pw.Text(
-                          formatPesos(saldoNuevo),
+                          formatPesos(saldoActual ?? 0),
                           style: pw.TextStyle(
                             fontSize: 16,
                             fontWeight: pw.FontWeight.bold,
-                            color: saldoNuevo > 0
+                            color: (saldoActual ?? 0) > 0
                                 ? PdfColor.fromHex('#C62828')
                                 : PdfColor.fromHex('#2E7D32'),
                           ),
                         ),
                       ],
                     ),
-                    if (saldoVencido > 0) ...[
-                      pw.SizedBox(height: 6),
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Text('Saldo vencido',
-                              style: const pw.TextStyle(
-                                  fontSize: 11, color: PdfColors.grey600)),
-                          pw.Text(
-                            formatPesos(saldoVencido),
-                            style: pw.TextStyle(
-                              fontSize: 11,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColor.fromHex('#C62828'),
-                            ),
+                    pw.SizedBox(height: 6),
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text('Saldo vencido',
+                            style: const pw.TextStyle(
+                                fontSize: 11, color: PdfColors.grey600)),
+                        pw.Text(
+                          formatPesos(saldoVencido),
+                          style: pw.TextStyle(
+                            fontSize: 11,
+                            fontWeight: pw.FontWeight.bold,
+                            color: saldoVencido > 0
+                                ? PdfColor.fromHex('#C62828')
+                                : PdfColor.fromHex('#2E7D32'),
                           ),
-                        ],
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -401,6 +368,12 @@ class ReciboService {
     return pdf;
   }
 
+  static String _formatHora(DateTime dt) {
+    final h = dt.hour.toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
   static pw.Widget _tableCell(String text, {bool header = false}) {
     return pw.Container(
       padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -415,15 +388,13 @@ class ReciboService {
     );
   }
 
-  /// Sección de remitos pendientes + pagos aplicados (igual que Estado de Cuenta)
+  /// Sección de remitos pendientes (deuda por remito con FIFO)
   static pw.Widget _buildDetalleDeuda({
     required Cliente cliente,
     required List<Remito> remitosCliente,
     required List<Pago> pagosCliente,
   }) {
     final ahora = DateTime.now();
-    final totalPagos =
-        pagosCliente.fold<double>(0, (s, p) => s + p.montoTotal);
 
     // FIFO: simular aplicación de pagos a remitos
     final remitosOrd = [...remitosCliente];
@@ -440,12 +411,6 @@ class ReciboService {
       remitoRestante[r.id] = r.totalPesos;
     }
 
-    // Trackear qué remitos cubre cada pago
-    final pagoRemitosCubiertos = <String, Set<String>>{};
-    for (final p in pagosOrd) {
-      pagoRemitosCubiertos[p.id] = <String>{};
-    }
-
     int idxRemito = 0;
     for (final p in pagosOrd) {
       double restantePago = p.montoTotal;
@@ -458,12 +423,10 @@ class ReciboService {
         }
         if (restantePago >= deudaR) {
           remitoRestante[r.id] = 0;
-          pagoRemitosCubiertos[p.id]!.add(r.id);
           restantePago -= deudaR;
           idxRemito++;
         } else {
           remitoRestante[r.id] = deudaR - restantePago;
-          pagoRemitosCubiertos[p.id]!.add(r.id);
           restantePago = 0;
         }
       }
@@ -484,19 +447,6 @@ class ReciboService {
         });
       }
     }
-
-    // Pagos visibles (los que cubren al menos un remito pendiente)
-    final remitosConDeudaIds =
-        remitoRestante.entries
-            .where((e) => e.value > 0)
-            .map((e) => e.key)
-            .toSet();
-    final pagosVisibles = pagosOrd
-        .where((p) => pagoRemitosCubiertos[p.id]!
-            .any((rid) => remitosConDeudaIds.contains(rid)))
-        .toList();
-    final totalPagosVisibles =
-        pagosVisibles.fold<double>(0, (s, p) => s + p.montoTotal);
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -590,66 +540,6 @@ class ReciboService {
             ],
           ),
 
-        pw.SizedBox(height: 12),
-
-        // Pagos aplicados
-        if (pagosVisibles.isNotEmpty) ...[
-          pw.Text('PAGOS APLICADOS',
-              style: pw.TextStyle(
-                fontSize: 10,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColors.grey500,
-                letterSpacing: 1,
-              )),
-          pw.SizedBox(height: 6),
-          pw.Table(
-            border:
-                pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
-            columnWidths: {
-              0: const pw.FlexColumnWidth(1),
-              1: const pw.FlexColumnWidth(1),
-              2: const pw.FlexColumnWidth(1),
-              3: const pw.FlexColumnWidth(1.5),
-            },
-            children: [
-              pw.TableRow(
-                decoration:
-                    pw.BoxDecoration(color: PdfColor.fromHex('#F5F5F5')),
-                children: [
-                  _tableCell('Recibo', header: true),
-                  _tableCell('Fecha', header: true),
-                  _tableCell('Monto', header: true),
-                  _tableCell('Aplicación', header: true),
-                ],
-              ),
-              ...pagosVisibles.map((p) {
-                final cubiertos = pagoRemitosCubiertos[p.id]!.length;
-                final nota = cubiertos <= 1
-                    ? 'Aplicado a 1 remito'
-                    : 'Cubre $cubiertos remitos';
-                return pw.TableRow(
-                  children: [
-                    _tableCell(p.numeroFormateado),
-                    _tableCell(formatFecha(p.fecha)),
-                    _tableCell(formatPesos(p.montoTotal)),
-                    _tableCell(nota),
-                  ],
-                );
-              }),
-              pw.TableRow(
-                decoration:
-                    pw.BoxDecoration(color: PdfColor.fromHex('#F5F5F5')),
-                children: [
-                  _tableCell(''),
-                  _tableCell('TOTAL', header: true),
-                  _tableCell(formatPesos(totalPagosVisibles),
-                      header: true),
-                  _tableCell(''),
-                ],
-              ),
-            ],
-          ),
-        ],
       ],
     );
   }

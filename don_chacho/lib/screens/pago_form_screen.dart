@@ -701,8 +701,7 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
       medios: medios,
       cliente: cliente,
       vendedor: vendedor,
-      saldoAnterior: saldoAnterior,
-      saldoNuevo: saldoNuevo,
+      saldoActual: app.getSaldoCliente(_clienteId!),
       remitosCliente: remitosParaRecibo,
       pagosCliente: pagosParaRecibo,
     );
