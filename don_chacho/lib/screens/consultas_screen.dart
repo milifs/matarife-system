@@ -1661,12 +1661,15 @@ class _HistorialTabState extends State<_HistorialTab> {
         pagosPrevios.fold<double>(0, (s, p) => s + p.montoTotal) +
             pago.montoTotal;
     final saldoRestante = pago.saldoNuevo ?? (totalRemitos - pagosHastaEste);
+    final saldoAnterior =
+        pago.saldoAnterior ?? (saldoRestante + pago.montoTotal);
 
     await ReciboService.generarYCompartirRecibo(
       pago: pago,
       medios: medios,
       cliente: cliente,
       vendedor: vendedor,
+      saldoAnterior: saldoAnterior,
       saldoRestante: saldoRestante,
       remitosCliente: remitosCliente,
       pagosCliente: pagosPrevios,

@@ -25,6 +25,7 @@ class ReciboService {
     required List<PagoMedio> medios,
     required Cliente cliente,
     Vendedor? vendedor,
+    double? saldoAnterior,
     double? saldoRestante,
     List<Remito> remitosCliente = const [],
     List<Pago> pagosCliente = const [],
@@ -35,6 +36,7 @@ class ReciboService {
       medios: medios,
       cliente: cliente,
       vendedor: vendedor,
+      saldoAnterior: saldoAnterior,
       saldoRestante: saldoRestante,
       remitosCliente: remitosCliente,
       pagosCliente: pagosCliente,
@@ -71,6 +73,7 @@ class ReciboService {
     required List<PagoMedio> medios,
     required Cliente cliente,
     Vendedor? vendedor,
+    double? saldoAnterior,
     double? saldoRestante,
     List<Remito> remitosCliente = const [],
     List<Pago> pagosCliente = const [],
@@ -293,6 +296,33 @@ class ReciboService {
                 ),
                 child: pw.Column(
                   children: [
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text('Saldo anterior',
+                            style: const pw.TextStyle(
+                                fontSize: 11, color: PdfColors.grey600)),
+                        pw.Text(formatPesos(saldoAnterior ?? 0),
+                            style: const pw.TextStyle(fontSize: 11)),
+                      ],
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text('Pago realizado',
+                            style: const pw.TextStyle(
+                                fontSize: 11, color: PdfColors.grey600)),
+                        pw.Text('-${formatPesos(pago.montoTotal)}',
+                            style: pw.TextStyle(
+                              fontSize: 11,
+                              color: PdfColor.fromHex('#2E7D32'),
+                            )),
+                      ],
+                    ),
+                    pw.SizedBox(height: 6),
+                    pw.Divider(color: PdfColors.grey300, thickness: 0.5),
+                    pw.SizedBox(height: 6),
                     pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [

@@ -701,6 +701,7 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
       medios: medios,
       cliente: cliente,
       vendedor: vendedor,
+      saldoAnterior: saldoAnterior,
       saldoRestante: saldoNuevo,
       remitosCliente: remitosParaRecibo,
       pagosCliente: pagosParaRecibo,
