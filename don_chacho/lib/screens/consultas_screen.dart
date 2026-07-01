@@ -11,6 +11,7 @@ import '../utils/formatters.dart';
 import '../utils/theme.dart';
 import '../services/recibo_service.dart';
 import '../services/estado_cuenta_service.dart';
+import '../services/ruta_cobranza_service.dart';
 import 'pago_form_screen.dart';
 import 'remito_form_screen.dart';
 import 'nota_pedido_form_screen.dart';
@@ -1793,6 +1794,10 @@ class _DirectorioTabState extends State<_DirectorioTab> {
   String _busqueda = '';
   String? _filtroVendedorId;
 
+  // Ruta de cobranza: 'deben' = todos los que deben, 'vencidos' = solo vencidos
+  String _modoRuta = 'deben';
+  bool _generandoRuta = false;
+
   @override
   void dispose() {
     _busquedaCtrl.dispose();
@@ -1828,6 +1833,7 @@ class _DirectorioTabState extends State<_DirectorioTab> {
 
         return Column(
           children: [
+            _buildRutaCobranza(context, app),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: TextField(
@@ -1997,6 +2003,290 @@ class _DirectorioTabState extends State<_DirectorioTab> {
                     ),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  // ── Ruta de cobranza ─────────────────────────────────────
+  Widget _buildRutaCobranza(BuildContext context, AppProvider app) {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      color: AppTheme.info.withOpacity(0.06),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: const [
+                Icon(Icons.route, size: 20, color: AppTheme.info),
+                SizedBox(width: 8),
+                Text('Ruta de cobranza',
+                    style: TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w600)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Arma la ruta hacia los clientes que deben, ordenada por cercanía a tu ubicación.',
+              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: _modoRuta,
+                    decoration: InputDecoration(
+                      labelText: 'Incluir',
+                      isDense: true,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                          value: 'deben',
+                          child: Text('Clientes que deben')),
+                      DropdownMenuItem(
+                          value: 'vencidos',
+                          child: Text('Solo remitos vencidos')),
+                    ],
+                    onChanged: _generandoRuta
+                        ? null
+                        : (v) => setState(() => _modoRuta = v ?? 'deben'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  height: 44,
+                  child: ElevatedButton.icon(
+                    onPressed:
+                        _generandoRuta ? null : () => _armarRuta(context, app),
+                    icon: _generandoRuta
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.directions, size: 18),
+                    label: Text(_generandoRuta ? 'Armando...' : 'Armar'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Devuelve los clientes deudores según el modo elegido, respetando el
+  /// filtro de vendedor activo.
+  List<Cliente> _clientesParaRuta(AppProvider app) {
+    List<Cliente> base;
+    if (_modoRuta == 'vencidos') {
+      base = app
+          .clientesConSaldoVencido()
+          .map((m) => m['cliente'] as Cliente)
+          .toList();
+    } else {
+      base = app.clientes.where((c) => app.getSaldoCliente(c.id) > 0).toList();
+    }
+    if (_filtroVendedorId != null) {
+      base = base.where((c) => c.vendedorId == _filtroVendedorId).toList();
+    }
+    return base;
+  }
+
+  Future<void> _armarRuta(BuildContext context, AppProvider app) async {
+    final deudores = _clientesParaRuta(app);
+
+    // Solo los que tienen alguna ubicación cargada
+    final conUbicacion = deudores
+        .where((c) =>
+            c.ubicacionUrl.trim().isNotEmpty || c.ubicacion.trim().isNotEmpty)
+        .toList();
+    final sinUbicacion = deudores.length - conUbicacion.length;
+
+    if (conUbicacion.isEmpty) {
+      if (!mounted) return;
+      final msg = deudores.isEmpty
+          ? 'No hay clientes que deban en este filtro.'
+          : 'Ninguno de los clientes deudores tiene ubicación cargada.';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(msg)));
+      return;
+    }
+
+    setState(() => _generandoRuta = true);
+
+    // Pedir ubicación actual (puede tardar/negarse)
+    final origen = await RutaCobranzaService.ubicacionActual();
+
+    final paradas = conUbicacion
+        .map((c) => ParadaRuta(c, RutaCobranzaService.coordsDeCliente(c)))
+        .toList();
+    final ordenadas =
+        RutaCobranzaService.ordenarPorCercania(paradas, origen);
+
+    if (!mounted) return;
+    setState(() => _generandoRuta = false);
+
+    _mostrarSheetRuta(context, ordenadas, origen, sinUbicacion);
+  }
+
+  void _mostrarSheetRuta(
+    BuildContext context,
+    List<ParadaRuta> paradas,
+    Coord? origen,
+    int sinUbicacion,
+  ) {
+    final url = RutaCobranzaService.construirUrl(paradas, origen);
+    final hayCoords = paradas.any((p) => p.tieneCoord);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          maxChildSize: 0.9,
+          minChildSize: 0.4,
+          builder: (ctx, scrollCtrl) {
+            return Column(
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppTheme.textHint.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.route,
+                          size: 20, color: AppTheme.info),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${paradas.length} parada${paradas.length == 1 ? '' : 's'}',
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      origen != null
+                          ? (hayCoords
+                              ? 'Ordenadas por cercanía a tu ubicación.'
+                              : 'Sin coordenadas: reordená las paradas en Google Maps.')
+                          : 'Sin tu ubicación: reordená las paradas en Google Maps.',
+                      style: const TextStyle(
+                          fontSize: 12, color: AppTheme.textSecondary),
+                    ),
+                  ),
+                ),
+                if (sinUbicacion > 0)
+                  Padding(
+                    padding:
+                        const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '$sinUbicacion cliente${sinUbicacion == 1 ? '' : 's'} sin ubicación quedó${sinUbicacion == 1 ? '' : 'aron'} fuera de la ruta.',
+                        style: const TextStyle(
+                            fontSize: 12, color: AppTheme.warning),
+                      ),
+                    ),
+                  ),
+                if (paradas.length > 10)
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Son muchas paradas: Google Maps puede mostrar solo las primeras. Conviene armar la ruta por vendedor.',
+                        style: TextStyle(
+                            fontSize: 12, color: AppTheme.warning),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ListView.builder(
+                    controller: scrollCtrl,
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    itemCount: paradas.length,
+                    itemBuilder: (ctx, i) {
+                      final p = paradas[i];
+                      final dir = p.cliente.ubicacion.trim();
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: CircleAvatar(
+                          radius: 14,
+                          backgroundColor: p.tieneCoord
+                              ? AppTheme.info
+                              : AppTheme.textHint,
+                          child: Text('${i + 1}',
+                              style: const TextStyle(
+                                  fontSize: 13, color: Colors.white)),
+                        ),
+                        title: Text(p.cliente.nombreRazonSocial,
+                            style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500)),
+                        subtitle: Text(
+                          dir.isNotEmpty
+                              ? dir
+                              : (p.tieneCoord
+                                  ? 'Ubicación por link de Maps'
+                                  : 'Sin dirección'),
+                          style: const TextStyle(fontSize: 12),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _abrirMaps(url);
+                        },
+                        icon: const Icon(Icons.map),
+                        label: const Text('Abrir en Google Maps'),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
         );
       },
     );
