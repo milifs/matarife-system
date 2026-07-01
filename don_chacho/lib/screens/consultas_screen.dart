@@ -22,7 +22,7 @@ class ConsultasScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 8,
+      length: 9,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Consultas'),
@@ -39,6 +39,7 @@ class ConsultasScreen extends StatelessWidget {
               Tab(text: 'Saldos'),
               Tab(text: 'Historial'),
               Tab(text: 'Directorio'),
+              Tab(text: 'Ruta'),
               Tab(text: 'Comisiones'),
               Tab(text: 'Eliminados'),
               Tab(text: 'Reporte'),
@@ -52,6 +53,7 @@ class ConsultasScreen extends StatelessWidget {
             _SaldosTab(),
             _HistorialTab(),
             _DirectorioTab(),
+            _RutaTab(),
             _ComisionesTab(),
             _EliminadosTab(),
             _ReporteTab(),
@@ -1794,10 +1796,6 @@ class _DirectorioTabState extends State<_DirectorioTab> {
   String _busqueda = '';
   String? _filtroVendedorId;
 
-  // Ruta de cobranza: 'deben' = todos los que deben, 'vencidos' = solo vencidos
-  String _modoRuta = 'deben';
-  bool _generandoRuta = false;
-
   @override
   void dispose() {
     _busquedaCtrl.dispose();
@@ -1833,7 +1831,6 @@ class _DirectorioTabState extends State<_DirectorioTab> {
 
         return Column(
           children: [
-            _buildRutaCobranza(context, app),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: TextField(
@@ -2008,125 +2005,293 @@ class _DirectorioTabState extends State<_DirectorioTab> {
     );
   }
 
-  // ── Ruta de cobranza ─────────────────────────────────────
-  Widget _buildRutaCobranza(BuildContext context, AppProvider app) {
-    return Card(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      color: AppTheme.info.withOpacity(0.06),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Future<void> _abrirMaps(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════
+// TAB 6: RUTA DE COBRANZA
+// ═══════════════════════════════════════════
+class _RutaTab extends StatefulWidget {
+  const _RutaTab();
+
+  @override
+  State<_RutaTab> createState() => _RutaTabState();
+}
+
+class _RutaTabState extends State<_RutaTab> {
+  final _busquedaCtrl = TextEditingController();
+  String _busqueda = '';
+  String? _filtroVendedorId;
+  bool _soloConSaldo = true;
+  bool _soloVencidos = false;
+  final Set<String> _seleccionados = {};
+  bool _generandoRuta = false;
+
+  @override
+  void dispose() {
+    _busquedaCtrl.dispose();
+    super.dispose();
+  }
+
+  bool _tieneUbicacion(Cliente c) =>
+      c.ubicacionUrl.trim().isNotEmpty || c.ubicacion.trim().isNotEmpty;
+
+  /// Aplica los filtros y devuelve los clientes candidatos ordenados A→Z.
+  List<Cliente> _candidatos(AppProvider app) {
+    final vencidosIds = _soloVencidos
+        ? app
+            .clientesConSaldoVencido()
+            .map((m) => (m['cliente'] as Cliente).id)
+            .toSet()
+        : null;
+
+    var lista = app.clientes.toList();
+    if (_filtroVendedorId != null) {
+      lista = lista.where((c) => c.vendedorId == _filtroVendedorId).toList();
+    }
+    if (_soloConSaldo) {
+      lista = lista.where((c) => app.getSaldoCliente(c.id) > 0).toList();
+    }
+    if (vencidosIds != null) {
+      lista = lista.where((c) => vencidosIds.contains(c.id)).toList();
+    }
+    if (_busqueda.isNotEmpty) {
+      lista = lista
+          .where((c) => c.nombreRazonSocial
+              .toLowerCase()
+              .contains(_busqueda.toLowerCase()))
+          .toList();
+    }
+    lista.sort((a, b) => a.nombreRazonSocial
+        .toLowerCase()
+        .compareTo(b.nombreRazonSocial.toLowerCase()));
+    return lista;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AppProvider>(
+      builder: (context, app, _) {
+        final candidatos = _candidatos(app);
+        final conUbicacion = candidatos.where(_tieneUbicacion).toList();
+        final seleccionadosValidos =
+            conUbicacion.where((c) => _seleccionados.contains(c.id)).toList();
+        final todosSeleccionados = conUbicacion.isNotEmpty &&
+            seleccionadosValidos.length == conUbicacion.length;
+
+        return Column(
           children: [
-            Row(
-              children: const [
-                Icon(Icons.route, size: 20, color: AppTheme.info),
-                SizedBox(width: 8),
-                Text('Ruta de cobranza',
-                    style: TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w600)),
-              ],
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Arma la ruta hacia los clientes que deben, ordenada por cercanía a tu ubicación.',
-              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: _modoRuta,
+            // ── Filtros ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Column(
+                children: [
+                  TextField(
+                    controller: _busquedaCtrl,
                     decoration: InputDecoration(
-                      labelText: 'Incluir',
+                      hintText: 'Buscar cliente...',
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      suffixIcon: _busqueda.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: () => setState(() {
+                                _busquedaCtrl.clear();
+                                _busqueda = '';
+                              }),
+                            )
+                          : null,
                       isDense: true,
                       border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8)),
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 10),
                     ),
-                    items: const [
-                      DropdownMenuItem(
-                          value: 'deben',
-                          child: Text('Clientes que deben')),
-                      DropdownMenuItem(
-                          value: 'vencidos',
-                          child: Text('Solo remitos vencidos')),
-                    ],
-                    onChanged: _generandoRuta
-                        ? null
-                        : (v) => setState(() => _modoRuta = v ?? 'deben'),
+                    onChanged: (v) => setState(() => _busqueda = v),
                   ),
-                ),
-                const SizedBox(width: 10),
-                SizedBox(
-                  height: 44,
+                  if (app.vendedores.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String?>(
+                      value: _filtroVendedorId,
+                      decoration: InputDecoration(
+                        labelText: 'Vendedor',
+                        isDense: true,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                            value: null, child: Text('Todos')),
+                        ...app.vendedores.map((v) => DropdownMenuItem(
+                              value: v.id,
+                              child: Text(v.nombreCompleto),
+                            )),
+                      ],
+                      onChanged: (v) =>
+                          setState(() => _filtroVendedorId = v),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      FilterChip(
+                        label: const Text('Con saldo pendiente'),
+                        selected: _soloConSaldo,
+                        onSelected: (v) =>
+                            setState(() => _soloConSaldo = v),
+                      ),
+                      const SizedBox(width: 8),
+                      FilterChip(
+                        label: const Text('Solo vencidos'),
+                        selected: _soloVencidos,
+                        onSelected: (v) =>
+                            setState(() => _soloVencidos = v),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            // ── Encabezado lista + seleccionar todos ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${seleccionadosValidos.length} de ${conUbicacion.length} seleccionados',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.textSecondary),
+                    ),
+                  ),
+                  if (conUbicacion.isNotEmpty)
+                    TextButton(
+                      onPressed: () => setState(() {
+                        if (todosSeleccionados) {
+                          for (final c in conUbicacion) {
+                            _seleccionados.remove(c.id);
+                          }
+                        } else {
+                          for (final c in conUbicacion) {
+                            _seleccionados.add(c.id);
+                          }
+                        }
+                      }),
+                      child: Text(
+                          todosSeleccionados ? 'Ninguno' : 'Todos'),
+                    ),
+                ],
+              ),
+            ),
+            // ── Lista de clientes ──
+            Expanded(
+              child: candidatos.isEmpty
+                  ? const Center(
+                      child: Text('No hay clientes con estos filtros',
+                          style:
+                              TextStyle(color: AppTheme.textSecondary)))
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                      itemCount: candidatos.length,
+                      itemBuilder: (context, i) {
+                        final c = candidatos[i];
+                        final vendedor = app.vendedorPorId(c.vendedorId);
+                        final saldo = app.getSaldoCliente(c.id);
+                        final tieneUbi = _tieneUbicacion(c);
+                        final sub = [
+                          if (vendedor != null) vendedor.nombreCompleto,
+                          if (saldo > 0) 'Debe ${formatPesos(saldo)}',
+                        ].join(' · ');
+
+                        if (!tieneUbi) {
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.location_off,
+                                size: 20, color: AppTheme.textHint),
+                            title: Text(c.nombreRazonSocial,
+                                style: const TextStyle(
+                                    fontSize: 14,
+                                    color: AppTheme.textHint)),
+                            subtitle: const Text('Sin ubicación cargada',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.textHint)),
+                          );
+                        }
+
+                        return CheckboxListTile(
+                          dense: true,
+                          controlAffinity:
+                              ListTileControlAffinity.leading,
+                          value: _seleccionados.contains(c.id),
+                          onChanged: (v) => setState(() {
+                            if (v == true) {
+                              _seleccionados.add(c.id);
+                            } else {
+                              _seleccionados.remove(c.id);
+                            }
+                          }),
+                          title: Text(c.nombreRazonSocial,
+                              style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500)),
+                          subtitle: sub.isNotEmpty
+                              ? Text(sub,
+                                  style: const TextStyle(fontSize: 12))
+                              : null,
+                        );
+                      },
+                    ),
+            ),
+            // ── Botón armar recorrido ──
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 48,
                   child: ElevatedButton.icon(
-                    onPressed:
-                        _generandoRuta ? null : () => _armarRuta(context, app),
+                    onPressed: (seleccionadosValidos.isEmpty ||
+                            _generandoRuta)
+                        ? null
+                        : () => _armarRuta(context, seleccionadosValidos),
                     icon: _generandoRuta
                         ? const SizedBox(
-                            width: 16,
-                            height: 16,
+                            width: 18,
+                            height: 18,
                             child: CircularProgressIndicator(
                                 strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.directions, size: 18),
-                    label: Text(_generandoRuta ? 'Armando...' : 'Armar'),
+                        : const Icon(Icons.directions),
+                    label: Text(_generandoRuta
+                        ? 'Armando recorrido...'
+                        : 'Armar recorrido (${seleccionadosValidos.length})'),
                   ),
                 ),
-              ],
+              ),
             ),
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 
-  /// Devuelve los clientes deudores según el modo elegido, respetando el
-  /// filtro de vendedor activo.
-  List<Cliente> _clientesParaRuta(AppProvider app) {
-    List<Cliente> base;
-    if (_modoRuta == 'vencidos') {
-      base = app
-          .clientesConSaldoVencido()
-          .map((m) => m['cliente'] as Cliente)
-          .toList();
-    } else {
-      base = app.clientes.where((c) => app.getSaldoCliente(c.id) > 0).toList();
-    }
-    if (_filtroVendedorId != null) {
-      base = base.where((c) => c.vendedorId == _filtroVendedorId).toList();
-    }
-    return base;
-  }
-
-  Future<void> _armarRuta(BuildContext context, AppProvider app) async {
-    final deudores = _clientesParaRuta(app);
-
-    // Solo los que tienen alguna ubicación cargada
-    final conUbicacion = deudores
-        .where((c) =>
-            c.ubicacionUrl.trim().isNotEmpty || c.ubicacion.trim().isNotEmpty)
-        .toList();
-    final sinUbicacion = deudores.length - conUbicacion.length;
-
-    if (conUbicacion.isEmpty) {
-      if (!mounted) return;
-      final msg = deudores.isEmpty
-          ? 'No hay clientes que deban en este filtro.'
-          : 'Ninguno de los clientes deudores tiene ubicación cargada.';
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(msg)));
-      return;
-    }
-
+  Future<void> _armarRuta(
+      BuildContext context, List<Cliente> elegidos) async {
+    if (elegidos.isEmpty) return;
     setState(() => _generandoRuta = true);
 
-    // Pedir ubicación actual (puede tardar/negarse)
     final origen = await RutaCobranzaService.ubicacionActual();
-
-    final paradas = conUbicacion
+    final paradas = elegidos
         .map((c) => ParadaRuta(c, RutaCobranzaService.coordsDeCliente(c)))
         .toList();
     final ordenadas =
@@ -2134,15 +2299,13 @@ class _DirectorioTabState extends State<_DirectorioTab> {
 
     if (!mounted) return;
     setState(() => _generandoRuta = false);
-
-    _mostrarSheetRuta(context, ordenadas, origen, sinUbicacion);
+    _mostrarSheetRuta(context, ordenadas, origen);
   }
 
   void _mostrarSheetRuta(
     BuildContext context,
     List<ParadaRuta> paradas,
     Coord? origen,
-    int sinUbicacion,
   ) {
     final url = RutaCobranzaService.construirUrl(paradas, origen);
     final hayCoords = paradas.any((p) => p.tieneCoord);
@@ -2203,26 +2366,13 @@ class _DirectorioTabState extends State<_DirectorioTab> {
                     ),
                   ),
                 ),
-                if (sinUbicacion > 0)
-                  Padding(
-                    padding:
-                        const EdgeInsets.fromLTRB(16, 6, 16, 0),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        '$sinUbicacion cliente${sinUbicacion == 1 ? '' : 's'} sin ubicación quedó${sinUbicacion == 1 ? '' : 'aron'} fuera de la ruta.',
-                        style: const TextStyle(
-                            fontSize: 12, color: AppTheme.warning),
-                      ),
-                    ),
-                  ),
                 if (paradas.length > 10)
                   const Padding(
                     padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
                     child: Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        'Son muchas paradas: Google Maps puede mostrar solo las primeras. Conviene armar la ruta por vendedor.',
+                        'Son muchas paradas: Google Maps puede mostrar solo las primeras. Conviene dividir el recorrido.',
                         style: TextStyle(
                             fontSize: 12, color: AppTheme.warning),
                       ),
@@ -2301,7 +2451,7 @@ class _DirectorioTabState extends State<_DirectorioTab> {
 }
 
 // ═══════════════════════════════════════════
-// TAB 6: COMISIONES
+// TAB 7: COMISIONES
 // ═══════════════════════════════════════════
 class _ComisionesTab extends StatefulWidget {
   const _ComisionesTab();
