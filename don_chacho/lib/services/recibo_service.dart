@@ -25,7 +25,7 @@ class ReciboService {
     required List<PagoMedio> medios,
     required Cliente cliente,
     Vendedor? vendedor,
-    double? saldoActual,
+    double? saldoRestante,
     List<Remito> remitosCliente = const [],
     List<Pago> pagosCliente = const [],
   }) async {
@@ -35,7 +35,7 @@ class ReciboService {
       medios: medios,
       cliente: cliente,
       vendedor: vendedor,
-      saldoActual: saldoActual,
+      saldoRestante: saldoRestante,
       remitosCliente: remitosCliente,
       pagosCliente: pagosCliente,
       logo: logo,
@@ -71,7 +71,7 @@ class ReciboService {
     required List<PagoMedio> medios,
     required Cliente cliente,
     Vendedor? vendedor,
-    double? saldoActual,
+    double? saldoRestante,
     List<Remito> remitosCliente = const [],
     List<Pago> pagosCliente = const [],
     required pw.MemoryImage logo,
@@ -302,11 +302,11 @@ class ReciboService {
                               fontWeight: pw.FontWeight.bold,
                             )),
                         pw.Text(
-                          formatPesos(saldoActual ?? 0),
+                          formatPesos(saldoRestante ?? 0),
                           style: pw.TextStyle(
                             fontSize: 16,
                             fontWeight: pw.FontWeight.bold,
-                            color: (saldoActual ?? 0) > 0
+                            color: (saldoRestante ?? 0) > 0
                                 ? PdfColor.fromHex('#C62828')
                                 : PdfColor.fromHex('#2E7D32'),
                           ),

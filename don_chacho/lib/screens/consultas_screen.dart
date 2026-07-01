@@ -1639,19 +1639,37 @@ class _HistorialTabState extends State<_HistorialTab> {
     final vendedor = app.vendedorPorId(cliente.vendedorId);
     final medios = await app.getMediosDePago(pago.id);
 
+    final remitosCliente = app.remitos
+        .where((r) => r.clienteId == pago.clienteId && r.esConfirmado)
+        .toList();
+    // Solo los pagos ANTERIORES a este (por fecha, luego número). Así la tabla
+    // de deuda y el saldo restante reflejan el estado JUSTO DESPUÉS de este
+    // pago, no el actual.
+    final pagosPrevios = app.pagos
+        .where((p) => p.clienteId == pago.clienteId)
+        .where((p) {
+          final cmp = p.fecha.compareTo(pago.fecha);
+          return cmp != 0 ? cmp < 0 : p.numero < pago.numero;
+        })
+        .toList();
+
+    // Saldo restante = saldo guardado del pago; si es viejo y está en NULL,
+    // se reconstruye (remitos confirmados − pagos hasta este inclusive).
+    final totalRemitos =
+        remitosCliente.fold<double>(0, (s, r) => s + r.totalPesos);
+    final pagosHastaEste =
+        pagosPrevios.fold<double>(0, (s, p) => s + p.montoTotal) +
+            pago.montoTotal;
+    final saldoRestante = pago.saldoNuevo ?? (totalRemitos - pagosHastaEste);
+
     await ReciboService.generarYCompartirRecibo(
       pago: pago,
       medios: medios,
       cliente: cliente,
       vendedor: vendedor,
-      saldoActual: app.getSaldoCliente(pago.clienteId),
-      remitosCliente: app.remitos
-          .where((r) => r.clienteId == pago.clienteId && r.esConfirmado)
-          .toList(),
-      // Excluir el pago actual para que la tabla muestre el estado PREVIO al pago
-      pagosCliente: app.pagos
-          .where((p) => p.clienteId == pago.clienteId && p.id != pago.id)
-          .toList(),
+      saldoRestante: saldoRestante,
+      remitosCliente: remitosCliente,
+      pagosCliente: pagosPrevios,
     );
   }
 }
