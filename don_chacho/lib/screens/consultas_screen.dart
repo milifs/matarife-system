@@ -3091,15 +3091,33 @@ class _ReporteTabState extends State<_ReporteTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Leyenda de colores
+          const Padding(
+            padding: EdgeInsets.only(bottom: 10),
+            child: Wrap(
+              spacing: 16,
+              runSpacing: 6,
+              children: [
+                _Leyenda(
+                  color: Color(0xFFB71C1C),
+                  texto: 'Remito · suma deuda (+)',
+                ),
+                _Leyenda(
+                  color: Color(0xFF2E7D32),
+                  texto: 'Pago · resta deuda (−)',
+                ),
+              ],
+            ),
+          ),
           // Tabla
           Table(
             border: TableBorder.all(color: const Color(0xFFE0E0E0), width: 1),
             columnWidths: const {
-              0: FixedColumnWidth(82),   // Fecha
-              1: FixedColumnWidth(64),   // ID
+              0: FixedColumnWidth(78),   // Fecha
+              1: FixedColumnWidth(60),   // ID
               2: FlexColumnWidth(1),     // Monto
-              3: FixedColumnWidth(82),   // Estado
-              4: FlexColumnWidth(1),     // Saldo
+              3: FixedColumnWidth(84),   // Estado
+              4: FlexColumnWidth(1),     // Saldo acum.
             },
             children: [
               // Header
@@ -3111,7 +3129,7 @@ class _ReporteTabState extends State<_ReporteTab> {
                   _TH('ID'),
                   _TH('Monto'),
                   _TH('Estado'),
-                  _TH('Saldo'),
+                  _TH('Saldo acum.'),
                 ],
               ),
               // Filas con saldo acumulado
@@ -3123,7 +3141,8 @@ class _ReporteTabState extends State<_ReporteTab> {
 
                   final color =
                       esRemito ? const Color(0xFFB71C1C) : const Color(0xFF2E7D32);
-                  final montoStr = formatPesos(mov.monto);
+                  final montoStr =
+                      '${esRemito ? '+' : '−'}${formatPesos(mov.monto)}';
                   final saldoColor = saldoAcum > 0
                       ? const Color(0xFFB71C1C)
                       : const Color(0xFF2E7D32);
@@ -3157,6 +3176,10 @@ class _ReporteTabState extends State<_ReporteTab> {
                         estadoFg = const Color(0xFF2E7D32);
                       }
                     }
+                  } else {
+                    estadoStr = 'Pago';
+                    estadoColor = const Color(0xFFE8F5E9);
+                    estadoFg = const Color(0xFF2E7D32);
                   }
 
                   return TableRow(
@@ -3172,28 +3195,26 @@ class _ReporteTabState extends State<_ReporteTab> {
                         bold: true,
                         align: TextAlign.right,
                       ),
-                      esRemito
-                          ? Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 4, vertical: 6),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 5, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: estadoColor,
-                                  borderRadius: BorderRadius.circular(5),
-                                ),
-                                child: Text(
-                                  estadoStr,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                      fontSize: 10,
-                                      color: estadoFg,
-                                      fontWeight: FontWeight.w600),
-                                ),
-                              ),
-                            )
-                          : const SizedBox.shrink(),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 5, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: estadoColor,
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Text(
+                            estadoStr,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                fontSize: 10,
+                                color: estadoFg,
+                                fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
                       _TD(
                         formatPesos(saldoAcum),
                         color: saldoColor,
@@ -3271,6 +3292,36 @@ class _Movimiento {
     this.remitoFecha,
     this.remitoId,
   });
+}
+
+// Item de leyenda de colores (punto + texto)
+class _Leyenda extends StatelessWidget {
+  final Color color;
+  final String texto;
+  const _Leyenda({required this.color, required this.texto});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          texto,
+          style: const TextStyle(
+              fontSize: 11, color: AppTheme.textSecondary),
+        ),
+      ],
+    );
+  }
 }
 
 // Widgets auxiliares para la tabla

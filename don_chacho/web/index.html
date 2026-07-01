@@ -94,6 +94,7 @@
         var splash = document.getElementById('splash');
         if (!splash || splash.dataset.hidden) return;
         splash.dataset.hidden = '1';
+        splash.style.pointerEvents = 'none';
         splash.classList.add('fade-out');
         setTimeout(function () {
           if (splash.parentNode) splash.parentNode.removeChild(splash);
