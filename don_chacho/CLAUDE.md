@@ -65,8 +65,8 @@ ALTER TABLE permisos DISABLE ROW LEVEL SECURITY;
 
 ```
 don_chacho/lib/
-├── main.dart                          # Login + sesión + tabs dinámicas por permisos + FAB dinámico (admin→remito, secretaria→NDP)
-├── models/models.dart                 # Vendedor, Cliente, Remito, RemitoItem, Pago, PagoMedio, CostoSemanal, NotaPedido, NotaPedidoItem, Permiso, Rol, Usuario
+├── main.dart                          # Login + sesión + tabs dinámicas por permisos + menú de acciones del FAB (admin: remito + NDP; secretaria: NDP)
+├── models/models.dart                 # Vendedor, Cliente, Remito, RemitoItem, Pago, PagoMedio, CostoSemanal, NotaPedido, NotaPedidoItem, Permiso, Rol, Usuario, RemitoEliminado, PagoEliminado
 ├── providers/app_provider.dart        # Estado global, FIFO, saldos, permisos, usuarioActual, NDPs
 ├── services/
 │   ├── auth_service.dart              # Login SHA-256, sesión persistente SharedPreferences, CRUD usuarios/roles
@@ -100,9 +100,14 @@ don_chacho/lib/
 - `clientes` (id, vendedor_id, nombre_razon_social, telefono, plazo_pago_dias, ubicacion, ubicacion_url, creado_en)
 - `remitos` (id, cliente_id, fecha, numero, foto_url, total_kg, total_pesos, estado, creado_por, confirmado_por, confirmado_en, motivo_rechazo, creado_en)
 - `remito_items` (id, remito_id, tipo_carne, cantidad_medias, kg_total, precio_por_kg)
-- `pagos` (id, cliente_id, fecha, numero, monto_total, neto_recibido, creado_en)
+- `pagos` (id, cliente_id, fecha, numero, monto_total, neto_recibido, `saldo_anterior` [nullable], `saldo_nuevo` [nullable], creado_en) — saldo_anterior/saldo_nuevo se guardan al crear el pago para que los recibos PDF reimpresos muestren los saldos históricos correctos (v18.11)
 - `pago_medios` (id, pago_id, medio, monto, neto_recibido)
 - `costos_semana` (id, semana_inicio, costo_por_kg [nullable legacy], costo_por_kg_novillo, costo_por_kg_cerdo, creado_en)
+
+### Tablas de auditoría (eliminados, v18.11)
+- `remitos_eliminados` (id UUID PK, remito_id, cliente_id, fecha, numero, total_kg, total_pesos, eliminado_en, eliminado_por TEXT) — RLS deshabilitado
+- `pagos_eliminados` (id UUID PK, pago_id, cliente_id, fecha, numero, monto_total, medios JSONB, observacion, eliminado_en, eliminado_por) — RLS deshabilitado
+- Al eliminar un remito o pago, antes de borrarlo se inserta una fila en la tabla de auditoría correspondiente (consultable en Consultas > Eliminados)
 
 ### Tablas de permisos (v17)
 - `permisos` (id TEXT PK, nombre, descripcion) — 12 permisos predefinidos
@@ -122,6 +127,10 @@ don_chacho/lib/
 4. `supabase_fix_costo_nullable.sql` — columna costo_por_kg nullable + default 0
 5. `supabase_migration_v17_usuarios.sql` — usuarios, roles, permisos, estado remitos, RLS disabled
 6. `supabase_migration_v18_notas_pedido.sql` — tablas notas_pedido + nota_pedido_items
+7. `supabase_migration_indices.sql` — 6 índices de performance (v18.10)
+8. Columnas `saldo_anterior` / `saldo_nuevo` en `pagos` (v18.11) — agregar manualmente en SQL Editor si no existen
+9. Tabla `pagos_eliminados` (v18.11) — auditoría de pagos borrados
+10. `supabase_migration_remitos_eliminados.sql` — tabla `remitos_eliminados` de auditoría (v18.11, en raíz del repo)
 
 ### MedioPago enum en Dart
 `efectivo`, `transferencia`, `cheque`
@@ -132,11 +141,13 @@ don_chacho/lib/
 - Pantalla de login con usuario + contraseña
 - Sesión persistente (SharedPreferences en web = localStorage)
 - UI dinámica: tabs del menú inferior se ocultan según permisos
-- FAB (+): admin ve "Nuevo remito", secretaria ve "Nueva nota de pedido"
+- FAB (+): admin ve "Nuevo remito" **y** "Nueva nota de pedido" (v18.11, ambas opciones); secretaria ve solo "Nueva nota de pedido". La NDP creada por admin también queda `pendiente` hasta confirmarse
 - Badge del FAB incluye remitos pendientes + NDPs pendientes
 
 ### Dashboard (home_screen)
 - KPIs de la semana: kg vendidos (novillo/cerdo), venta bruta, ganancia neta
+- Cards de kg por tipo muestran también la cantidad de medias reses ("N medias")
+- **Botón ojo en AppBar (v18.11)**: ofusca todos los valores monetarios y de kg (los reemplaza por `••••`). Toggle `_ofuscado` con ícono visibility/visibility_off. Útil para mostrar la pantalla sin revelar números
 - Navegación `<` / `>` para ver KPIs de semanas anteriores (solo admin). `>` deshabilitado en semana actual.
 - Saldo total a cobrar + contador de vencidos
 - Costo/kg novillo y cerdo con botón "Cargar"
@@ -160,17 +171,21 @@ don_chacho/lib/
 - **PDF NDP** (`estado_cuenta_service.generarPdfNotaPedido`): tabla con columnas Descripción/Medias/Kg por media/Total kg/**Precio por kg.**/Subtotal. Total nota = sum(item.totalKg × item.precioPorMedia). Muestra estado y número de remito generado si confirmada
 
 ### PDFs generados (4 tipos)
-1. **Recibo de pago** (recibo_service.dart): medios + saldo anterior/nuevo + detalle deuda FIFO
+1. **Recibo de pago** (recibo_service.dart): encabezado con **fecha + hora HH:MM** (de `creado_en`) + medios de pago + total pagado + bloque de saldos (**Saldo anterior − Pago realizado → SALDO RESTANTE TOTAL** + **Saldo vencido** siempre visible) + tabla de detalle de deuda pendiente. **NO** incluye ya la sección "Pagos aplicados" (v18.12). Los saldos son **históricos por pago**: lee `saldo_anterior`/`saldo_nuevo` guardados; si están en NULL reconstruye (remitos confirmados − pagos hasta ese inclusive). La tabla de deuda usa solo los pagos **previos** a este + el pago actual, de modo que el saldo restante, el vencido y la suma de la tabla **concuerdan** entre sí y encadenan entre recibos (saldo anterior de un pago = restante del anterior).
 2. **Estado de cuenta cliente** (estado_cuenta_service.dart): remitos pendientes + pagos aplicados FIFO
 3. **Reporte vendedor** (estado_cuenta_service.dart): consolidado multi-página por cliente
 4. **Nota de pedido** (estado_cuenta_service.dart): detalle kg individuales por media
 
-### Consultas (5 tabs en consultas_screen.dart)
-- **Vencidos** (1° tab): lista todos los remitos vencidos de todos los clientes (FIFO real). Tarjeta resumen con count + deuda total. Ordenados por días vencido desc. Tap abre remito si tiene `editar_remito`.
-- **Ganancias**: rango fechas + atajos, ganancia por tipo carne con costos históricos, ranking vendedor/cliente
+### Consultas (8 tabs en consultas_screen.dart)
+Orden: Vencidos · Ganancias · Saldos · Historial · Directorio · Comisiones · Eliminados · Reporte
+- **Vencidos** (1° tab): lista todos los remitos vencidos de todos los clientes (FIFO real). Tarjeta resumen con count + deuda total. Ordenados por días vencido desc. Tap abre remito si tiene `editar_remito`. Filtro por vendedor + link Google Maps en cada tarjeta.
+- **Ganancias**: rango fechas + atajos, ganancia por tipo carne con costos históricos, ranking vendedor/cliente. Descuenta la comisión de transferencias (6.2%) de la ganancia semanal.
 - **Saldos**: por vendedor expandible, FilterChip "Solo vencidos" con FIFO real
 - **Historial**: remitos + pagos + NDPs unificados. Chips: Todos / Remitos / Pagos / Notas de Pedido. NDPs muestran badge "NP" y estado. PDF descargable en pagos y NDPs. Tap en pago abre vista solo-lectura (con botón eliminar). NDPs pendientes son clickeables → abre formulario de edición
-- **Directorio**: clientes con ubicación y link Google Maps
+- **Directorio**: clientes con ubicación y link Google Maps. Filtro por vendedor.
+- **Comisiones**: selección de vendedor + rango fechas, % comisión con cálculo automático, PDF de liquidación
+- **Eliminados (v18.11)**: 2 sub-tabs (Pagos / Remitos). Lista de auditoría de pagos y remitos eliminados, con fecha, número, monto y quién/cuándo los borró. Lee de `pagos_eliminados` y `remitos_eliminados`
+- **Reporte (v18.11)**: estado de cuenta por cliente en pantalla (selector de cliente A→Z). Tabla unificada de movimientos (remitos en rojo, pagos en verde) ordenados cronológicamente, con columnas Fecha / ID / Monto / Estado / **Saldo acumulado**. Marca remitos Pagado/Vencido con FIFO. Sin columna Descripción (ajustado para mobile)
 
 ### Búsqueda de cliente — patrón estándar
 Todas las pantallas con selector/filtro de cliente usan el mismo patrón de dos pasos:
@@ -182,6 +197,8 @@ Pantallas que lo implementan: `remito_form_screen.dart`, `pago_form_screen.dart`
 ### Registrar Pago (pago_form_screen.dart)
 - TextField + Dropdown A→Z (patrón estándar, reemplazó al Autocomplete)
 - Cuando viene con `clienteInicial` (desde ficha de cliente), muestra cliente fijo
+- Muestra el **saldo vencido** del cliente (`app.saldoVencidoCliente`) al seleccionarlo, en rojo si > 0 (v18.11)
+- Si falla el guardado del pago, muestra el error en vez de seguir silenciosamente (v18.11)
 
 ### Ver/Eliminar Pago (pago_form_screen.dart modo edición)
 - **Los pagos NO se pueden editar** — editar causaba errores en saldos. Solo se pueden ver y eliminar.
@@ -287,10 +304,26 @@ vercel --prod
 | v17 | Login SHA-256 + sesión persistente, roles flexibles con permisos a la carta, confirmación de remitos (pendiente/confirmado/rechazado), UI dinámica por permisos, gestión usuarios/roles, bandeja de aprobación |
 | v18 | **Nota de Pedido**: flujo completo secretaria→admin. Formulario NDP con filas dinámicas (kg por media), cliente de lista o texto libre. Bandeja con 3 tabs. Conversión NDP→Remito al confirmar. PDF de NDP. Historial unificado con chip NDP. Filtro A→Z en Registrar Pago. FAB dinámico por rol. |
 | v18.10 | **Performance**: splash screen en `index.html`, build scripts (`build_web.bat`/`build_web.sh`), queries post-login en paralelo (`Future.wait`), N+1 remito items → 1 query (`getAllRemitoItems`), N+1 NDP items → 2 queries. Índices SQL en `supabase_migration_indices.sql`. |
+| v18.11 (junio) | Recibo unificado con detalle de deuda + saldo vencido; saldos históricos guardados en `pagos`; tab **Reporte** (estado de cuenta por cliente con saldo acumulado); tab **Eliminados** (auditoría de remitos + pagos borrados, tablas `remitos_eliminados`/`pagos_eliminados`); ofuscar KPIs en home; filtro vendedor en Vencidos y Directorio; vendedor en bandeja/PDF de NDP; admin puede crear NDP desde el FAB; varios fixes de recibo FIFO. |
+| v18.12 (01/07) | **Recibo de pago corregido y simplificado**: muestra saldo histórico por pago (no el saldo actual), con desglose Saldo anterior − Pago realizado → Saldo restante total + Saldo vencido + tabla de deuda, todo concordante entre sí. Se agrega **hora HH:MM** al encabezado y se quita la sección "Pagos aplicados". Backfill SQL (`supabase_backfill_saldos_pagos.sql`) que rellena `saldo_anterior`/`saldo_nuevo` de todos los pagos viejos. En Historial > Remitos no se puede editar un remito. Remito/NDP/Pago: todos eliminables, consultables en Eliminados y piden observación al borrar. |
 
-## ESTADO ACTUAL (v18.10) — EN PRODUCCIÓN
+## ESTADO ACTUAL (v18.12) — EN PRODUCCIÓN
 
-Deployada el 12/05/2026. Login funciona con admin/admin123. Flutter 3.41.8.
+Deployada el 01/07/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`
+
+### Cambios v18.12 (01/07/2026)
+1. `recibo_service.dart` + `consultas_screen.dart` + `pago_form_screen.dart`: **recibo de pago rehecho**. El saldo del recibo es histórico (foto del momento del pago), leído de `saldo_anterior`/`saldo_nuevo` guardados (con fallback que reconstruye si están NULL). La tabla de deuda usa solo los pagos previos + el pago actual, de modo que restante, vencido y suma de la tabla concuerdan. Bloque de saldos: Saldo anterior − Pago realizado → SALDO RESTANTE TOTAL + Saldo vencido (siempre). Encabezado con **hora HH:MM** (`_formatHora` sobre `creado_en`). Eliminada la sección "Pagos aplicados".
+2. SQL `supabase_backfill_saldos_pagos.sql` (raíz del repo): UPDATE con window function que rellena `saldo_anterior`/`saldo_nuevo` de todos los pagos en orden cronológico (fecha, numero). Correr una vez. **Ya ejecutado en producción.**
+3. Rama de trabajo: `fix-recibo-saldo-historial` (no mergeada a main).
+
+### Cambios v18.11 (08/06/2026 al 29/06/2026)
+1. `main.dart`: el menú del FAB para admin ahora ofrece **"Nueva nota de pedido"** además de "Nuevo remito" (abre `NotaPedidoFormScreen`, queda pendiente). (29/06)
+2. `recibo_service.dart` + `pago_form_screen.dart` + `models.dart`: **saldo vencido** en el formulario de pago y en el recibo PDF. Pago guarda `saldo_anterior`/`saldo_nuevo` para recibos reimpresos correctos. Fixes en el detalle de deuda FIFO del recibo: muestra estado previo al pago, descuenta el pago actual, y el saldo vencido no desaparece al pagar el monto exacto.
+3. `consultas_screen.dart`: nuevos tabs **Reporte** (estado de cuenta por cliente con columna Saldo acumulado) y **Eliminados** (2 sub-tabs Pagos/Remitos). Total 8 tabs. Filtro de vendedor en Vencidos y Directorio. Link Maps en tarjetas de Vencidos. Ganancias descuenta comisión de transferencias.
+4. `models.dart` + `database_service.dart` + `app_provider.dart`: modelos `RemitoEliminado` y `PagoEliminado` + métodos de auditoría. Al eliminar remito/pago se inserta primero en la tabla de auditoría. Nuevo método `saldoVencidoCliente(clienteId)`.
+5. `home_screen.dart`: botón ojo para **ofuscar KPIs** (`••••`); cards de kg muestran cantidad de medias; vendedores ordenados A→Z en filtros.
+6. `bandeja_remitos_screen.dart` + PDF NDP: muestran el vendedor del cliente. Ficha de cliente sin totales.
+7. SQL: tablas `remitos_eliminados` (`supabase_migration_remitos_eliminados.sql`) y `pagos_eliminados`; columnas `saldo_anterior`/`saldo_nuevo` en `pagos`.
 
 ### Cambios v18.10 (12/05/2026)
 1. `web/index.html`: splash screen inline — logo 120×120px con bordes redondeados, texto "Granja Don Chacho", spinner CSS rojo (#C62828), "Cargando...". Se oculta con fade-out 300ms al evento `flutter-first-frame`, fallback 8 segundos.
@@ -362,6 +395,11 @@ URL: `https://web-six-indol-svg13avcfl.vercel.app`
 ### AppProvider — métodos clave (v18.5 agregados)
 - `remitosVencidosCliente(String clienteId)`: cuenta remitos con deuda vencida para un cliente (FIFO)
 - `todosRemitosVencidos()`: lista todos los remitos vencidos de todos los clientes con contexto (remito, cliente, vendedor, diasVencido, deuda), ordenados por días vencido desc
+
+### AppProvider — métodos clave (v18.11 agregados)
+- `saldoVencidoCliente(String clienteId)`: monto total vencido del cliente vía FIFO (suma deuda de remitos cuyo vencimiento ya pasó)
+- `remitosEliminados` / `pagosEliminados`: getters de las listas de auditoría (cargadas en `cargarDatos`)
+- `eliminarRemito(remitoId, {eliminadoPor})` / `eliminarPago(...)`: antes de borrar insertan una fila en la tabla de auditoría correspondiente, luego recalculan saldos
 
 ### AppProvider — métodos clave (v17)
 - `tienePermiso(String)`: verifica si el usuario actual tiene un permiso
