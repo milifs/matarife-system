@@ -3086,11 +3086,29 @@ class _ReporteTabState extends State<_ReporteTab> {
       );
     }
 
+    final vendedor = app.vendedorPorId(cliente.vendedorId);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Botón exportar PDF
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              onPressed: () => EstadoCuentaService.generarReporteCliente(
+                cliente: cliente,
+                vendedor: vendedor,
+                remitos: remitos,
+                pagos: pagos,
+                saldoTotal: saldo,
+              ),
+              icon: const Icon(Icons.picture_as_pdf, size: 18),
+              label: const Text('Exportar PDF'),
+            ),
+          ),
+          const SizedBox(height: 8),
           // Leyenda de colores
           const Padding(
             padding: EdgeInsets.only(bottom: 10),

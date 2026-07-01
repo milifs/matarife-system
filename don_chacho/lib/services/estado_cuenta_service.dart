@@ -922,6 +922,287 @@ class EstadoCuentaService {
   }
 
   // ═══════════════════════════════════════════
+  // REPORTE PDF POR CLIENTE (movimientos + saldo acumulado)
+  // Replica la tabla del tab "Reporte" en Consultas
+  // ═══════════════════════════════════════════
+
+  static Future<void> generarReporteCliente({
+    required Cliente cliente,
+    Vendedor? vendedor,
+    required List<Remito> remitos, // confirmados del cliente
+    required List<Pago> pagos,
+    required double saldoTotal,
+  }) async {
+    final logo = await _loadLogo();
+    final pdf = pw.Document();
+    final ahora = DateTime.now();
+    final plazo = cliente.plazoPagoDias;
+
+    final remitosOrd = [...remitos]
+      ..sort((a, b) {
+        final cmp = a.fecha.compareTo(b.fecha);
+        return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
+      });
+    final pagosOrd = [...pagos]..sort((a, b) => a.fecha.compareTo(b.fecha));
+
+    // FIFO: deuda pendiente por remito (para marcar estado)
+    final deudaRemito = <String, double>{};
+    for (final r in remitosOrd) {
+      deudaRemito[r.id] = r.totalPesos;
+    }
+    double pagoRestante = pagosOrd.fold(0.0, (s, p) => s + p.montoTotal);
+    for (final r in remitosOrd) {
+      if (pagoRestante <= 0) break;
+      final d = deudaRemito[r.id]!;
+      if (pagoRestante >= d) {
+        pagoRestante -= d;
+        deudaRemito[r.id] = 0;
+      } else {
+        deudaRemito[r.id] = d - pagoRestante;
+        pagoRestante = 0;
+      }
+    }
+
+    // Movimientos unificados (remitos + pagos) en orden cronológico
+    final movs = <Map<String, dynamic>>[];
+    for (final r in remitosOrd) {
+      movs.add({
+        'fecha': r.fecha,
+        'id': r.numeroFormateado,
+        'esRemito': true,
+        'monto': r.totalPesos,
+        'remitoFecha': r.fecha,
+        'remitoId': r.id,
+      });
+    }
+    for (final p in pagosOrd) {
+      movs.add({
+        'fecha': p.fecha,
+        'id': p.numeroFormateado,
+        'esRemito': false,
+        'monto': p.montoTotal,
+      });
+    }
+    movs.sort((a, b) {
+      final cmp =
+          (a['fecha'] as DateTime).compareTo(b['fecha'] as DateTime);
+      if (cmp != 0) return cmp;
+      final ar = a['esRemito'] as bool;
+      final br = b['esRemito'] as bool;
+      if (ar && !br) return -1; // remitos antes que pagos del mismo día
+      if (!ar && br) return 1;
+      return 0;
+    });
+
+    // Filas con saldo acumulado
+    double saldoAcum = 0;
+    final filas = <pw.TableRow>[];
+    for (final mov in movs) {
+      final esRemito = mov['esRemito'] as bool;
+      final monto = mov['monto'] as double;
+      saldoAcum += esRemito ? monto : -monto;
+
+      final montoColor = esRemito
+          ? PdfColor.fromHex('#B71C1C')
+          : PdfColor.fromHex('#2E7D32');
+      final saldoColor = saldoAcum > 0
+          ? PdfColor.fromHex('#B71C1C')
+          : PdfColor.fromHex('#2E7D32');
+      final montoStr = '${esRemito ? '+' : '-'}${formatPesos(monto)}';
+
+      String estadoStr;
+      PdfColor estadoBg;
+      PdfColor estadoFg;
+      if (esRemito) {
+        final deudaPend = deudaRemito[mov['remitoId']] ?? 0;
+        if (deudaPend <= 0) {
+          estadoStr = 'Pagado';
+          estadoBg = PdfColor.fromHex('#E8F5E9');
+          estadoFg = PdfColor.fromHex('#2E7D32');
+        } else {
+          final venc =
+              (mov['remitoFecha'] as DateTime).add(Duration(days: plazo));
+          final diasVenc = ahora.difference(venc).inDays;
+          if (diasVenc > 0) {
+            estadoStr = 'Vencido $diasVenc d.';
+            estadoBg = PdfColor.fromHex('#FFEBEE');
+            estadoFg = PdfColor.fromHex('#B71C1C');
+          } else if (diasVenc >= -3) {
+            estadoStr = 'Por vencer';
+            estadoBg = PdfColor.fromHex('#FFF8E1');
+            estadoFg = PdfColor.fromHex('#F57F17');
+          } else {
+            estadoStr = 'Al día';
+            estadoBg = PdfColor.fromHex('#E8F5E9');
+            estadoFg = PdfColor.fromHex('#2E7D32');
+          }
+        }
+      } else {
+        estadoStr = 'Pago';
+        estadoBg = PdfColor.fromHex('#E8F5E9');
+        estadoFg = PdfColor.fromHex('#2E7D32');
+      }
+
+      filas.add(pw.TableRow(children: [
+        _cell(formatFecha(mov['fecha'] as DateTime)),
+        _cell(mov['id'] as String),
+        pw.Container(
+          alignment: pw.Alignment.centerRight,
+          padding:
+              const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          child: pw.Text(montoStr,
+              style: pw.TextStyle(
+                  fontSize: 10,
+                  fontWeight: pw.FontWeight.bold,
+                  color: montoColor)),
+        ),
+        pw.Padding(
+          padding:
+              const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: pw.Container(
+            alignment: pw.Alignment.center,
+            padding:
+                const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+            decoration: pw.BoxDecoration(
+              color: estadoBg,
+              borderRadius: pw.BorderRadius.circular(4),
+            ),
+            child: pw.Text(estadoStr,
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(
+                    fontSize: 8,
+                    fontWeight: pw.FontWeight.bold,
+                    color: estadoFg)),
+          ),
+        ),
+        pw.Container(
+          alignment: pw.Alignment.centerRight,
+          padding:
+              const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          child: pw.Text(formatPesos(saldoAcum),
+              style: pw.TextStyle(
+                  fontSize: 10,
+                  fontWeight: pw.FontWeight.bold,
+                  color: saldoColor)),
+        ),
+      ]));
+    }
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(40),
+        header: (context) => _buildHeader(cliente, vendedor, logo),
+        footer: (context) => _buildFooter(context),
+        build: (context) => [
+          pw.SizedBox(height: 16),
+          pw.Text('MOVIMIENTOS',
+              style: pw.TextStyle(
+                fontSize: 10,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.grey500,
+                letterSpacing: 1,
+              )),
+          pw.SizedBox(height: 6),
+          // Leyenda de colores
+          pw.Row(children: [
+            _leyendaPdf(
+                PdfColor.fromHex('#B71C1C'), 'Remito - suma deuda (+)'),
+            pw.SizedBox(width: 16),
+            _leyendaPdf(
+                PdfColor.fromHex('#2E7D32'), 'Pago - resta deuda (-)'),
+          ]),
+          pw.SizedBox(height: 8),
+          if (movs.isEmpty)
+            pw.Text('Sin movimientos para este cliente',
+                style: const pw.TextStyle(
+                    fontSize: 10, color: PdfColors.grey400))
+          else
+            pw.Table(
+              border:
+                  pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(1.1),
+                1: const pw.FlexColumnWidth(1),
+                2: const pw.FlexColumnWidth(1.4),
+                3: const pw.FlexColumnWidth(1.3),
+                4: const pw.FlexColumnWidth(1.4),
+              },
+              children: [
+                pw.TableRow(
+                  decoration:
+                      pw.BoxDecoration(color: PdfColor.fromHex('#F5F5F5')),
+                  children: [
+                    _cell('Fecha', header: true),
+                    _cell('ID', header: true),
+                    _cell('Monto', header: true),
+                    _cell('Estado', header: true),
+                    _cell('Saldo acum.', header: true),
+                  ],
+                ),
+                ...filas,
+              ],
+            ),
+          pw.SizedBox(height: 20),
+          // Saldo pendiente
+          pw.Container(
+            width: double.infinity,
+            padding: const pw.EdgeInsets.all(16),
+            decoration: pw.BoxDecoration(
+              color: saldoTotal > 0
+                  ? PdfColor.fromHex('#FFEBEE')
+                  : PdfColor.fromHex('#E8F5E9'),
+              borderRadius: pw.BorderRadius.circular(8),
+            ),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text('SALDO PENDIENTE',
+                    style: pw.TextStyle(
+                        fontSize: 14, fontWeight: pw.FontWeight.bold)),
+                pw.Text(formatPesos(saldoTotal),
+                    style: pw.TextStyle(
+                        fontSize: 20,
+                        fontWeight: pw.FontWeight.bold,
+                        color: saldoTotal > 0
+                            ? PdfColor.fromHex('#C62828')
+                            : PdfColor.fromHex('#2E7D32'))),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final bytes = await pdf.save();
+    await Printing.sharePdf(
+      bytes: bytes,
+      filename:
+          'reporte_${cliente.nombreRazonSocial.replaceAll(' ', '_')}_${formatFecha(ahora).replaceAll('/', '-')}.pdf',
+    );
+  }
+
+  static pw.Widget _leyendaPdf(PdfColor color, String texto) {
+    return pw.Row(
+      mainAxisSize: pw.MainAxisSize.min,
+      children: [
+        pw.Container(
+          width: 8,
+          height: 8,
+          decoration: pw.BoxDecoration(
+            color: color,
+            borderRadius: pw.BorderRadius.circular(2),
+          ),
+        ),
+        pw.SizedBox(width: 4),
+        pw.Text(texto,
+            style: const pw.TextStyle(
+                fontSize: 8, color: PdfColors.grey600)),
+      ],
+    );
+  }
+
+  // ═══════════════════════════════════════════
   // PDF NOTA DE PEDIDO
   // ═══════════════════════════════════════════
 
