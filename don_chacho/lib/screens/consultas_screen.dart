@@ -2384,14 +2384,16 @@ class _RutaTabState extends State<_RutaTab> {
                     itemCount: paradas.length,
                     itemBuilder: (ctx, i) {
                       final p = paradas[i];
-                      final dir = p.cliente.ubicacion.trim();
+                      final dir = p.direccionMostrable;
                       return ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: CircleAvatar(
                           radius: 14,
                           backgroundColor: p.tieneCoord
                               ? AppTheme.info
-                              : AppTheme.textHint,
+                              : (p.tienePunto
+                                  ? AppTheme.warning
+                                  : AppTheme.textHint),
                           child: Text('${i + 1}',
                               style: const TextStyle(
                                   fontSize: 13, color: Colors.white)),
@@ -2401,7 +2403,7 @@ class _RutaTabState extends State<_RutaTab> {
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500)),
                         subtitle: Text(
-                          dir.isNotEmpty
+                          dir != null && dir.isNotEmpty
                               ? dir
                               : (p.tieneCoord
                                   ? 'Ubicación por link de Maps'

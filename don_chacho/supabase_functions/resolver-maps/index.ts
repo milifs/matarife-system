@@ -108,23 +108,54 @@ async function resolverUrl(url: string): Promise<string> {
   }
 }
 
-async function coordsDeLink(
-  url: string,
-): Promise<{ lat: number; lng: number } | null> {
-  const directo = parseCoords(url);
-  if (directo) return directo;
+// Extrae un nombre de lugar / dirección de texto de la URL, para links
+// que se compartieron como "lugar" y no traen coordenadas.
+function parseDireccion(texto: string): string | null {
+  if (!texto) return null;
+  const m = texto.match(/[?&](?:q|query|destination|daddr)=([^&]+)/);
+  if (!m) return null;
+  let val = m[1];
+  try {
+    val = decodeURIComponent(val.replace(/\+/g, " "));
+  } catch (_) {
+    val = val.replace(/\+/g, " ");
+  }
+  val = val.trim();
+  // Descartar si es un par de coordenadas (eso ya lo maneja parseCoords).
+  if (/^-?\d+\.\d+,-?\d+\.\d+$/.test(val)) return null;
+  if (val.length < 2) return null;
+  return val;
+}
 
-  const final = await resolverUrl(url);
-  const c = parseCoords(final);
-  if (c) return c;
+interface Resuelto {
+  lat: number | null;
+  lng: number | null;
+  direccion: string | null;
+}
+
+async function resolverLink(url: string): Promise<Resuelto> {
+  const vacio: Resuelto = { lat: null, lng: null, direccion: null };
+
+  const directo = parseCoords(url);
+  if (directo) return { lat: directo.lat, lng: directo.lng, direccion: null };
+
+  let final = await resolverUrl(url);
+  let c = parseCoords(final);
+  if (c) return { lat: c.lat, lng: c.lng, direccion: null };
 
   // A veces el redirect final es otro link corto; probamos una vez más.
   const segundo = final.match(/https?:\/\/[^\s"'<>]+/);
   if (segundo) {
     const final2 = await resolverUrl(segundo[0]);
-    return parseCoords(final2);
+    c = parseCoords(final2);
+    if (c) return { lat: c.lat, lng: c.lng, direccion: null };
+    final = final2 || final;
   }
-  return null;
+
+  // Sin coordenadas: intentamos rescatar un nombre de lugar / dirección.
+  const dir = parseDireccion(final);
+  if (dir) return { lat: null, lng: null, direccion: dir };
+  return vacio;
 }
 
 console.info("resolver-maps started");
@@ -152,10 +183,10 @@ export default {
         const results = await Promise.all(
           urls.map(async (url: string) => {
             try {
-              const c = await coordsDeLink(url);
-              return { url, lat: c?.lat ?? null, lng: c?.lng ?? null };
+              const r = await resolverLink(url);
+              return { url, lat: r.lat, lng: r.lng, direccion: r.direccion };
             } catch (_) {
-              return { url, lat: null, lng: null };
+              return { url, lat: null, lng: null, direccion: null };
             }
           }),
         );

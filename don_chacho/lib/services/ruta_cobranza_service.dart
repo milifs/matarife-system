@@ -28,16 +28,34 @@ class ParadaRuta {
   final Cliente cliente;
   final Coord? coord;
 
-  ParadaRuta(this.cliente, this.coord);
+  /// Dirección/nombre de lugar resuelto desde el link de Maps cuando el
+  /// link no traía coordenadas (ej: "compartir lugar" con nombre).
+  final String? direccionResuelta;
+
+  ParadaRuta(this.cliente, this.coord, {this.direccionResuelta});
 
   bool get tieneCoord => coord != null;
 
+  /// Texto de ubicación a mostrar: dirección libre, si no la resuelta.
+  String? get direccionMostrable {
+    final libre = cliente.ubicacion.trim();
+    if (libre.isNotEmpty) return libre;
+    final res = direccionResuelta?.trim();
+    if (res != null && res.isNotEmpty) return res;
+    return null;
+  }
+
+  /// Hay algún punto (coord, dirección resuelta o texto libre) para rutear.
+  bool get tienePunto => puntoUrl != null;
+
   /// Punto a usar en el link de Google Maps: coordenadas si las hay,
-  /// si no la dirección de texto libre. Null si no hay ninguna.
+  /// si no la dirección de texto libre o la resuelta. Null si no hay ninguna.
   String? get puntoUrl {
     if (coord != null) return coord.toString();
     final dir = cliente.ubicacion.trim();
     if (dir.isNotEmpty) return dir;
+    final res = direccionResuelta?.trim();
+    if (res != null && res.isNotEmpty) return res;
     return null;
   }
 }
@@ -153,8 +171,11 @@ class RutaCobranzaService {
   /// Los links cortos (maps.app.goo.gl/...) no traen coordenadas y el
   /// navegador no puede seguir el redirect por CORS. Esta función manda
   /// los links a la Edge Function que los resuelve del lado del servidor.
-  /// Devuelve un mapa url→Coord solo con los que se pudieron resolver.
-  static Future<Map<String, Coord>> resolverLinks(List<String> urls) async {
+  /// Devuelve un mapa url→resultado (coord y/o dirección) con lo que se
+  /// pudo resolver.
+  static Future<Map<String, ({Coord? coord, String? direccion})>> resolverLinks(
+    List<String> urls,
+  ) async {
     final limpias = urls
         .map((u) => u.trim())
         .where((u) => u.isNotEmpty)
@@ -187,15 +208,21 @@ class RutaCobranzaService {
       final resultados = data['results'];
       if (resultados is! List) return {};
 
-      final mapa = <String, Coord>{};
+      final mapa = <String, ({Coord? coord, String? direccion})>{};
       for (final r in resultados) {
         if (r is! Map) continue;
         final url = r['url'];
+        if (url is! String) continue;
         final lat = r['lat'];
         final lng = r['lng'];
-        if (url is String && lat is num && lng is num) {
-          mapa[url] = Coord(lat.toDouble(), lng.toDouble());
-        }
+        final dir = r['direccion'];
+        final coord = (lat is num && lng is num)
+            ? Coord(lat.toDouble(), lng.toDouble())
+            : null;
+        final direccion = (dir is String && dir.trim().isNotEmpty)
+            ? dir.trim()
+            : null;
+        mapa[url] = (coord: coord, direccion: direccion);
       }
       return mapa;
     } catch (_) {
@@ -227,7 +254,11 @@ class RutaCobranzaService {
       if (local != null) return ParadaRuta(c, local);
       final link = c.ubicacionUrl.trim();
       final remota = resueltas[link];
-      return ParadaRuta(c, remota);
+      return ParadaRuta(
+        c,
+        remota?.coord,
+        direccionResuelta: remota?.direccion,
+      );
     }).toList();
   }
 
