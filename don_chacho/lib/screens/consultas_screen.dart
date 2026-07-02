@@ -2291,9 +2291,7 @@ class _RutaTabState extends State<_RutaTab> {
     setState(() => _generandoRuta = true);
 
     final origen = await RutaCobranzaService.ubicacionActual();
-    final paradas = elegidos
-        .map((c) => ParadaRuta(c, RutaCobranzaService.coordsDeCliente(c)))
-        .toList();
+    final paradas = await RutaCobranzaService.construirParadas(elegidos);
     final ordenadas =
         RutaCobranzaService.ordenarPorCercania(paradas, origen);
 
