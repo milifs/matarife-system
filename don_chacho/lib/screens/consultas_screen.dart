@@ -11,6 +11,7 @@ import '../utils/formatters.dart';
 import '../utils/theme.dart';
 import '../services/recibo_service.dart';
 import '../services/estado_cuenta_service.dart';
+import '../services/ruta_cobranza_service.dart';
 import 'pago_form_screen.dart';
 import 'remito_form_screen.dart';
 import 'nota_pedido_form_screen.dart';
@@ -21,7 +22,7 @@ class ConsultasScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 8,
+      length: 9,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Consultas'),
@@ -38,6 +39,7 @@ class ConsultasScreen extends StatelessWidget {
               Tab(text: 'Saldos'),
               Tab(text: 'Historial'),
               Tab(text: 'Directorio'),
+              Tab(text: 'Ruta'),
               Tab(text: 'Comisiones'),
               Tab(text: 'Eliminados'),
               Tab(text: 'Reporte'),
@@ -51,6 +53,7 @@ class ConsultasScreen extends StatelessWidget {
             _SaldosTab(),
             _HistorialTab(),
             _DirectorioTab(),
+            _RutaTab(),
             _ComisionesTab(),
             _EliminadosTab(),
             _ReporteTab(),
@@ -1928,6 +1931,12 @@ class _DirectorioTabState extends State<_DirectorioTab> {
                                 _abrirMaps(c.ubicacionUrl),
                             tooltip: 'Abrir en Google Maps',
                           ),
+                        IconButton(
+                          icon: const Icon(Icons.edit_location_alt_outlined,
+                              color: AppTheme.textSecondary, size: 22),
+                          onPressed: () => _editarUbicacion(context, c),
+                          tooltip: 'Editar ubicación',
+                        ),
                       ],
                     ),
                     if (c.telefono.isNotEmpty) ...[
@@ -2008,10 +2017,532 @@ class _DirectorioTabState extends State<_DirectorioTab> {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
+
+  void _editarUbicacion(BuildContext context, Cliente c) {
+    final ubicacionCtrl = TextEditingController(text: c.ubicacion);
+    final ubicacionUrlCtrl = TextEditingController(text: c.ubicacionUrl);
+    var guardando = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(
+              20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Editar ubicación',
+                    style: TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text(c.nombreRazonSocial,
+                    style: const TextStyle(
+                        fontSize: 13, color: AppTheme.textSecondary)),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: ubicacionCtrl,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    labelText: 'Ubicación / Dirección',
+                    hintText: 'Ej: Av. San Martín 1234, Ciudad',
+                    prefixIcon: Icon(Icons.location_on_outlined, size: 20),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: ubicacionUrlCtrl,
+                  keyboardType: TextInputType.url,
+                  decoration: const InputDecoration(
+                    labelText: 'Link Google Maps (opcional)',
+                    hintText: 'https://maps.app.goo.gl/...',
+                    prefixIcon: Icon(Icons.map_outlined, size: 20),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Pegá el link de Google Maps del local o escribí la '
+                  'dirección. Con eso se arma la ruta de cobranza.',
+                  style: TextStyle(fontSize: 11, color: AppTheme.textHint),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: guardando
+                        ? null
+                        : () async {
+                            setSheet(() => guardando = true);
+                            c.ubicacion = ubicacionCtrl.text.trim();
+                            c.ubicacionUrl = ubicacionUrlCtrl.text.trim();
+                            await context
+                                .read<AppProvider>()
+                                .editarCliente(c);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                          },
+                    child: guardando
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Guardar'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // ═══════════════════════════════════════════
-// TAB 6: COMISIONES
+// TAB 6: RUTA DE COBRANZA
+// ═══════════════════════════════════════════
+class _RutaTab extends StatefulWidget {
+  const _RutaTab();
+
+  @override
+  State<_RutaTab> createState() => _RutaTabState();
+}
+
+class _RutaTabState extends State<_RutaTab> {
+  final _busquedaCtrl = TextEditingController();
+  String _busqueda = '';
+  String? _filtroVendedorId;
+  bool _soloConSaldo = true;
+  bool _soloVencidos = false;
+  final Set<String> _seleccionados = {};
+  bool _generandoRuta = false;
+
+  @override
+  void dispose() {
+    _busquedaCtrl.dispose();
+    super.dispose();
+  }
+
+  bool _tieneUbicacion(Cliente c) =>
+      c.ubicacionUrl.trim().isNotEmpty || c.ubicacion.trim().isNotEmpty;
+
+  /// Aplica los filtros y devuelve los clientes candidatos ordenados A→Z.
+  List<Cliente> _candidatos(AppProvider app) {
+    final vencidosIds = _soloVencidos
+        ? app
+            .clientesConSaldoVencido()
+            .map((m) => (m['cliente'] as Cliente).id)
+            .toSet()
+        : null;
+
+    var lista = app.clientes.toList();
+    if (_filtroVendedorId != null) {
+      lista = lista.where((c) => c.vendedorId == _filtroVendedorId).toList();
+    }
+    if (_soloConSaldo) {
+      lista = lista.where((c) => app.getSaldoCliente(c.id) > 0).toList();
+    }
+    if (vencidosIds != null) {
+      lista = lista.where((c) => vencidosIds.contains(c.id)).toList();
+    }
+    if (_busqueda.isNotEmpty) {
+      lista = lista
+          .where((c) => c.nombreRazonSocial
+              .toLowerCase()
+              .contains(_busqueda.toLowerCase()))
+          .toList();
+    }
+    lista.sort((a, b) => a.nombreRazonSocial
+        .toLowerCase()
+        .compareTo(b.nombreRazonSocial.toLowerCase()));
+    return lista;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AppProvider>(
+      builder: (context, app, _) {
+        final candidatos = _candidatos(app);
+        final conUbicacion = candidatos.where(_tieneUbicacion).toList();
+        final seleccionadosValidos =
+            conUbicacion.where((c) => _seleccionados.contains(c.id)).toList();
+        final todosSeleccionados = conUbicacion.isNotEmpty &&
+            seleccionadosValidos.length == conUbicacion.length;
+
+        return Column(
+          children: [
+            // ── Filtros ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Column(
+                children: [
+                  TextField(
+                    controller: _busquedaCtrl,
+                    decoration: InputDecoration(
+                      hintText: 'Buscar cliente...',
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      suffixIcon: _busqueda.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: () => setState(() {
+                                _busquedaCtrl.clear();
+                                _busqueda = '';
+                              }),
+                            )
+                          : null,
+                      isDense: true,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                    ),
+                    onChanged: (v) => setState(() => _busqueda = v),
+                  ),
+                  if (app.vendedores.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String?>(
+                      value: _filtroVendedorId,
+                      decoration: InputDecoration(
+                        labelText: 'Vendedor',
+                        isDense: true,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                            value: null, child: Text('Todos')),
+                        ...app.vendedores.map((v) => DropdownMenuItem(
+                              value: v.id,
+                              child: Text(v.nombreCompleto),
+                            )),
+                      ],
+                      onChanged: (v) =>
+                          setState(() => _filtroVendedorId = v),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      FilterChip(
+                        label: const Text('Con saldo pendiente'),
+                        selected: _soloConSaldo,
+                        onSelected: (v) =>
+                            setState(() => _soloConSaldo = v),
+                      ),
+                      const SizedBox(width: 8),
+                      FilterChip(
+                        label: const Text('Solo vencidos'),
+                        selected: _soloVencidos,
+                        onSelected: (v) =>
+                            setState(() => _soloVencidos = v),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            // ── Encabezado lista + seleccionar todos ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${seleccionadosValidos.length} de ${conUbicacion.length} seleccionados',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.textSecondary),
+                    ),
+                  ),
+                  if (conUbicacion.isNotEmpty)
+                    TextButton(
+                      onPressed: () => setState(() {
+                        if (todosSeleccionados) {
+                          for (final c in conUbicacion) {
+                            _seleccionados.remove(c.id);
+                          }
+                        } else {
+                          for (final c in conUbicacion) {
+                            _seleccionados.add(c.id);
+                          }
+                        }
+                      }),
+                      child: Text(
+                          todosSeleccionados ? 'Ninguno' : 'Todos'),
+                    ),
+                ],
+              ),
+            ),
+            // ── Lista de clientes ──
+            Expanded(
+              child: candidatos.isEmpty
+                  ? const Center(
+                      child: Text('No hay clientes con estos filtros',
+                          style:
+                              TextStyle(color: AppTheme.textSecondary)))
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                      itemCount: candidatos.length,
+                      itemBuilder: (context, i) {
+                        final c = candidatos[i];
+                        final vendedor = app.vendedorPorId(c.vendedorId);
+                        final saldo = app.getSaldoCliente(c.id);
+                        final tieneUbi = _tieneUbicacion(c);
+                        final sub = [
+                          if (vendedor != null) vendedor.nombreCompleto,
+                          if (saldo > 0) 'Debe ${formatPesos(saldo)}',
+                        ].join(' · ');
+
+                        if (!tieneUbi) {
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.location_off,
+                                size: 20, color: AppTheme.textHint),
+                            title: Text(c.nombreRazonSocial,
+                                style: const TextStyle(
+                                    fontSize: 14,
+                                    color: AppTheme.textHint)),
+                            subtitle: const Text('Sin ubicación cargada',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.textHint)),
+                          );
+                        }
+
+                        return CheckboxListTile(
+                          dense: true,
+                          controlAffinity:
+                              ListTileControlAffinity.leading,
+                          value: _seleccionados.contains(c.id),
+                          onChanged: (v) => setState(() {
+                            if (v == true) {
+                              _seleccionados.add(c.id);
+                            } else {
+                              _seleccionados.remove(c.id);
+                            }
+                          }),
+                          title: Text(c.nombreRazonSocial,
+                              style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500)),
+                          subtitle: sub.isNotEmpty
+                              ? Text(sub,
+                                  style: const TextStyle(fontSize: 12))
+                              : null,
+                        );
+                      },
+                    ),
+            ),
+            // ── Botón armar recorrido ──
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    onPressed: (seleccionadosValidos.isEmpty ||
+                            _generandoRuta)
+                        ? null
+                        : () => _armarRuta(context, seleccionadosValidos),
+                    icon: _generandoRuta
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.directions),
+                    label: Text(_generandoRuta
+                        ? 'Armando recorrido...'
+                        : 'Armar recorrido (${seleccionadosValidos.length})'),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _armarRuta(
+      BuildContext context, List<Cliente> elegidos) async {
+    if (elegidos.isEmpty) return;
+    setState(() => _generandoRuta = true);
+
+    final origen = await RutaCobranzaService.ubicacionActual();
+    final paradas = await RutaCobranzaService.construirParadas(elegidos);
+    final ordenadas =
+        RutaCobranzaService.ordenarPorCercania(paradas, origen);
+
+    if (!mounted) return;
+    setState(() => _generandoRuta = false);
+    _mostrarSheetRuta(context, ordenadas, origen);
+  }
+
+  void _mostrarSheetRuta(
+    BuildContext context,
+    List<ParadaRuta> paradas,
+    Coord? origen,
+  ) {
+    final url = RutaCobranzaService.construirUrl(paradas, origen);
+    final hayCoords = paradas.any((p) => p.tieneCoord);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          maxChildSize: 0.9,
+          minChildSize: 0.4,
+          builder: (ctx, scrollCtrl) {
+            return Column(
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppTheme.textHint.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.route,
+                          size: 20, color: AppTheme.info),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${paradas.length} parada${paradas.length == 1 ? '' : 's'}',
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      origen != null
+                          ? (hayCoords
+                              ? 'Ordenadas por cercanía a tu ubicación.'
+                              : 'Sin coordenadas: reordená las paradas en Google Maps.')
+                          : 'Sin tu ubicación: reordená las paradas en Google Maps.',
+                      style: const TextStyle(
+                          fontSize: 12, color: AppTheme.textSecondary),
+                    ),
+                  ),
+                ),
+                if (paradas.length > 10)
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Son muchas paradas: Google Maps puede mostrar solo las primeras. Conviene dividir el recorrido.',
+                        style: TextStyle(
+                            fontSize: 12, color: AppTheme.warning),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ListView.builder(
+                    controller: scrollCtrl,
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    itemCount: paradas.length,
+                    itemBuilder: (ctx, i) {
+                      final p = paradas[i];
+                      final dir = p.direccionMostrable;
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: CircleAvatar(
+                          radius: 14,
+                          backgroundColor: p.tieneCoord
+                              ? AppTheme.info
+                              : (p.tienePunto
+                                  ? AppTheme.warning
+                                  : AppTheme.textHint),
+                          child: Text('${i + 1}',
+                              style: const TextStyle(
+                                  fontSize: 13, color: Colors.white)),
+                        ),
+                        title: Text(p.cliente.nombreRazonSocial,
+                            style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500)),
+                        subtitle: Text(
+                          dir != null && dir.isNotEmpty
+                              ? dir
+                              : (p.tieneCoord
+                                  ? 'Ubicación por link de Maps'
+                                  : 'Sin dirección'),
+                          style: const TextStyle(fontSize: 12),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _abrirMaps(url);
+                        },
+                        icon: const Icon(Icons.map),
+                        label: const Text('Abrir en Google Maps'),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _abrirMaps(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════
+// TAB 7: COMISIONES
 // ═══════════════════════════════════════════
 class _ComisionesTab extends StatefulWidget {
   const _ComisionesTab();
