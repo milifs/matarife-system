@@ -1931,6 +1931,12 @@ class _DirectorioTabState extends State<_DirectorioTab> {
                                 _abrirMaps(c.ubicacionUrl),
                             tooltip: 'Abrir en Google Maps',
                           ),
+                        IconButton(
+                          icon: const Icon(Icons.edit_location_alt_outlined,
+                              color: AppTheme.textSecondary, size: 22),
+                          onPressed: () => _editarUbicacion(context, c),
+                          tooltip: 'Editar ubicación',
+                        ),
                       ],
                     ),
                     if (c.telefono.isNotEmpty) ...[
@@ -2010,6 +2016,91 @@ class _DirectorioTabState extends State<_DirectorioTab> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
+  }
+
+  void _editarUbicacion(BuildContext context, Cliente c) {
+    final ubicacionCtrl = TextEditingController(text: c.ubicacion);
+    final ubicacionUrlCtrl = TextEditingController(text: c.ubicacionUrl);
+    var guardando = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(
+              20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Editar ubicación',
+                    style: TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text(c.nombreRazonSocial,
+                    style: const TextStyle(
+                        fontSize: 13, color: AppTheme.textSecondary)),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: ubicacionCtrl,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    labelText: 'Ubicación / Dirección',
+                    hintText: 'Ej: Av. San Martín 1234, Ciudad',
+                    prefixIcon: Icon(Icons.location_on_outlined, size: 20),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: ubicacionUrlCtrl,
+                  keyboardType: TextInputType.url,
+                  decoration: const InputDecoration(
+                    labelText: 'Link Google Maps (opcional)',
+                    hintText: 'https://maps.app.goo.gl/...',
+                    prefixIcon: Icon(Icons.map_outlined, size: 20),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Pegá el link de Google Maps del local o escribí la '
+                  'dirección. Con eso se arma la ruta de cobranza.',
+                  style: TextStyle(fontSize: 11, color: AppTheme.textHint),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: guardando
+                        ? null
+                        : () async {
+                            setSheet(() => guardando = true);
+                            c.ubicacion = ubicacionCtrl.text.trim();
+                            c.ubicacionUrl = ubicacionUrlCtrl.text.trim();
+                            await context
+                                .read<AppProvider>()
+                                .editarCliente(c);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                          },
+                    child: guardando
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Guardar'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
