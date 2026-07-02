@@ -9,6 +9,7 @@ App Flutter Web para gestionar la venta de medias reses a carnicerías terceras.
 - **Flutter web** (Dart) — NO Android/iOS nativo (Flutter 3.41.8)
 - **Supabase** (PostgreSQL + Storage + Edge Functions)
 - **Claude API** (claude-sonnet-4-20250514) vía Supabase Edge Function `ocr-remito` (proxy CORS, deployada con `--no-verify-jwt`)
+- **Edge Function `resolver-maps`** (runtime nuevo `withSupabase`): resuelve links cortos de Google Maps (`maps.app.goo.gl`) del lado del servidor para la ruta de cobranza (v18.16)
 - **Vercel** para deploy (PWA instalable en iPhone)
 - **Paquetes**: supabase_flutter, provider, intl ^0.20.2, uuid, pdf, printing, url_launcher, http, image_picker, crypto, shared_preferences
 
@@ -74,7 +75,7 @@ don_chacho/lib/
 │   ├── estado_cuenta_service.dart     # PDF estado de cuenta + reporte vendedor + reporte cliente (movimientos) + PDF nota de pedido + comisión
 │   ├── ocr_service.dart               # OCR con Claude API via Edge Function
 │   ├── recibo_service.dart            # PDF recibo de pago con detalle deuda FIFO
-│   └── ruta_cobranza_service.dart     # Ruta de cobranza: extrae coords, GPS web, orden vecino-cercano, URL Google Maps multi-parada (v18.14)
+│   └── ruta_cobranza_service.dart     # Ruta de cobranza: extrae coords (incl. DMS), GPS web, resuelve links cortos vía Edge Function resolver-maps, orden vecino-cercano, URL Google Maps multi-parada (v18.14, ampliado v18.16)
 ├── screens/
 │   ├── login_screen.dart              # Usuario + contraseña
 │   ├── home_screen.dart               # Dashboard KPIs por tipo carne, navegación semanal < >, botón costos (con permiso)
@@ -312,10 +313,22 @@ vercel --prod
 | v18.13 (01/07) | **Tab Reporte más legible + exportar PDF**: leyenda de colores, signos +/− en los montos, pill "Pago" en la columna Estado (antes vacía) y header "Saldo" → "Saldo acum." Nuevo botón "Exportar PDF" que genera el reporte por cliente en PDF (`generarReporteCliente`), replicando la tabla en pantalla. Fix menor en `web/index.html` (splash con `pointer-events:none` durante el fade-out). |
 | v18.14 (01/07) | **Ruta de cobranza (1ª versión)**: embebida en Consultas → Directorio, combo box (Clientes que deben / Solo remitos vencidos) + botón "Armar". Nuevo `ruta_cobranza_service.dart` (GPS, extracción de coords, orden por cercanía, URL Google Maps). Reemplazada por la tab "Ruta" en v18.15. |
 | v18.15 (01/07) | **Ruta de cobranza movida a tab propia "Ruta"** en Consultas (9 tabs). Filtros: cliente (búsqueda), vendedor (dropdown), "Con saldo pendiente" y "Solo vencidos" (FilterChips). Lista con checkboxes para **seleccionar clientes** (los sin ubicación quedan deshabilitados) + "Todos/Ninguno". Botón "Armar recorrido (N)" que calcula la ruta con los elegidos (GPS + orden por cercanía) y abre el panel de paradas → Google Maps. Se quitó el bloque de ruta del Directorio. |
+| v18.16 (02/07) | **Fix ubicaciones de la ruta + editar ubicación desde Directorio**: (1) `_parseCoords` reconoce ahora el formato **DMS** (`24°59'04.1"S`). (2) Nueva **Edge Function `resolver-maps`** (runtime nuevo, `withSupabase` con auth `["publishable","secret"]`) que resuelve del lado del servidor los **links cortos** `maps.app.goo.gl` (el navegador no puede por CORS): sigue el redirect y devuelve `lat/lng`, o si el link es un "compartir lugar" sin coords, devuelve la **dirección/nombre** (`q=…`). `RutaCobranzaService.construirParadas()` llama la función en lote para los clientes sin coords locales. `ParadaRuta` gana `direccionResuelta` y usa ese texto como punto ruteable. (3) En **Directorio**, botón de editar ubicación por tarjeta → bottom sheet para cargar/corregir Dirección + Link Maps (guarda con `editarCliente`). |
 
-## ESTADO ACTUAL (v18.15) — EN PRODUCCIÓN
+## ESTADO ACTUAL (v18.16) — EN PRODUCCIÓN
 
-Deployada el 01/07/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`
+Deployada el 02/07/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`
+
+> **PWA / service worker**: la app cachea `main.dart.js`. Tras un deploy, un simple refresh (incluso Cmd+Shift+R) puede seguir mostrando la versión vieja. Para forzar la nueva: recargar 2 veces, o DevTools → Application → Service Workers → Unregister + Clear site data, o probar en Incógnito.
+
+### Cambios v18.16 (02/07/2026)
+1. `lib/services/ruta_cobranza_service.dart`:
+   - `_parseCoords()` + nuevo `_parseDms()`: reconoce coordenadas en **formato DMS** (`24°59'04.1"S 65°22'17.8"W`, incluso url-encoded `%C2%B0`), además de los formatos previos.
+   - `resolverLinks(urls)`: llama la Edge Function `resolver-maps` (POST en lote, header `apikey` + `Authorization: Bearer` con la **publishable key** — NO el JWT de sesión, que la función rechazaría). Devuelve por URL `(Coord? coord, String? direccion)`.
+   - `construirParadas(clientes)`: resuelve coords localmente y, para los que no se pueden (links cortos), consulta la función en **una sola llamada de red**. Reemplaza el mapeo directo en `_armarRuta`.
+   - `ParadaRuta`: nuevo campo `direccionResuelta` + getters `direccionMostrable`, `tienePunto`. `puntoUrl` prioriza coord → dirección libre → dirección resuelta.
+2. `supabase_functions/resolver-maps/index.ts` (**nueva Edge Function**): runtime nuevo (`export default { fetch: withSupabase({ auth: ["publishable","secret"] }, …) }`). Sigue el redirect de `maps.app.goo.gl` del lado del servidor (User-Agent de browser, `redirect: manual` leyendo el header `location`), extrae `lat/lng` (`parseCoords`, incluye DMS) o, si es un "compartir lugar" sin coords, extrae la dirección de texto (`parseDireccion`, de `q=/query=/destination=/daddr=`). Deployada con "Verify JWT with legacy secret" ON (la publishable key la satisface). **Deploy: por dashboard** (Edge Functions → pegar el archivo). El CLI de esta máquina está logueado en OTRA cuenta de Supabase (ve `balance-system-don-chacho` etc., pero NO el proyecto vivo `svgvyukjqfjkxtypgobq` → 403).
+3. `lib/screens/consultas_screen.dart` (`_DirectorioTab`): botón **editar ubicación** (`edit_location_alt_outlined`) por tarjeta → `_editarUbicacion()` abre un bottom sheet con Dirección + Link Maps y guarda con `AppProvider.editarCliente`. La hoja de ruta (`_mostrarSheetRuta`) usa `direccionMostrable`/`tienePunto`: número azul = coords, naranja = dirección resuelta, gris = sin punto.
 
 ### Cambios v18.15 (01/07/2026)
 1. `lib/screens/consultas_screen.dart`: la ruta de cobranza pasa a una **tab propia "Ruta"** (Consultas ahora tiene 9 tabs, orden: …Directorio · **Ruta** · Comisiones…). Se removió el bloque `_buildRutaCobranza`/`_armarRuta`/`_mostrarSheetRuta` y el estado `_modoRuta`/`_generandoRuta` del `_DirectorioTab` (Directorio volvió a solo listado).
