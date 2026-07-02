@@ -165,15 +165,17 @@ class RutaCobranzaService {
     try {
       final supabase = Supabase.instance.client;
       final base = supabase.rest.url.replaceAll('/rest/v1', '');
-      final anon = supabase.auth.currentSession?.accessToken ??
-          'sb_publishable_NQBeEO7_QtErbs056UE1Wg_kJKHZjbf';
+      // La función usa auth "publishable": mandamos siempre la publishable
+      // key (no el JWT de la sesión, que la función rechazaría).
+      const publishable = 'sb_publishable_NQBeEO7_QtErbs056UE1Wg_kJKHZjbf';
 
       final res = await http
           .post(
             Uri.parse('$base/functions/v1/resolver-maps'),
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer $anon',
+              'apikey': publishable,
+              'Authorization': 'Bearer $publishable',
             },
             body: jsonEncode({'urls': limpias}),
           )

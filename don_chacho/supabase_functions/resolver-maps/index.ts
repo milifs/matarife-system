@@ -8,18 +8,24 @@
 // Recibe un lote de URLs y devuelve las coordenadas de cada una.
 // ============================================================
 //
-// INSTRUCCIONES DE DEPLOY:
-// 1. Copiá este archivo a supabase/functions/resolver-maps/index.ts
-// 2. Deployá: supabase functions deploy resolver-maps --no-verify-jwt
+// DEPLOY (dashboard): Edge Functions -> Deploy a new function ->
+//   nombre: resolver-maps -> pegar este archivo.
+// DEPLOY (CLI): supabase functions deploy resolver-maps --no-verify-jwt
 // ============================================================
 
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { withSupabase } from "jsr:@supabase/server@^1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+const UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 
 // Extrae lat,lng del texto de una URL de Google Maps (formato completo).
 function parseCoords(texto: string): { lat: number; lng: number } | null {
@@ -47,7 +53,7 @@ function parseCoords(texto: string): { lat: number; lng: number } | null {
   m = s.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
   if (m) return build(m[1], m[2]);
 
-  // ?q= / query= / ll= / daddr= / destination= / center= / sll=
+  // ?q= / query= / ll= / sll= / daddr= / destination= / center=
   m = s.match(
     /[?&](?:q|query|ll|sll|daddr|destination|center)=(-?\d+\.\d+),(-?\d+\.\d+)/,
   );
@@ -81,34 +87,20 @@ function parseCoords(texto: string): { lat: number; lng: number } | null {
   return null;
 }
 
-// Sigue los redirects de una URL corta y devuelve la URL final.
+// Sigue los redirects de una URL corta y devuelve la URL final (o el body).
 async function resolverUrl(url: string): Promise<string> {
-  // Primero probamos leer el location header sin seguir automáticamente.
   try {
     const res = await fetch(url, {
       method: "GET",
       redirect: "manual",
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-          "(KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-      },
+      headers: { "User-Agent": UA },
     });
     const loc = res.headers.get("location");
     if (loc) return loc;
-    // Si no hubo redirect pero trajo HTML, devolvemos el body para escanear.
-    const body = await res.text();
-    return body;
+    return await res.text();
   } catch (_) {
-    // Fallback: seguir redirects automáticamente.
     try {
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-            "(KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-        },
-      });
+      const res = await fetch(url, { headers: { "User-Agent": UA } });
       return res.url + " " + (await res.text());
     } catch (_) {
       return "";
@@ -116,10 +108,9 @@ async function resolverUrl(url: string): Promise<string> {
   }
 }
 
-async function coordsDeLink(url: string): Promise<
-  { lat: number; lng: number } | null
-> {
-  // Si ya trae coords, no hace falta resolver.
+async function coordsDeLink(
+  url: string,
+): Promise<{ lat: number; lng: number } | null> {
   const directo = parseCoords(url);
   if (directo) return directo;
 
@@ -136,45 +127,48 @@ async function coordsDeLink(url: string): Promise<
   return null;
 }
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+console.info("resolver-maps started");
 
-  try {
-    const { urls } = await req.json();
-    if (!Array.isArray(urls)) {
-      return new Response(
-        JSON.stringify({ error: "Falta el array 'urls'" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
+export default {
+  fetch: withSupabase(
+    { auth: ["publishable", "secret"] },
+    async (req: Request) => {
+      if (req.method === "OPTIONS") {
+        return new Response("ok", { headers: corsHeaders });
+      }
 
-    const results = await Promise.all(
-      urls.map(async (url: string) => {
-        try {
-          const c = await coordsDeLink(url);
-          return { url, lat: c?.lat ?? null, lng: c?.lng ?? null };
-        } catch (_) {
-          return { url, lat: null, lng: null };
+      try {
+        const { urls } = await req.json();
+        if (!Array.isArray(urls)) {
+          return new Response(
+            JSON.stringify({ error: "Falta el array 'urls'" }),
+            {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            },
+          );
         }
-      }),
-    );
 
-    return new Response(
-      JSON.stringify({ results }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
-  } catch (e) {
-    return new Response(
-      JSON.stringify({ error: String(e) }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
-  }
-});
+        const results = await Promise.all(
+          urls.map(async (url: string) => {
+            try {
+              const c = await coordsDeLink(url);
+              return { url, lat: c?.lat ?? null, lng: c?.lng ?? null };
+            } catch (_) {
+              return { url, lat: null, lng: null };
+            }
+          }),
+        );
+
+        return new Response(JSON.stringify({ results }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: String(e) }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    },
+  ),
+};
