@@ -8,10 +8,10 @@ App Flutter Web para gestionar la venta de medias reses a carnicerías terceras.
 
 - **Flutter web** (Dart) — NO Android/iOS nativo (Flutter 3.41.8)
 - **Supabase** (PostgreSQL + Storage + Edge Functions)
-- **Claude API** (claude-sonnet-4-20250514) vía Supabase Edge Function `ocr-remito` (proxy CORS, deployada con `--no-verify-jwt`)
 - **Edge Function `resolver-maps`** (runtime nuevo `withSupabase`): resuelve links cortos de Google Maps (`maps.app.goo.gl`) del lado del servidor para la ruta de cobranza (v18.16)
+- **Edge Function `ocr-remito`**: sigue deployada en Supabase pero **YA NO SE USA** (el OCR de remitos por foto fue eliminado del cliente en v18.17). Se puede borrar del dashboard cuando se quiera.
 - **Vercel** para deploy (PWA instalable en iPhone)
-- **Paquetes**: supabase_flutter, provider, intl ^0.20.2, uuid, pdf, printing, url_launcher, http, image_picker, crypto, shared_preferences
+- **Paquetes**: supabase_flutter, provider, intl ^0.20.2, uuid, pdf, printing, url_launcher, http, crypto, shared_preferences (`image_picker` **removido** en v18.17 junto con el OCR)
 
 ## CREDENCIALES
 
@@ -28,7 +28,9 @@ App Flutter Web para gestionar la venta de medias reses a carnicerías terceras.
 - **Saldo vendedor** = suma de deudas de todos sus clientes
 - **Efectivo/cheque**: entran al 100%
 - **Transferencia**: descuento interno 6.2% (5% rentas + 1.2% CyD) — NO aparece en recibos ni PDFs para el cliente
-- **Tipo carne automático**: media >60kg = Novillo, ≤60kg = Cerdo
+- **Tipos de carne (v18.17)**: catálogo fijo en el dropdown de remito y de NDP → `Novillo`, `Cerdo`, `Pierna mocha`, `Pierna pistola`, `Plancha de asado`, `Octavo`, `1/4 delantero`. Los cinco cortes son todos **de Novillo**.
+- **Agrupación Novillo/Cerdo para reportes (v18.17)**: dashboard, Ganancias y Comisiones separan en dos baldes por costo. Regla: **solo "Cerdo" cuenta como Cerdo; todo el resto (Novillo y sus cortes) computa como Novillo**. Ver `_normalizarTipo` en app_provider y `costoPorTipo` en models.
+- **Auto-sugerencia por peso**: en el formulario de remito manual, al cargar los kg de una media se **sugiere** el tipo (>60kg = Novillo, ≤60kg = Cerdo), pero es editable con el dropdown.
 - **Formato pesos**: $100.000 sin decimales, sin abreviar (no "K"/"M")
 - **FIFO**: pagos se aplican a remitos del más viejo al más nuevo
 - **Solo remitos con estado 'confirmado' cuentan para saldos** (los pendientes/rechazados no afectan)
@@ -50,6 +52,7 @@ ALTER TABLE permisos DISABLE ROW LEVEL SECURITY;
 
 ### 12 Permisos (catálogo fijo en tabla `permisos`)
 `crear_remito`, `usar_ocr`, `confirmar_remito`, `editar_remito`, `eliminar_remito`, `crear_pago`, `editar_pago`, `gestionar_clientes`, `gestionar_vendedores`, `gestionar_costos`, `ver_consultas`, `gestionar_usuarios`
+- **`usar_ocr` quedó obsoleto en v18.17** (el OCR fue eliminado). Sigue en el catálogo pero ya no controla ninguna UI. Se puede borrar del catálogo cuando se quiera.
 
 ### Roles
 - Flexibles: el admin puede crear roles personalizados con permisos a la carta
@@ -62,7 +65,7 @@ ALTER TABLE permisos DISABLE ROW LEVEL SECURITY;
 3. Admin ve bandeja → puede **confirmar** (convierte NDP en Remito R-XXXX), **editar** o **rechazar** (con motivo)
 4. Solo remitos `confirmado` cuentan para saldos y ganancias
 
-## ESTRUCTURA DEL PROYECTO (~11.500 líneas, 23 archivos .dart)
+## ESTRUCTURA DEL PROYECTO (~11.000 líneas, 22 archivos .dart — `ocr_service.dart` eliminado en v18.17)
 
 ```
 don_chacho/lib/
@@ -73,7 +76,6 @@ don_chacho/lib/
 │   ├── auth_service.dart              # Login SHA-256, sesión persistente SharedPreferences, CRUD usuarios/roles
 │   ├── database_service.dart          # CRUD Supabase para todo + confirmarNotaPedido (convierte a remito)
 │   ├── estado_cuenta_service.dart     # PDF estado de cuenta + reporte vendedor + reporte cliente (movimientos) + PDF nota de pedido + comisión
-│   ├── ocr_service.dart               # OCR con Claude API via Edge Function
 │   ├── recibo_service.dart            # PDF recibo de pago con detalle deuda FIFO
 │   └── ruta_cobranza_service.dart     # Ruta de cobranza: extrae coords (incl. DMS), GPS web, resuelve links cortos vía Edge Function resolver-maps, orden vecino-cercano, URL Google Maps multi-parada (v18.14, ampliado v18.16)
 ├── screens/
@@ -83,8 +85,8 @@ don_chacho/lib/
 │   ├── vendedor_detalle_screen.dart   # Detalle + reporte PDF vendedor; tap en cliente abre ClienteDetalleScreen; muestra "N remitos vencidos" por cliente
 │   ├── clientes_screen.dart           # Lista clientes; muestra "N remitos vencidos" por cliente (rojo si >0)
 │   ├── cliente_detalle_screen.dart    # Todos los remitos (sin límite), stat "Vencidos" en resumen, estado de cuenta, clickeable para editar
-│   ├── remito_form_screen.dart        # Carga manual + OCR, solo para admin
-│   ├── nota_pedido_form_screen.dart   # Carga NDP para secretaria: filas dinámicas con kg/media, cliente de lista o texto libre
+│   ├── remito_form_screen.dart        # Carga manual (OCR eliminado en v18.17), solo para admin. Dropdown de tipo de carne (7 opciones)
+│   ├── nota_pedido_form_screen.dart   # Carga NDP para secretaria: filas dinámicas con kg/media, cliente de lista o texto libre. Dropdown de tipo de carne por fila (v18.17, reemplazó la descripción libre)
 │   ├── pago_form_screen.dart          # Múltiples medios, búsqueda cliente A→Z, ver/eliminar (NO editar — genera errores de saldo)
 │   ├── consultas_screen.dart          # 5 tabs: Vencidos (1°), Ganancias, Saldos, Historial (remitos+pagos+NDPs), Directorio. Vencidos: lista todos los remitos vencidos con FIFO, resumen count+deuda total. Historial: onTap guarda por permiso (editar_remito/editar_pago); Saldos: tap a pago requiere crear_pago
 │   ├── costos_semana_screen.dart      # Historial costos, editar con alerta semana vieja
@@ -155,21 +157,21 @@ don_chacho/lib/
 - Costo/kg novillo y cerdo con botón "Cargar"
 - Botón costos semanales en AppBar (solo con permiso gestionar_costos)
 
-### OCR de remitos (Fase 3)
-- Foto → base64 → Supabase Edge Function `ocr-remito` → Claude API extrae filas
-- Solo visible con permiso `usar_ocr`
-- Edge Function: `supabase_functions/ocr-remito/index.ts`
+### OCR de remitos (ELIMINADO en v18.17)
+- La carga de remitos por foto fue **removida**. Ya no existe `ocr_service.dart` ni la sección de foto en el formulario de remito, ni la dependencia `image_picker`.
+- La Edge Function `ocr-remito` sigue deployada en Supabase pero nadie la llama.
+- El permiso `usar_ocr` quedó obsoleto (sigue en el catálogo, no controla nada).
 
 ### Notas de Pedido (v18)
 - **Formulario secretaria** (`nota_pedido_form_screen.dart`): cliente de lista existente O texto libre, fecha, filas dinámicas
-- Cada fila: descripción libre, cantidad medias, N campos de kg (uno por media, generados automáticamente según cantidad), precio por media, subtotal calculado
+- Cada fila: **dropdown de tipo de carne** (v18.17, reemplazó la descripción libre; guarda en el campo `descripcion`), cantidad medias, N campos de kg (uno por media, generados automáticamente según cantidad), precio por media, subtotal calculado
 - Guarda como `pendiente` → no afecta saldos
 - Soporta modo edición vía `ndpInicial`
 - **Bandeja admin** (`bandeja_remitos_screen.dart`, 3 tabs):
   - Tab "Remitos": remitos pendientes de roles no-admin
   - Tab "Notas de Pedido": NDPs pendientes siempre (sin filtro de fecha) + confirmadas hasta 1 día después de `confirmadoEn`. Card muestra por ítem: descripción, total kg y precio/kg. Si el cliente era texto libre, al confirmar se muestra diálogo para asignar cliente de lista (obligatorio)
   - Tab "Rechazados": remitos + NDPs rechazados mezclados
-- **Conversión NDP → Remito**: al confirmar se crean remito + remito_items. tipo_carne auto (promedio kg/media >60 → Novillo, else Cerdo). precio_por_kg = (precio_media × cant_medias) / total_kg
+- **Conversión NDP → Remito**: al confirmar se crean remito + remito_items. **tipo_carne = el tipo elegido en el dropdown de la NDP** (v18.17, guardado en `item.descripcion`); si viene vacío (NDPs viejas de texto libre) cae en la regla por peso (promedio kg/media >60 → Novillo, else Cerdo). precio_por_kg = (precio_media × cant_medias) / total_kg
 - **PDF NDP** (`estado_cuenta_service.generarPdfNotaPedido`): tabla con columnas Descripción/Medias/Kg por media/Total kg/**Precio por kg.**/Subtotal. Total nota = sum(item.totalKg × item.precioPorMedia). Muestra estado y número de remito generado si confirmada
 
 ### PDFs generados (5 tipos)
@@ -314,12 +316,24 @@ vercel --prod
 | v18.14 (01/07) | **Ruta de cobranza (1ª versión)**: embebida en Consultas → Directorio, combo box (Clientes que deben / Solo remitos vencidos) + botón "Armar". Nuevo `ruta_cobranza_service.dart` (GPS, extracción de coords, orden por cercanía, URL Google Maps). Reemplazada por la tab "Ruta" en v18.15. |
 | v18.15 (01/07) | **Ruta de cobranza movida a tab propia "Ruta"** en Consultas (9 tabs). Filtros: cliente (búsqueda), vendedor (dropdown), "Con saldo pendiente" y "Solo vencidos" (FilterChips). Lista con checkboxes para **seleccionar clientes** (los sin ubicación quedan deshabilitados) + "Todos/Ninguno". Botón "Armar recorrido (N)" que calcula la ruta con los elegidos (GPS + orden por cercanía) y abre el panel de paradas → Google Maps. Se quitó el bloque de ruta del Directorio. |
 | v18.16 (02/07) | **Fix ubicaciones de la ruta + editar ubicación desde Directorio**: (1) `_parseCoords` reconoce ahora el formato **DMS** (`24°59'04.1"S`). (2) Nueva **Edge Function `resolver-maps`** (runtime nuevo, `withSupabase` con auth `["publishable","secret"]`) que resuelve del lado del servidor los **links cortos** `maps.app.goo.gl` (el navegador no puede por CORS): sigue el redirect y devuelve `lat/lng`, o si el link es un "compartir lugar" sin coords, devuelve la **dirección/nombre** (`q=…`). `RutaCobranzaService.construirParadas()` llama la función en lote para los clientes sin coords locales. `ParadaRuta` gana `direccionResuelta` y usa ese texto como punto ruteable. (3) En **Directorio**, botón de editar ubicación por tarjeta → bottom sheet para cargar/corregir Dirección + Link Maps (guarda con `editarCliente`). |
+| v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v18.16) — EN PRODUCCIÓN
+## ESTADO ACTUAL (v18.17) — EN PRODUCCIÓN
 
-Deployada el 02/07/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`
+Deployada el 08/07/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`
 
 > **PWA / service worker**: la app cachea `main.dart.js`. Tras un deploy, un simple refresh (incluso Cmd+Shift+R) puede seguir mostrando la versión vieja. Para forzar la nueva: recargar 2 veces, o DevTools → Application → Service Workers → Unregister + Clear site data, o probar en Incógnito.
+
+### Cambios v18.17 (08/07/2026)
+1. `lib/screens/remito_form_screen.dart`: catálogo de tipos de carne del dropdown ahora es `Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero`. **OCR eliminado**: se quitaron los imports (`dart:convert`, `dart:typed_data`, `image_picker`, `supabase_flutter`, `ocr_service`), el estado OCR (`_leyendoOcr`, `_ocrError`, `_fotoBytes`, `_ocrCompletado`, `_ocrRebuildKey`), la zona de foto del `build` y los métodos `_buildFotoSection` / `_tomarFoto` / `_aplicarDatosOcr`. El form quedó solo carga manual (la auto-sugerencia por peso >60kg → Novillo sigue vigente al tipear kg).
+2. `lib/services/ocr_service.dart`: **borrado**.
+3. `pubspec.yaml`: se quitó `image_picker`. (Tras esto hay que correr `flutter clean` antes de `build_web.sh`, si no el `web_plugin_registrant.dart` cacheado sigue referenciando `image_picker_for_web` y el build falla.)
+4. `lib/screens/nota_pedido_form_screen.dart`: la fila de NDP reemplaza el TextField "Descripción" por un **dropdown "Tipo de carne"** con la misma lista de 7 opciones (constante `_tiposCarne` en `_FilaCardState`). Se guarda en `fila.descripcion` (así fluye a bandeja y PDF sin más cambios). En edición, si la descripción vieja no está en la lista el dropdown arranca vacío. Se eliminó el `_descCtrl`.
+5. `lib/services/database_service.dart` (`confirmarNotaPedido`): el `tipo_carne` del remito se toma de `item.descripcion.trim()` (tipo elegido en la NDP); si está vacío, fallback a la regla por peso (`promKg > 60 ? Novillo : Cerdo`).
+6. `lib/providers/app_provider.dart` (`_normalizarTipo`): ahora **solo "cerdo" → Cerdo; todo el resto → Novillo** (antes devolvía el tipo tal cual para Pollo/otros). Afecta el agrupado del dashboard (kg/medias/venta por tipo).
+7. `lib/screens/consultas_screen.dart`: en **Ganancias** (~línea 333) y **Comisiones** (~línea 2605) el check `== 'novillo'` pasó a `!contains('cerdo')`, para que los cortes nuevos sumen como Novillo y se valoricen con el costo/kg de Novillo.
+8. `lib/models/models.dart` (`costoPorTipo`): ya trataba todo lo no-cerdo como Novillo (sin cambios, queda alineado).
+9. **Deploy**: commiteado y pusheado a `master` (commits directos a master en esta sesión, sin PR); build con `flutter clean` + `build_web.sh` + `vercel --prod`. El alias `web-six-indol-svg13avcfl.vercel.app` apunta al nuevo deploy.
 
 ### Cambios v18.16 (02/07/2026)
 1. `lib/services/ruta_cobranza_service.dart`:
