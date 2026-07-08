@@ -261,15 +261,17 @@ class _MainShellState extends State<MainShell> {
 
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 80),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
               const Text('Opciones',
                   style: TextStyle(
                       fontSize: 18, fontWeight: FontWeight.w600)),
@@ -429,6 +431,7 @@ class _MainShellState extends State<MainShell> {
                 },
               ),
             ],
+            ),
           ),
         ),
       ),
