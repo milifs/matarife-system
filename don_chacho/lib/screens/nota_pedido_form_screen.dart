@@ -438,12 +438,20 @@ class _FilaCard extends StatefulWidget {
 
 class _FilaCardState extends State<_FilaCard> {
   late TextEditingController _cantCtrl;
-  late TextEditingController _descCtrl;
+
+  static const _tiposCarne = [
+    'Novillo',
+    'Cerdo',
+    'Pierna mocha',
+    'Pierna pistola',
+    'Plancha de asado',
+    'Octavo',
+    '1/4 delantero',
+  ];
 
   @override
   void initState() {
     super.initState();
-    _descCtrl = TextEditingController(text: widget.fila.descripcion);
     _cantCtrl = TextEditingController(
         text: widget.fila.cantidadMedias > 0
             ? widget.fila.cantidadMedias.toString()
@@ -453,7 +461,6 @@ class _FilaCardState extends State<_FilaCard> {
   @override
   void dispose() {
     _cantCtrl.dispose();
-    _descCtrl.dispose();
     super.dispose();
   }
 
@@ -496,17 +503,21 @@ class _FilaCardState extends State<_FilaCard> {
             ),
             const SizedBox(height: 10),
 
-            // Descripción
-            TextField(
-              controller: _descCtrl,
+            // Tipo de carne
+            DropdownButtonFormField<String>(
+              value: _tiposCarne.contains(fila.descripcion)
+                  ? fila.descripcion
+                  : null,
+              isExpanded: true,
               decoration: const InputDecoration(
-                labelText: 'Descripción (opcional)',
-                hintText: 'Ej: Carnicería Norte, Novillo...',
+                labelText: 'Tipo de carne',
                 isDense: true,
               ),
-              textCapitalization: TextCapitalization.sentences,
+              items: _tiposCarne
+                  .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                  .toList(),
               onChanged: (v) {
-                fila.descripcion = v;
+                setState(() => fila.descripcion = v ?? '');
                 widget.onChanged();
               },
             ),

@@ -330,7 +330,9 @@ class _GananciasTabState extends State<_GananciasTab> {
           final items = app.itemsDeRemito(r.id);
           final costoSemana = app.costoParaFecha(r.fecha);
           for (final item in items) {
-            if (item.tipoCarne.toLowerCase() == 'novillo') {
+            // Solo Cerdo va al balde Cerdo; el resto (Novillo y sus cortes)
+            // computa como Novillo.
+            if (!item.tipoCarne.toLowerCase().contains('cerdo')) {
               kgNovillo += item.kgTotal;
               ventaNovillo += item.kgTotal * item.precioPorKg;
               if (costoSemana != null) {
@@ -2602,7 +2604,8 @@ class _ComisionesTabState extends State<_ComisionesTab> {
         for (final r in remitosVendedor) {
           totalVentas += r.totalPesos;
           for (final item in app.itemsDeRemito(r.id)) {
-            if (item.tipoCarne.toLowerCase() == 'novillo') {
+            // Solo Cerdo va al balde Cerdo; el resto computa como Novillo.
+            if (!item.tipoCarne.toLowerCase().contains('cerdo')) {
               kgNovillo += item.kgTotal;
             } else {
               kgCerdo += item.kgTotal;

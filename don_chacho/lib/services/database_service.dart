@@ -487,8 +487,12 @@ class DatabaseService {
     for (final item in ndp.items) {
       final kgTotal = item.totalKg;
       final cantMedias = item.cantidadMedias;
+      // Usar el tipo de carne elegido en la nota de pedido (descripcion).
+      // Fallback a la regla por peso solo si viene vacío (NDPs viejas).
+      final tipoElegido = item.descripcion.trim();
       final promKg = cantMedias > 0 ? kgTotal / cantMedias : 0.0;
-      final tipoCarne = promKg > 60 ? 'Novillo' : 'Cerdo';
+      final tipoCarne =
+          tipoElegido.isNotEmpty ? tipoElegido : (promKg > 60 ? 'Novillo' : 'Cerdo');
       final precioPorKg = item.precioPorMedia; // precioPorMedia ya es precio/kg
       remitoItems.add(RemitoItem(
         remitoId: remito.id,

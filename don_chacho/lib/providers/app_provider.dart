@@ -832,10 +832,9 @@ class AppProvider extends ChangeNotifier {
   String _normalizarTipo(String tipo) {
     final t = tipo.toLowerCase().trim();
     if (t.contains('cerdo')) return 'Cerdo';
-    if (t.contains('novillo') || t.contains('ternera') || t.contains('vaquillona')) {
-      return 'Novillo';
-    }
-    return tipo; // Pollo, otro, etc.
+    // Novillo y todos sus cortes (pierna mocha/pistola, plancha de asado,
+    // octavo, 1/4 delantero, ternera, vaquillona, etc.) computan como Novillo.
+    return 'Novillo';
   }
 
   /// Total vendido en pesos en la semana actual
