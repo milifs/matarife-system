@@ -1,22 +1,16 @@
 // ============================================================
-// FORMULARIO REMITO - Con OCR de foto + carga manual
+// FORMULARIO REMITO - Carga manual
 // ============================================================
-// Flujo OCR: foto → Claude API extrae datos → verificás → guardás
 // Flujo manual: completás los campos a mano
 // Regla tipo carne: media > 60kg = Novillo, <= 60kg = Cerdo
 // ============================================================
 
-import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
 import '../providers/app_provider.dart';
 import '../utils/formatters.dart';
 import '../utils/theme.dart';
-import '../services/ocr_service.dart';
 
 class RemitoFormScreen extends StatefulWidget {
   final Remito? remitoInicial;
@@ -31,11 +25,6 @@ class _RemitoFormScreenState extends State<RemitoFormScreen> {
   DateTime _fecha = DateTime.now();
   List<_ItemForm> _items = [_ItemForm()];
   bool _guardando = false;
-  bool _leyendoOcr = false;
-  String? _ocrError;
-  Uint8List? _fotoBytes;
-  bool _ocrCompletado = false;
-  int _ocrRebuildKey = 0; // Se incrementa después del OCR para forzar rebuild
   String _busquedaCliente = '';
 
   bool get _esEdicion => widget.remitoInicial != null;
@@ -86,12 +75,6 @@ class _RemitoFormScreenState extends State<RemitoFormScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // ── Zona de foto + OCR (solo si tiene permiso) ──
-          if (app.tienePermiso('usar_ocr')) ...[
-            _buildFotoSection(),
-            const SizedBox(height: 16),
-          ],
-
           // ── Cliente: búsqueda + dropdown A→Z ──
           TextField(
             decoration: InputDecoration(
@@ -189,7 +172,7 @@ class _RemitoFormScreenState extends State<RemitoFormScreen> {
             final idx = entry.key;
             final item = entry.value;
             return _ItemCard(
-              key: ValueKey('item_${idx}_$_ocrRebuildKey'),
+              key: ValueKey('item_$idx'),
               item: item,
               index: idx,
               canRemove: _items.length > 1,
@@ -251,287 +234,6 @@ class _RemitoFormScreenState extends State<RemitoFormScreen> {
         ],
       ),
     );
-  }
-
-  // ════════════════════════════════════════════
-  // SECCIÓN DE FOTO + OCR
-  // ════════════════════════════════════════════
-  Widget _buildFotoSection() {
-    if (_leyendoOcr) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 16),
-              const Text('Leyendo remito...',
-                  style: TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w500)),
-              const SizedBox(height: 4),
-              const Text('Extrayendo datos de la foto',
-                  style: TextStyle(
-                      fontSize: 12, color: AppTheme.textSecondary)),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (_ocrCompletado && _fotoBytes != null) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            children: [
-              // Miniatura de la foto
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.memory(
-                  _fotoBytes!,
-                  height: 100,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  const Icon(Icons.check_circle,
-                      size: 16, color: AppTheme.success),
-                  const SizedBox(width: 6),
-                  const Expanded(
-                    child: Text('Datos leídos del remito',
-                        style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: AppTheme.success)),
-                  ),
-                  TextButton(
-                    onPressed: _tomarFoto,
-                    child: const Text('Otra foto',
-                        style: TextStyle(fontSize: 12)),
-                  ),
-                ],
-              ),
-              const Text(
-                'Verificá los datos antes de guardar',
-                style: TextStyle(
-                    fontSize: 11, color: AppTheme.textSecondary),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    // Estado inicial - sin foto
-    return Card(
-      child: InkWell(
-        onTap: _tomarFoto,
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              Icon(Icons.camera_alt_outlined,
-                  size: 40, color: AppTheme.primary.withOpacity(0.6)),
-              const SizedBox(height: 10),
-              const Text('Sacar foto del remito',
-                  style: TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w500)),
-              const SizedBox(height: 4),
-              const Text('El sistema lee los datos automáticamente',
-                  style: TextStyle(
-                      fontSize: 12, color: AppTheme.textSecondary)),
-              if (_ocrError != null) ...[
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppTheme.dangerBg,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    _ocrError!,
-                    style: const TextStyle(
-                        fontSize: 11, color: AppTheme.danger),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 12),
-              const Text('o cargá los datos manualmente abajo',
-                  style: TextStyle(
-                      fontSize: 11, color: AppTheme.textHint)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ════════════════════════════════════════════
-  // TOMAR FOTO Y PROCESAR OCR
-  // ════════════════════════════════════════════
-  Future<void> _tomarFoto() async {
-    final picker = ImagePicker();
-
-    // Mostrar opciones: cámara o galería
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Seleccionar imagen',
-                  style: TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: AppTheme.primary.withOpacity(0.1),
-                  child: const Icon(Icons.camera_alt,
-                      color: AppTheme.primary),
-                ),
-                title: const Text('Cámara'),
-                subtitle: const Text('Sacar foto del remito'),
-                onTap: () => Navigator.pop(ctx, ImageSource.camera),
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: AppTheme.info.withOpacity(0.1),
-                  child:
-                      const Icon(Icons.photo_library, color: AppTheme.info),
-                ),
-                title: const Text('Galería'),
-                subtitle: const Text('Elegir foto guardada'),
-                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (source == null) return;
-
-    try {
-      final image = await picker.pickImage(
-        source: source,
-        maxWidth: 1920,
-        imageQuality: 85,
-      );
-
-      if (image == null) return;
-
-      setState(() {
-        _leyendoOcr = true;
-        _ocrError = null;
-      });
-
-      // Leer bytes de la imagen
-      final bytes = await image.readAsBytes();
-      final base64Image = base64Encode(bytes);
-
-      // Determinar el tipo de imagen
-      final extension = image.name.toLowerCase();
-      String mediaType = 'image/jpeg';
-      if (extension.endsWith('.png')) {
-        mediaType = 'image/png';
-      } else if (extension.endsWith('.webp')) {
-        mediaType = 'image/webp';
-      }
-
-      setState(() => _fotoBytes = bytes);
-
-      // Obtener credenciales de Supabase
-      final supabase = Supabase.instance.client;
-      final supabaseUrl = supabase.rest.url.replaceAll('/rest/v1', '');
-      // Usar la anon key del cliente
-      final supabaseAnonKey = supabase.rest.headers['apikey'] ?? '';
-
-      // Llamar al OCR via Edge Function
-      final resultado = await OcrService.leerRemito(
-        imageBase64: base64Image,
-        mediaType: mediaType,
-        supabaseUrl: supabaseUrl,
-        supabaseAnonKey: supabaseAnonKey,
-      );
-
-      if (resultado.error != null) {
-        setState(() {
-          _leyendoOcr = false;
-          _ocrError = resultado.error;
-          _ocrCompletado = false;
-        });
-        return;
-      }
-
-      // Aplicar datos del OCR al formulario
-      _aplicarDatosOcr(resultado);
-
-      setState(() {
-        _leyendoOcr = false;
-        _ocrCompletado = true;
-        _ocrRebuildKey++; // Fuerza reconstrucción de los ItemCards
-      });
-    } catch (e) {
-      setState(() {
-        _leyendoOcr = false;
-        _ocrError = 'Error: $e';
-      });
-    }
-  }
-
-  void _aplicarDatosOcr(OcrResult resultado) {
-    final app = context.read<AppProvider>();
-
-    // Buscar cliente por nombre
-    if (resultado.clienteNombre != null) {
-      final nombreBuscar = resultado.clienteNombre!.toLowerCase();
-      final clienteEncontrado = app.clientes.where((c) =>
-          c.nombreRazonSocial.toLowerCase().contains(nombreBuscar) ||
-          nombreBuscar.contains(c.nombreRazonSocial.toLowerCase()));
-
-      if (clienteEncontrado.isNotEmpty) {
-        _clienteId = clienteEncontrado.first.id;
-      }
-    }
-
-    // Parsear fecha
-    if (resultado.fecha != null) {
-      try {
-        final partes = resultado.fecha!.split('/');
-        if (partes.length == 3) {
-          _fecha = DateTime(
-            int.parse(partes[2]),
-            int.parse(partes[1]),
-            int.parse(partes[0]),
-          );
-        }
-      } catch (_) {}
-    }
-
-    // Crear un item por cada fila del OCR
-    _items.clear();
-
-    for (final fila in resultado.filas) {
-      _items.add(_ItemForm()
-        ..tipoCarne = fila.tipo
-        ..cantidadMedias = fila.cantMedias
-        ..kg = fila.totalKg
-        ..precioPorKg = fila.precioPorKg);
-    }
-
-    if (_items.isEmpty) {
-      _items.add(_ItemForm());
-    }
   }
 
   // ════════════════════════════════════════════
@@ -705,10 +407,11 @@ class _ItemCard extends StatelessWidget {
   static const _tiposCarne = [
     'Novillo',
     'Cerdo',
-    'Pollo',
-    'Ternera',
-    'Vaquillona',
-    'Otro',
+    'Pierna mocha',
+    'Pierna pistola',
+    'Plancha de asado',
+    'Octavo',
+    '1/4 delantero',
   ];
 
   @override
