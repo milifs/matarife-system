@@ -1263,18 +1263,20 @@ class EstadoCuentaService {
             border:
                 pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
             columnWidths: {
-              0: const pw.FlexColumnWidth(2),
-              1: const pw.FlexColumnWidth(1),
-              2: const pw.FlexColumnWidth(2.5),
-              3: const pw.FlexColumnWidth(1.2),
-              4: const pw.FlexColumnWidth(1.2),
-              5: const pw.FlexColumnWidth(1.3),
+              0: const pw.FlexColumnWidth(1.4),
+              1: const pw.FlexColumnWidth(1.6),
+              2: const pw.FlexColumnWidth(0.9),
+              3: const pw.FlexColumnWidth(2.2),
+              4: const pw.FlexColumnWidth(1.1),
+              5: const pw.FlexColumnWidth(1.2),
+              6: const pw.FlexColumnWidth(1.3),
             },
             children: [
               pw.TableRow(
                 decoration:
                     pw.BoxDecoration(color: PdfColor.fromHex('#F5F5F5')),
                 children: [
+                  _cell('Tipo de carne', header: true),
                   _cell('Descripción', header: true),
                   _cell('Medias', header: true),
                   _cell('Kg por media', header: true),
@@ -1289,6 +1291,7 @@ class EstadoCuentaService {
                     .join(' / ');
                 return pw.TableRow(
                   children: [
+                    _cell(item.tipoCarne.isNotEmpty ? item.tipoCarne : '-'),
                     _cell(item.descripcion.isNotEmpty
                         ? item.descripcion
                         : '-'),

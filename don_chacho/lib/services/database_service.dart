@@ -487,9 +487,12 @@ class DatabaseService {
     for (final item in ndp.items) {
       final kgTotal = item.totalKg;
       final cantMedias = item.cantidadMedias;
-      // Usar el tipo de carne elegido en la nota de pedido (descripcion).
-      // Fallback a la regla por peso solo si viene vacío (NDPs viejas).
-      final tipoElegido = item.descripcion.trim();
+      // Usar el tipo de carne elegido en la nota de pedido.
+      // Fallback: descripcion (NDPs v18.17 que guardaban el tipo ahí) y,
+      // si todo viene vacío, la regla por peso (NDPs viejas de texto libre).
+      final tipoElegido = item.tipoCarne.trim().isNotEmpty
+          ? item.tipoCarne.trim()
+          : item.descripcion.trim();
       final promKg = cantMedias > 0 ? kgTotal / cantMedias : 0.0;
       final tipoCarne =
           tipoElegido.isNotEmpty ? tipoElegido : (promKg > 60 ? 'Novillo' : 'Cerdo');

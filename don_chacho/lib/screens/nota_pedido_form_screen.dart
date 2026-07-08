@@ -505,8 +505,8 @@ class _FilaCardState extends State<_FilaCard> {
 
             // Tipo de carne
             DropdownButtonFormField<String>(
-              value: _tiposCarne.contains(fila.descripcion)
-                  ? fila.descripcion
+              value: _tiposCarne.contains(fila.tipoCarne)
+                  ? fila.tipoCarne
                   : null,
               isExpanded: true,
               decoration: const InputDecoration(
@@ -517,9 +517,21 @@ class _FilaCardState extends State<_FilaCard> {
                   .map((t) => DropdownMenuItem(value: t, child: Text(t)))
                   .toList(),
               onChanged: (v) {
-                setState(() => fila.descripcion = v ?? '');
+                setState(() => fila.tipoCarne = v ?? '');
                 widget.onChanged();
               },
+            ),
+            const SizedBox(height: 10),
+
+            // Descripción (texto libre, opcional)
+            TextField(
+              controller: fila.descCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Descripción (opcional)',
+                isDense: true,
+              ),
+              textCapitalization: TextCapitalization.sentences,
+              onChanged: (_) => widget.onChanged(),
             ),
             const SizedBox(height: 10),
 
@@ -643,7 +655,8 @@ class _FilaCardState extends State<_FilaCard> {
 // MODELO DE FILA EN MEMORIA
 // ─────────────────────────────────────────────
 class _FilaForm {
-  String descripcion = '';
+  String tipoCarne = '';
+  final TextEditingController descCtrl = TextEditingController();
   int cantidadMedias = 0;
   List<TextEditingController> kgControllers = [];
   final TextEditingController precioCtrl = TextEditingController();
@@ -652,7 +665,8 @@ class _FilaForm {
 
   factory _FilaForm.desdeItem(NotaPedidoItem item) {
     final f = _FilaForm();
-    f.descripcion = item.descripcion;
+    f.tipoCarne = item.tipoCarne;
+    f.descCtrl.text = item.descripcion;
     f.cantidadMedias = item.cantidadMedias;
     f.kgControllers = item.kgsPorMedia
         .map((kg) => TextEditingController(
@@ -687,7 +701,8 @@ class _FilaForm {
 
   NotaPedidoItem toItem(String ndpId) => NotaPedidoItem(
         notaPedidoId: ndpId,
-        descripcion: descripcion,
+        tipoCarne: tipoCarne,
+        descripcion: descCtrl.text.trim(),
         cantidadMedias: cantidadMedias,
         kgsPorMedia: kgControllers
             .map((c) => _parseNum(c.text))
@@ -696,6 +711,7 @@ class _FilaForm {
       );
 
   void dispose() {
+    descCtrl.dispose();
     for (final c in kgControllers) {
       c.dispose();
     }

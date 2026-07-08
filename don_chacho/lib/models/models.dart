@@ -396,7 +396,8 @@ class CostoSemanal {
 class NotaPedidoItem {
   final String id;
   String notaPedidoId;
-  String descripcion;
+  String tipoCarne; // dropdown: "Novillo", "Cerdo", etc.
+  String descripcion; // texto libre opcional
   int cantidadMedias;
   List<double> kgsPorMedia; // un valor por cada media
   double precioPorMedia;
@@ -404,6 +405,7 @@ class NotaPedidoItem {
   NotaPedidoItem({
     String? id,
     required this.notaPedidoId,
+    this.tipoCarne = '',
     this.descripcion = '',
     required this.cantidadMedias,
     required this.kgsPorMedia,
@@ -416,6 +418,7 @@ class NotaPedidoItem {
   Map<String, dynamic> toMap() => {
         'id': id,
         'nota_pedido_id': notaPedidoId,
+        'tipo_carne': tipoCarne,
         'descripcion': descripcion,
         'cantidad_medias': cantidadMedias,
         'kgs_por_media': kgsPorMedia,
@@ -432,6 +435,7 @@ class NotaPedidoItem {
     return NotaPedidoItem(
       id: map['id'],
       notaPedidoId: map['nota_pedido_id'] ?? '',
+      tipoCarne: map['tipo_carne'] ?? '',
       descripcion: map['descripcion'] ?? '',
       cantidadMedias: map['cantidad_medias'] ?? 1,
       kgsPorMedia: kgs,

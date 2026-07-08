@@ -668,9 +668,11 @@ class _NdpCard extends StatelessWidget {
                   fontSize: 12, color: AppTheme.textSecondary),
             ),
             ...ndp.items.map((item) {
-              final desc = item.descripcion.isNotEmpty
-                  ? item.descripcion
-                  : '—';
+              final partes = [
+                if (item.tipoCarne.isNotEmpty) item.tipoCarne,
+                if (item.descripcion.isNotEmpty) item.descripcion,
+              ];
+              final desc = partes.isNotEmpty ? partes.join(' · ') : '—';
               return Text(
                 '$desc  ·  ${formatKg(item.totalKg)}  ·  ${formatPesos(item.precioPorMedia)}/kg',
                 style: const TextStyle(
