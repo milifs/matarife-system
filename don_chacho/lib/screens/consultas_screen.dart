@@ -16,6 +16,19 @@ import 'pago_form_screen.dart';
 import 'remito_form_screen.dart';
 import 'nota_pedido_form_screen.dart';
 
+/// Abre WhatsApp para un teléfono cargado como área + número (sin código país).
+/// Saca el 0 inicial del área y antepone 549 (celular Argentina).
+Future<void> abrirWhatsApp(String telefono) async {
+  var num = telefono.replaceAll(RegExp(r'[^0-9]'), '');
+  if (num.isEmpty) return;
+  if (num.startsWith('0')) num = num.substring(1);
+  if (!num.startsWith('549')) num = '549$num';
+  final uri = Uri.parse('https://wa.me/$num');
+  if (await canLaunchUrl(uri)) {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+}
+
 class ConsultasScreen extends StatelessWidget {
   const ConsultasScreen({super.key});
 
@@ -224,24 +237,48 @@ class _VencidosTabState extends State<_VencidosTab> {
                                       style: const TextStyle(
                                           fontSize: 11,
                                           color: AppTheme.textHint)),
-                                if (cliente.ubicacionUrl.isNotEmpty)
-                                  GestureDetector(
-                                    onTap: () async {
-                                      final uri = Uri.parse(cliente.ubicacionUrl);
-                                      if (await canLaunchUrl(uri)) {
-                                        await launchUrl(uri,
-                                            mode: LaunchMode.externalApplication);
-                                      }
-                                    },
-                                    child: const Text(
-                                      'Ver en Maps',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.blue,
-                                        decoration: TextDecoration.underline,
+                                Row(
+                                  children: [
+                                    if (cliente.telefono.isNotEmpty)
+                                      GestureDetector(
+                                        onTap: () =>
+                                            abrirWhatsApp(cliente.telefono),
+                                        child: const Text(
+                                          'WhatsApp',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Color(0xFF128C7E),
+                                            decoration:
+                                                TextDecoration.underline,
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                  ),
+                                    if (cliente.telefono.isNotEmpty &&
+                                        cliente.ubicacionUrl.isNotEmpty)
+                                      const SizedBox(width: 12),
+                                    if (cliente.ubicacionUrl.isNotEmpty)
+                                      GestureDetector(
+                                        onTap: () async {
+                                          final uri =
+                                              Uri.parse(cliente.ubicacionUrl);
+                                          if (await canLaunchUrl(uri)) {
+                                            await launchUrl(uri,
+                                                mode: LaunchMode
+                                                    .externalApplication);
+                                          }
+                                        },
+                                        child: const Text(
+                                          'Ver en Maps',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.blue,
+                                            decoration:
+                                                TextDecoration.underline,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ],
                             ),
                           ),
@@ -1925,6 +1962,14 @@ class _DirectorioTabState extends State<_DirectorioTab> {
                             ],
                           ),
                         ),
+                        if (c.telefono.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.chat,
+                                color: Color(0xFF25D366), size: 22),
+                            onPressed: () =>
+                                abrirWhatsApp(c.telefono),
+                            tooltip: 'Abrir WhatsApp',
+                          ),
                         if (c.ubicacionUrl.isNotEmpty)
                           IconButton(
                             icon: const Icon(Icons.map,
@@ -1943,16 +1988,21 @@ class _DirectorioTabState extends State<_DirectorioTab> {
                     ),
                     if (c.telefono.isNotEmpty) ...[
                       const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          const Icon(Icons.phone_outlined,
-                              size: 14, color: AppTheme.textHint),
-                          const SizedBox(width: 6),
-                          Text(c.telefono,
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppTheme.textSecondary)),
-                        ],
+                      InkWell(
+                        onTap: () => abrirWhatsApp(c.telefono),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.chat,
+                                size: 14, color: Color(0xFF25D366)),
+                            const SizedBox(width: 6),
+                            Text(c.telefono,
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF128C7E),
+                                    decoration:
+                                        TextDecoration.underline)),
+                          ],
+                        ),
                       ),
                     ],
                     if (c.ubicacion.isNotEmpty) ...[

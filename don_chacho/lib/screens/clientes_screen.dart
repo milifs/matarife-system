@@ -8,6 +8,7 @@ import '../providers/app_provider.dart';
 import '../utils/formatters.dart';
 import '../utils/theme.dart';
 import 'cliente_detalle_screen.dart';
+import 'consultas_screen.dart' show abrirWhatsApp;
 
 class ClientesScreen extends StatefulWidget {
   const ClientesScreen({super.key});
@@ -208,6 +209,15 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                         ],
                                       ),
                                     ),
+                                    if (c.telefono.isNotEmpty)
+                                      IconButton(
+                                        icon: const Icon(Icons.chat,
+                                            color: Color(0xFF25D366),
+                                            size: 20),
+                                        onPressed: () =>
+                                            abrirWhatsApp(c.telefono),
+                                        tooltip: 'Abrir WhatsApp',
+                                      ),
                                     Text(
                                       formatPesosCorto(saldo),
                                       style: TextStyle(
