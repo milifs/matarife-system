@@ -199,6 +199,21 @@ class AppProvider extends ChangeNotifier {
 
   Future<void> eliminarVendedor(String id) async {
     try {
+      // Incluye clientes desactivados (soft-delete): siguen apuntando al
+      // vendedor por FK, así que hay que avisar en vez de fallar con el
+      // error crudo de Postgres.
+      final cantClientes = await _db.contarClientesDeVendedor(id);
+      if (cantClientes > 0) {
+        final activos = clientesDeVendedor(id).length;
+        final desactivados = cantClientes - activos;
+        final detalle = desactivados > 0
+            ? '$cantClientes cliente(s) vinculado(s) ($desactivados desactivado(s) que no se ven en la lista).'
+            : '$cantClientes cliente(s) vinculado(s).';
+        _error = 'No se puede eliminar el vendedor: tiene $detalle '
+            'Reasigná esos clientes a otro vendedor antes de borrarlo.';
+        notifyListeners();
+        return;
+      }
       await _db.deleteVendedor(id);
       _vendedores.removeWhere((v) => v.id == id);
       notifyListeners();

@@ -43,6 +43,17 @@ class DatabaseService {
     await _client.from('vendedores').delete().eq('id', id);
   }
 
+  // Cuenta TODOS los clientes que apuntan al vendedor, incluidos los
+  // desactivados (activo=false). Se usa para bloquear el borrado del
+  // vendedor: los clientes soft-deleteados siguen violando la FK.
+  Future<int> contarClientesDeVendedor(String vendedorId) async {
+    final data = await _client
+        .from('clientes')
+        .select('id')
+        .eq('vendedor_id', vendedorId);
+    return (data as List).length;
+  }
+
   // ═══════════════════════════════════════════
   // CLIENTES
   // ═══════════════════════════════════════════
