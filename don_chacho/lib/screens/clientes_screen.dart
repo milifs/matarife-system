@@ -43,10 +43,10 @@ class _ClientesScreenState extends State<ClientesScreen> {
                 .where((c) => c.id == _filtroClienteId)
                 .toList();
           } else if (_busqueda.isNotEmpty) {
+            final q = normalizarBusqueda(_busqueda);
             clientes = clientes
-                .where((c) => c.nombreRazonSocial
-                    .toLowerCase()
-                    .contains(_busqueda.toLowerCase()))
+                .where((c) =>
+                    normalizarBusqueda(c.nombreRazonSocial).contains(q))
                 .toList();
           }
 
@@ -83,10 +83,10 @@ class _ClientesScreenState extends State<ClientesScreen> {
                     ..sort((a, b) =>
                         a.nombreRazonSocial.compareTo(b.nombreRazonSocial));
                   if (_busqueda.isNotEmpty) {
-                    final q = _busqueda.toLowerCase();
+                    final q = normalizarBusqueda(_busqueda);
                     lista = lista
                         .where((c) =>
-                            c.nombreRazonSocial.toLowerCase().contains(q))
+                            normalizarBusqueda(c.nombreRazonSocial).contains(q))
                         .toList();
                   }
                   return DropdownButtonFormField<String>(

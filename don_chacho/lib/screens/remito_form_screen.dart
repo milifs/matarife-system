@@ -102,11 +102,10 @@ class _RemitoFormScreenState extends State<RemitoFormScreen> {
                   .compareTo(b.nombreRazonSocial));
             // Filtrar por búsqueda
             if (_busquedaCliente.isNotEmpty) {
-              final query = _busquedaCliente.toLowerCase();
+              final query = normalizarBusqueda(_busquedaCliente);
               clientesOrdenados = clientesOrdenados
-                  .where((c) => c.nombreRazonSocial
-                      .toLowerCase()
-                      .contains(query))
+                  .where((c) =>
+                      normalizarBusqueda(c.nombreRazonSocial).contains(query))
                   .toList();
             }
             return DropdownButtonFormField<String>(

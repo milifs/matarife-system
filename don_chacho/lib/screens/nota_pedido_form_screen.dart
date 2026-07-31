@@ -262,10 +262,10 @@ class _NotaPedidoFormScreenState extends State<NotaPedidoFormScreen> {
                 ..sort((a, b) =>
                     a.nombreRazonSocial.compareTo(b.nombreRazonSocial));
               if (_busquedaCliente.isNotEmpty) {
-                final q = _busquedaCliente.toLowerCase();
+                final q = normalizarBusqueda(_busquedaCliente);
                 ordenados = ordenados
                     .where((c) =>
-                        c.nombreRazonSocial.toLowerCase().contains(q))
+                        normalizarBusqueda(c.nombreRazonSocial).contains(q))
                     .toList();
               }
               return DropdownButtonFormField<String>(

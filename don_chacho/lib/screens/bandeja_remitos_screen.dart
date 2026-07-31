@@ -327,10 +327,10 @@ class _BandejaRemitosScreenState extends State<BandejaRemitosScreen>
             ..sort((a, b) =>
                 a.nombreRazonSocial.compareTo(b.nombreRazonSocial));
           if (busqueda.isNotEmpty) {
-            final q = busqueda.toLowerCase();
+            final q = normalizarBusqueda(busqueda);
             clientes = clientes
                 .where((c) =>
-                    c.nombreRazonSocial.toLowerCase().contains(q))
+                    normalizarBusqueda(c.nombreRazonSocial).contains(q))
                 .toList();
           }
           return AlertDialog(

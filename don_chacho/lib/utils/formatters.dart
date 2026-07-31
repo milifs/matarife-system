@@ -49,6 +49,18 @@ String formatRangoSemana(DateTime fecha) {
   return '${formatCorto.format(lunes)} - ${formatLargo.format(domingo)}';
 }
 
+/// Normaliza texto para búsquedas: minúsculas y sin acentos.
+/// Así "José" y "jose" coinciden indistintamente.
+String normalizarBusqueda(String texto) {
+  const conAcento = 'áàäâãéèëêíìïîóòöôõúùüûñç';
+  const sinAcento = 'aaaaaeeeeiiiiooooouuuunc';
+  var resultado = texto.toLowerCase();
+  for (var i = 0; i < conAcento.length; i++) {
+    resultado = resultado.replaceAll(conAcento[i], sinAcento[i]);
+  }
+  return resultado;
+}
+
 /// Calcula días de vencimiento de un cliente
 /// Retorna positivo si está vencido, negativo si aún tiene plazo
 int diasVencimiento(DateTime fechaRemito, int plazoDias) {

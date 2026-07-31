@@ -1066,19 +1066,18 @@ class _HistorialTabState extends State<_HistorialTab> {
         }
         // Filtro por búsqueda de texto (si no se eligió cliente específico)
         if (_filtroClienteId == null && _busquedaCtrl.text.isNotEmpty) {
-          final query = _busquedaCtrl.text.toLowerCase();
+          final query = normalizarBusqueda(_busquedaCtrl.text);
           final clienteIdsMatch = app.clientes
               .where((c) =>
-                  c.nombreRazonSocial.toLowerCase().contains(query))
+                  normalizarBusqueda(c.nombreRazonSocial).contains(query))
               .map((c) => c.id)
               .toSet();
           itemsFiltrados = itemsFiltrados
               .where((i) =>
                   clienteIdsMatch.contains(i.clienteId) ||
-                  (i.clienteNombreLibre
-                          ?.toLowerCase()
-                          .contains(query) ==
-                      true))
+                  (i.clienteNombreLibre != null &&
+                      normalizarBusqueda(i.clienteNombreLibre!)
+                          .contains(query)))
               .toList();
         }
         if (_filtroDesde != null) {
@@ -1225,15 +1224,14 @@ class _HistorialTabState extends State<_HistorialTab> {
                     ),
                   ),
                   if (_mostrarSugerencias) Builder(builder: (_) {
-                    final q = _busquedaCtrl.text.toLowerCase();
+                    final q = normalizarBusqueda(_busquedaCtrl.text);
                     var baseClientes = _filtroVendedorId != null
                         ? app.clientesDeVendedor(_filtroVendedorId!)
                         : app.clientes.toList();
                     final sugerencias = (baseClientes.toList()
                           ..sort((a, b) => a.nombreRazonSocial
                               .compareTo(b.nombreRazonSocial)))
-                        .where((c) => c.nombreRazonSocial
-                            .toLowerCase()
+                        .where((c) => normalizarBusqueda(c.nombreRazonSocial)
                             .contains(q))
                         .toList();
                     if (sugerencias.isEmpty) {
@@ -1854,10 +1852,10 @@ class _DirectorioTabState extends State<_DirectorioTab> {
             ? clientes.where((c) => c.vendedorId == _filtroVendedorId).toList()
             : clientes;
         if (_busqueda.isNotEmpty) {
+          final q = normalizarBusqueda(_busqueda);
           clientesFiltrados = clientesFiltrados
-              .where((c) => c.nombreRazonSocial
-                  .toLowerCase()
-                  .contains(_busqueda.toLowerCase()))
+              .where((c) =>
+                  normalizarBusqueda(c.nombreRazonSocial).contains(q))
               .toList();
         }
 
@@ -2204,10 +2202,10 @@ class _RutaTabState extends State<_RutaTab> {
       lista = lista.where((c) => vencidosIds.contains(c.id)).toList();
     }
     if (_busqueda.isNotEmpty) {
+      final q = normalizarBusqueda(_busqueda);
       lista = lista
-          .where((c) => c.nombreRazonSocial
-              .toLowerCase()
-              .contains(_busqueda.toLowerCase()))
+          .where((c) =>
+              normalizarBusqueda(c.nombreRazonSocial).contains(q))
           .toList();
     }
     lista.sort((a, b) => a.nombreRazonSocial
@@ -3528,9 +3526,8 @@ class _ReporteTabState extends State<_ReporteTab> {
         final clientesFiltrados = _busqueda.isEmpty
             ? clientesOrdenados
             : clientesOrdenados
-                .where((c) => c.nombreRazonSocial
-                    .toLowerCase()
-                    .contains(_busqueda.toLowerCase()))
+                .where((c) => normalizarBusqueda(c.nombreRazonSocial)
+                    .contains(normalizarBusqueda(_busqueda)))
                 .toList();
 
         Widget body;
