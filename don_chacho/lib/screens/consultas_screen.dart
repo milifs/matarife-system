@@ -189,17 +189,21 @@ class _VencidosTabState extends State<_VencidosTab> {
               )
             else
               ...vencidos.map((m) {
-                final remito = m['remito'] as Remito;
+                final remito = m['remito'] as Remito?;
+                final notaDebito = m['nota'] as NotaCreditoDebito?;
                 final cliente = m['cliente'] as Cliente;
                 final vendedor = m['vendedor'] as Vendedor?;
                 final diasVencido = m['diasVencido'] as int;
                 final deuda = m['deuda'] as double;
+                final numero = remito?.numeroFormateado ??
+                    notaDebito!.numeroFormateado;
+                final fecha = remito?.fecha ?? notaDebito!.fecha;
 
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(14),
-                    onTap: app.tienePermiso('editar_remito')
+                    onTap: remito != null && app.tienePermiso('editar_remito')
                         ? () => Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -222,7 +226,7 @@ class _VencidosTabState extends State<_VencidosTab> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  '${remito.numeroFormateado} · ${formatFecha(remito.fecha)}',
+                                  '$numero · ${formatFecha(fecha)}',
                                   style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500),
@@ -1043,6 +1047,18 @@ class _HistorialTabState extends State<_HistorialTab> {
             ));
           }
         }
+        if (_filtroTipo == 'todos' || _filtroTipo == 'ncd') {
+          for (final n in app.notasCreditoDebito) {
+            items.add(_HistorialItem(
+              tipo: 'ncd',
+              notaCD: n,
+              fecha: n.fecha,
+              numero: n.numero,
+              clienteId: n.clienteId,
+              monto: n.monto,
+            ));
+          }
+        }
 
         // Aplicar filtros
         var itemsFiltrados = items;
@@ -1108,6 +1124,8 @@ class _HistorialTabState extends State<_HistorialTab> {
             itemsFiltrados.where((i) => i.tipo == 'pago').length;
         final ndpCount =
             itemsFiltrados.where((i) => i.tipo == 'ndp').length;
+        final ncdCount =
+            itemsFiltrados.where((i) => i.tipo == 'ncd').length;
         final totalRemitosMonto = itemsFiltrados
             .where((i) => i.tipo == 'remito')
             .fold<double>(0, (sum, i) => sum + i.monto);
@@ -1153,6 +1171,13 @@ class _HistorialTabState extends State<_HistorialTab> {
                           selected: _filtroTipo == 'ndp',
                           onTap: () =>
                               setState(() => _filtroTipo = 'ndp'),
+                        ),
+                        const SizedBox(width: 8),
+                        _TipoChip(
+                          label: 'Notas C/D',
+                          selected: _filtroTipo == 'ncd',
+                          onTap: () =>
+                              setState(() => _filtroTipo = 'ncd'),
                         ),
                       ],
                     ),
@@ -1418,6 +1443,7 @@ class _HistorialTabState extends State<_HistorialTab> {
                       if (remitosCount > 0) '$remitosCount remitos',
                       if (pagosCount > 0) '$pagosCount pagos',
                       if (ndpCount > 0) '$ndpCount NP',
+                      if (ncdCount > 0) '$ncdCount NC/ND',
                     ].join(' · '),
                     style: const TextStyle(
                         fontSize: 12, color: AppTheme.textSecondary),
@@ -1467,6 +1493,8 @@ class _HistorialTabState extends State<_HistorialTab> {
 
                         final esNdp = item.tipo == 'ndp';
                         final esPago = item.tipo == 'pago';
+                        final esNcd = item.tipo == 'ncd';
+                        final esCredito = esNcd && item.notaCD!.esCredito;
                         final nombreCliente = esNdp && item.clienteId.isEmpty
                             ? (item.clienteNombreLibre ?? '?')
                             : (cliente?.nombreRazonSocial ?? '?');
@@ -1506,19 +1534,30 @@ class _HistorialTabState extends State<_HistorialTab> {
                                   ? AppTheme.warning.withOpacity(0.15)
                                   : esPago
                                       ? AppTheme.success.withOpacity(0.12)
-                                      : AppTheme.info.withOpacity(0.12),
+                                      : esNcd
+                                          ? (esCredito
+                                                  ? AppTheme.success
+                                                  : AppTheme.danger)
+                                              .withOpacity(0.12)
+                                          : AppTheme.info.withOpacity(0.12),
                               child: Icon(
                                 esNdp
                                     ? Icons.assignment_outlined
                                     : esPago
                                         ? Icons.payments
-                                        : Icons.receipt_long,
+                                        : esNcd
+                                            ? Icons.swap_vert
+                                            : Icons.receipt_long,
                                 size: 18,
                                 color: esNdp
                                     ? AppTheme.warning
                                     : esPago
                                         ? AppTheme.success
-                                        : AppTheme.info,
+                                        : esNcd
+                                            ? (esCredito
+                                                ? AppTheme.success
+                                                : AppTheme.danger)
+                                            : AppTheme.info,
                               ),
                             ),
                             title: Row(
@@ -1528,7 +1567,9 @@ class _HistorialTabState extends State<_HistorialTab> {
                                       ? item.ndp!.numeroFormateado
                                       : esPago
                                           ? item.pago!.numeroFormateado
-                                          : item.remito!.numeroFormateado,
+                                          : esNcd
+                                              ? item.notaCD!.numeroFormateado
+                                              : item.remito!.numeroFormateado,
                                   style: const TextStyle(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w500),
@@ -1546,6 +1587,25 @@ class _HistorialTabState extends State<_HistorialTab> {
                                         style: TextStyle(
                                             fontSize: 9,
                                             color: AppTheme.info,
+                                            fontWeight: FontWeight.w600)),
+                                  ),
+                                if (esNcd)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 5, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: (esCredito
+                                              ? AppTheme.success
+                                              : AppTheme.danger)
+                                          .withOpacity(0.12),
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                    child: Text(esCredito ? 'NC' : 'ND',
+                                        style: TextStyle(
+                                            fontSize: 9,
+                                            color: esCredito
+                                                ? AppTheme.success
+                                                : AppTheme.danger,
                                             fontWeight: FontWeight.w600)),
                                   ),
                                 const SizedBox(width: 4),
@@ -1591,6 +1651,26 @@ class _HistorialTabState extends State<_HistorialTab> {
                                               : AppTheme.warning,
                                     ),
                                   ),
+                                if (esNcd &&
+                                    item.notaCD!.motivo.trim().isNotEmpty)
+                                  Text(
+                                    item.notaCD!.motivo.trim(),
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                  ),
+                                if (esNcd &&
+                                    (item.notaCD!.registradoPor ?? '')
+                                        .trim()
+                                        .isNotEmpty)
+                                  Text(
+                                    'Registrado por ${item.notaCD!.registradoPor}',
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                  ),
                               ],
                             ),
                             trailing: Row(
@@ -1603,7 +1683,11 @@ class _HistorialTabState extends State<_HistorialTab> {
                                     fontWeight: FontWeight.w600,
                                     color: esPago
                                         ? AppTheme.success
-                                        : AppTheme.textPrimary,
+                                        : esNcd
+                                            ? (esCredito
+                                                ? AppTheme.success
+                                                : AppTheme.danger)
+                                            : AppTheme.textPrimary,
                                   ),
                                 ),
                                 if (esPago) ...[
@@ -1617,6 +1701,28 @@ class _HistorialTabState extends State<_HistorialTab> {
                                         context, app, item.pago!),
                                     tooltip: 'Descargar recibo',
                                   ),
+                                ],
+                                if (esNcd) ...[
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    icon: const Icon(
+                                        Icons.picture_as_pdf,
+                                        size: 18,
+                                        color: AppTheme.primary),
+                                    onPressed: () => _descargarComprobanteNcd(
+                                        context, app, item.notaCD!),
+                                    tooltip: 'Descargar comprobante',
+                                  ),
+                                  if (app.tienePermiso('editar_pago'))
+                                    IconButton(
+                                      icon: const Icon(
+                                          Icons.delete_outline,
+                                          size: 18,
+                                          color: AppTheme.danger),
+                                      onPressed: () => _eliminarNcd(
+                                          context, app, item.notaCD!),
+                                      tooltip: 'Eliminar',
+                                    ),
                                 ],
                                 if (esNdp && item.ndp != null) ...[
                                   const SizedBox(width: 4),
@@ -1715,13 +1821,58 @@ class _HistorialTabState extends State<_HistorialTab> {
       pagosCliente: pagosPrevios,
     );
   }
+
+  Future<void> _descargarComprobanteNcd(
+      BuildContext context, AppProvider app, NotaCreditoDebito nota) async {
+    final cliente = app.clientePorId(nota.clienteId);
+    if (cliente == null) return;
+    final vendedor = app.vendedorPorId(cliente.vendedorId);
+    await EstadoCuentaService.generarComprobanteNcd(
+      nota: nota,
+      cliente: cliente,
+      vendedor: vendedor,
+      saldoActual: app.getSaldoCliente(nota.clienteId),
+    );
+  }
+
+  Future<void> _eliminarNcd(
+      BuildContext context, AppProvider app, NotaCreditoDebito nota) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Eliminar ${nota.numeroFormateado}'),
+        content: Text(
+            '¿Seguro que querés eliminar esta ${nota.tipoLabel.toLowerCase()} de ${formatPesos(nota.monto)}? El saldo del cliente se recalcula.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Eliminar',
+                style: TextStyle(color: AppTheme.danger)),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+    await app.eliminarNotaCreditoDebito(nota.id,
+        eliminadoPor: app.usuarioActual?.nombreCompleto);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${nota.numeroFormateado} eliminada')),
+      );
+    }
+  }
 }
 
 class _HistorialItem {
-  final String tipo; // 'remito', 'pago', 'ndp'
+  final String tipo; // 'remito', 'pago', 'ndp', 'ncd'
   final Remito? remito;
   final Pago? pago;
   final NotaPedido? ndp;
+  final NotaCreditoDebito? notaCD;
   final DateTime fecha;
   final int numero;
   final String clienteId;
@@ -1733,6 +1884,7 @@ class _HistorialItem {
     this.remito,
     this.pago,
     this.ndp,
+    this.notaCD,
     required this.fecha,
     required this.numero,
     required this.clienteId,
@@ -3610,51 +3762,73 @@ class _ReporteTabState extends State<_ReporteTab> {
         .toList()
       ..sort((a, b) => a.fecha.compareTo(b.fecha));
 
+    // Notas de crédito / débito del cliente
+    final notasCD = app.notasCreditoDebito
+        .where((n) => n.clienteId == cliente.id)
+        .toList()
+      ..sort((a, b) => a.fecha.compareTo(b.fecha));
+
     // Construir lista unificada de movimientos
     final movimientos = <_Movimiento>[];
     for (final r in remitos) {
       movimientos.add(_Movimiento(
         fecha: r.fecha,
         id: r.numeroFormateado,
-        esRemito: true,
+        tipo: 'remito',
         monto: r.totalPesos,
-        remitoFecha: r.fecha,
-        remitoId: r.id,
+        deudaFecha: r.fecha,
+        bucketId: r.id,
       ));
     }
     for (final p in pagos) {
       movimientos.add(_Movimiento(
         fecha: p.fecha,
         id: p.numeroFormateado,
-        esRemito: false,
+        tipo: 'pago',
         monto: p.montoTotal,
+      ));
+    }
+    for (final n in notasCD) {
+      movimientos.add(_Movimiento(
+        fecha: n.fecha,
+        id: n.numeroFormateado,
+        tipo: n.esCredito ? 'nc' : 'nd',
+        monto: n.monto,
+        deudaFecha: n.esDebito ? n.fecha : null,
+        bucketId: n.esDebito ? n.id : null,
       ));
     }
     movimientos.sort((a, b) {
       final cmp = a.fecha.compareTo(b.fecha);
       if (cmp != 0) return cmp;
-      // remitos antes que pagos del mismo día
-      if (a.esRemito && !b.esRemito) return -1;
-      if (!a.esRemito && b.esRemito) return 1;
+      // deudas (remito/nd) antes que créditos (pago/nc) del mismo día
+      if (a.sumaDeuda && !b.sumaDeuda) return -1;
+      if (!a.sumaDeuda && b.sumaDeuda) return 1;
       return 0;
     });
 
-    // Calcular deuda pendiente por remito (FIFO) para marcar vencidos
-    final deudaRemito = <String, double>{};
-    for (final r in remitos) {
-      deudaRemito[r.id] = r.totalPesos;
+    // FIFO: buckets de deuda = remitos + notas de débito (por fecha);
+    // créditos = pagos + notas de crédito. Se aplican del más viejo al más nuevo.
+    final bucketsDeuda = movimientos.where((m) => m.esBucketDeuda).toList()
+      ..sort((a, b) {
+        final cmp = a.deudaFecha!.compareTo(b.deudaFecha!);
+        return cmp != 0 ? cmp : a.id.compareTo(b.id);
+      });
+    final deudaBucket = <String, double>{};
+    for (final m in bucketsDeuda) {
+      deudaBucket[m.bucketId!] = m.monto;
     }
-    double pagoRestante =
-        pagos.fold(0.0, (sum, p) => sum + p.montoTotal);
-    for (final r in remitos) {
-      if (pagoRestante <= 0) break;
-      final deuda = deudaRemito[r.id]!;
-      if (pagoRestante >= deuda) {
-        pagoRestante -= deuda;
-        deudaRemito[r.id] = 0;
+    double creditoRestante = pagos.fold(0.0, (s, p) => s + p.montoTotal) +
+        notasCD.where((n) => n.esCredito).fold(0.0, (s, n) => s + n.monto);
+    for (final m in bucketsDeuda) {
+      if (creditoRestante <= 0) break;
+      final deuda = deudaBucket[m.bucketId]!;
+      if (creditoRestante >= deuda) {
+        creditoRestante -= deuda;
+        deudaBucket[m.bucketId!] = 0;
       } else {
-        deudaRemito[r.id] = deuda - pagoRestante;
-        pagoRestante = 0;
+        deudaBucket[m.bucketId!] = deuda - creditoRestante;
+        creditoRestante = 0;
       }
     }
 
@@ -3683,6 +3857,7 @@ class _ReporteTabState extends State<_ReporteTab> {
                 vendedor: vendedor,
                 remitos: remitos,
                 pagos: pagos,
+                notasCD: notasCD,
                 saldoTotal: saldo,
               ),
               icon: const Icon(Icons.picture_as_pdf, size: 18),
@@ -3699,11 +3874,11 @@ class _ReporteTabState extends State<_ReporteTab> {
               children: [
                 _Leyenda(
                   color: Color(0xFFB71C1C),
-                  texto: 'Remito · suma deuda (+)',
+                  texto: 'Remito / Nota débito · suma (+)',
                 ),
                 _Leyenda(
                   color: Color(0xFF2E7D32),
-                  texto: 'Pago · resta deuda (−)',
+                  texto: 'Pago / Nota crédito · resta (−)',
                 ),
               ],
             ),
@@ -3735,13 +3910,13 @@ class _ReporteTabState extends State<_ReporteTab> {
               ...() {
                 double saldoAcum = 0;
                 return movimientos.map((mov) {
-                  final esRemito = mov.esRemito;
-                  saldoAcum += esRemito ? mov.monto : -mov.monto;
+                  final sumaDeuda = mov.sumaDeuda;
+                  saldoAcum += sumaDeuda ? mov.monto : -mov.monto;
 
                   final color =
-                      esRemito ? const Color(0xFFB71C1C) : const Color(0xFF2E7D32);
+                      sumaDeuda ? const Color(0xFFB71C1C) : const Color(0xFF2E7D32);
                   final montoStr =
-                      '${esRemito ? '+' : '−'}${formatPesos(mov.monto)}';
+                      '${sumaDeuda ? '+' : '−'}${formatPesos(mov.monto)}';
                   final saldoColor = saldoAcum > 0
                       ? const Color(0xFFB71C1C)
                       : const Color(0xFF2E7D32);
@@ -3750,15 +3925,15 @@ class _ReporteTabState extends State<_ReporteTab> {
                   Color estadoColor = Colors.transparent;
                   Color estadoFg = Colors.black;
 
-                  if (esRemito) {
-                    final deudaPend = deudaRemito[mov.remitoId] ?? 0;
+                  if (mov.esBucketDeuda) {
+                    final deudaPend = deudaBucket[mov.bucketId] ?? 0;
                     if (deudaPend <= 0) {
                       estadoStr = 'Pagado';
                       estadoColor = const Color(0xFFE8F5E9);
                       estadoFg = const Color(0xFF2E7D32);
                     } else {
                       final vencimiento =
-                          mov.remitoFecha!.add(Duration(days: plazo));
+                          mov.deudaFecha!.add(Duration(days: plazo));
                       final diasVenc =
                           hoy.difference(vencimiento).inDays;
                       if (diasVenc > 0) {
@@ -3775,6 +3950,10 @@ class _ReporteTabState extends State<_ReporteTab> {
                         estadoFg = const Color(0xFF2E7D32);
                       }
                     }
+                  } else if (mov.tipo == 'nc') {
+                    estadoStr = 'Nota créd.';
+                    estadoColor = const Color(0xFFE8F5E9);
+                    estadoFg = const Color(0xFF2E7D32);
                   } else {
                     estadoStr = 'Pago';
                     estadoColor = const Color(0xFFE8F5E9);
@@ -3874,23 +4053,27 @@ class _ReporteTabState extends State<_ReporteTab> {
   }
 }
 
-// Modelo interno para unificar remitos y pagos
+// Modelo interno para unificar remitos, pagos y notas C/D
 class _Movimiento {
   final DateTime fecha;
   final String id;
-  final bool esRemito;
+  final String tipo; // 'remito' | 'pago' | 'nc' | 'nd'
   final double monto;
-  final DateTime? remitoFecha;
-  final String? remitoId;
+  final DateTime? deudaFecha; // fecha base de vencimiento (remito / nd)
+  final String? bucketId; // id del bucket de deuda (remito / nd)
 
   const _Movimiento({
     required this.fecha,
     required this.id,
-    required this.esRemito,
+    required this.tipo,
     required this.monto,
-    this.remitoFecha,
-    this.remitoId,
+    this.deudaFecha,
+    this.bucketId,
   });
+
+  // Suma deuda: remitos y notas de débito. Resta: pagos y notas de crédito.
+  bool get sumaDeuda => tipo == 'remito' || tipo == 'nd';
+  bool get esBucketDeuda => tipo == 'remito' || tipo == 'nd';
 }
 
 // Item de leyenda de colores (punto + texto)

@@ -18,6 +18,7 @@ class AppProvider extends ChangeNotifier {
   List<Remito> _remitos = [];
   List<Pago> _pagos = [];
   List<NotaPedido> _notasPedido = [];
+  List<NotaCreditoDebito> _notasCD = [];
   List<PagoEliminado> _pagosEliminados = [];
   List<RemitoEliminado> _remitosEliminados = [];
   List<NotaPedidoEliminada> _notasPedidoEliminadas = [];
@@ -53,6 +54,7 @@ class AppProvider extends ChangeNotifier {
   List<Remito> get remitos => _remitos;
   List<Pago> get pagos => _pagos;
   List<NotaPedido> get notasPedido => _notasPedido;
+  List<NotaCreditoDebito> get notasCreditoDebito => _notasCD;
   List<PagoEliminado> get pagosEliminados => _pagosEliminados;
   List<RemitoEliminado> get remitosEliminados => _remitosEliminados;
   List<NotaPedidoEliminada> get notasPedidoEliminadas =>
@@ -116,6 +118,7 @@ class AppProvider extends ChangeNotifier {
         _db.getNotasPedidoEliminadas(),
         _db.getCostoSemana(DateTime.now()),
         _db.getAllCostosSemana(),
+        _db.getNotasCreditoDebito(),
       ]);
       _vendedores = results[0] as List<Vendedor>;
       _clientes = results[1] as List<Cliente>;
@@ -127,6 +130,7 @@ class AppProvider extends ChangeNotifier {
       _notasPedidoEliminadas = results[7] as List<NotaPedidoEliminada>;
       _costoSemanaActual = results[8] as CostoSemanal?;
       _costosSemanales = results[9] as List<CostoSemanal>;
+      _notasCD = results[10] as List<NotaCreditoDebito>;
 
       // Items de remito en una sola query, agrupados en memoria
       _remitoItems.clear();
@@ -159,7 +163,15 @@ class AppProvider extends ChangeNotifier {
       final totalPagos = _pagos
           .where((p) => p.clienteId == cliente.id)
           .fold<double>(0, (sum, p) => sum + p.montoTotal);
-      _saldosClientes[cliente.id] = totalRemitos - totalPagos;
+      // Notas de débito suman al saldo; notas de crédito lo restan.
+      final totalDebitos = _notasCD
+          .where((n) => n.clienteId == cliente.id && n.esDebito)
+          .fold<double>(0, (sum, n) => sum + n.monto);
+      final totalCreditos = _notasCD
+          .where((n) => n.clienteId == cliente.id && n.esCredito)
+          .fold<double>(0, (sum, n) => sum + n.monto);
+      _saldosClientes[cliente.id] =
+          totalRemitos + totalDebitos - totalPagos - totalCreditos;
     }
 
     for (final vendedor in _vendedores) {
@@ -461,6 +473,44 @@ class AppProvider extends ChangeNotifier {
   }
 
   // ═══════════════════════════════════════════
+  // NOTAS DE CRÉDITO / DÉBITO
+  // ═══════════════════════════════════════════
+
+  Future<void> agregarNotaCreditoDebito(NotaCreditoDebito nota) async {
+    try {
+      // Número secuencial separado por tipo (NC-XXXX / ND-XXXX)
+      final delTipo = _notasCD.where((n) => n.tipo == nota.tipo);
+      final maxNumero = delTipo.isEmpty
+          ? 0
+          : delTipo.map((n) => n.numero).reduce((a, b) => a > b ? a : b);
+      nota.numero = maxNumero + 1;
+
+      final nueva = await _db.insertNotaCreditoDebito(nota);
+      _notasCD.insert(0, nueva);
+      await _recalcularSaldos();
+      notifyListeners();
+    } catch (e) {
+      _error = 'Error al registrar nota: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> eliminarNotaCreditoDebito(String notaId,
+      {String? eliminadoPor}) async {
+    try {
+      final nota = _notasCD.firstWhere((n) => n.id == notaId);
+      await _db.deleteNotaCreditoDebito(nota, eliminadoPor: eliminadoPor);
+      _notasCD.removeWhere((n) => n.id == notaId);
+      await _recalcularSaldos();
+      notifyListeners();
+    } catch (e) {
+      _error = 'Error al eliminar nota: $e';
+      notifyListeners();
+    }
+  }
+
+  // ═══════════════════════════════════════════
   // COSTO SEMANAL
   // ═══════════════════════════════════════════
 
@@ -508,46 +558,85 @@ class AppProvider extends ChangeNotifier {
   // UTILIDADES PARA CONSULTAS
   // ═══════════════════════════════════════════
 
+  /// Buckets de deuda de un cliente (FIFO): remitos confirmados + notas de
+  /// débito, ordenados por fecha. Los créditos (pagos + notas de crédito) se
+  /// aplican del más viejo al más nuevo. Cada bucket queda con su deuda
+  /// pendiente y su fecha de vencimiento (fecha + plazo del cliente).
+  List<DeudaBucket> bucketsDeudaCliente(Cliente cliente) {
+    final buckets = <DeudaBucket>[];
+    for (final r in _remitos
+        .where((r) => r.clienteId == cliente.id && r.esConfirmado)) {
+      buckets.add(DeudaBucket(
+        fecha: r.fecha,
+        orden: r.numero,
+        vencimiento: r.fecha.add(Duration(days: cliente.plazoPagoDias)),
+        remito: r,
+        deuda: r.totalPesos,
+      ));
+    }
+    for (final n in _notasCD
+        .where((n) => n.clienteId == cliente.id && n.esDebito)) {
+      buckets.add(DeudaBucket(
+        fecha: n.fecha,
+        orden: n.numero,
+        vencimiento: n.fecha.add(Duration(days: cliente.plazoPagoDias)),
+        notaDebito: n,
+        deuda: n.monto,
+      ));
+    }
+    buckets.sort((a, b) {
+      final cmp = a.fecha.compareTo(b.fecha);
+      return cmp != 0 ? cmp : a.orden.compareTo(b.orden);
+    });
+
+    // Créditos que reducen deuda FIFO: pagos + notas de crédito
+    double creditos = _pagos
+            .where((p) => p.clienteId == cliente.id)
+            .fold<double>(0, (s, p) => s + p.montoTotal) +
+        _notasCD
+            .where((n) => n.clienteId == cliente.id && n.esCredito)
+            .fold<double>(0, (s, n) => s + n.monto);
+
+    for (final b in buckets) {
+      if (creditos >= b.deuda) {
+        creditos -= b.deuda;
+        b.deuda = 0;
+      } else {
+        b.deuda -= creditos;
+        creditos = 0;
+      }
+    }
+    return buckets;
+  }
+
+  Cliente _clientePorIdOrEmpty(String clienteId) => _clientes.firstWhere(
+        (c) => c.id == clienteId,
+        orElse: () => Cliente(
+            nombreRazonSocial: '',
+            telefono: '',
+            vendedorId: '',
+            plazoPagoDias: 0),
+      );
+
   /// Clientes con saldo vencido
   List<Map<String, dynamic>> clientesConSaldoVencido() {
     final resultado = <Map<String, dynamic>>[];
+    final ahora = DateTime.now();
     for (final cliente in _clientes) {
       final saldo = _saldosClientes[cliente.id] ?? 0;
       if (saldo <= 0) continue;
 
-      final remitosCliente =
-          _remitos.where((r) => r.clienteId == cliente.id && r.esConfirmado).toList();
-      if (remitosCliente.isEmpty) continue;
-
-      // Ordenar por fecha ascendente para aplicar FIFO
-      remitosCliente.sort((a, b) {
-        final cmp = a.fecha.compareTo(b.fecha);
-        return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
-      });
-
-      // Calcular cuánto se ha pagado en total
-      final totalPagos = _pagos
-          .where((p) => p.clienteId == cliente.id)
-          .fold<double>(0, (s, p) => s + p.montoTotal);
-
-      // Aplicar pagos FIFO y encontrar el primer remito con deuda pendiente
-      double pagosRestantes = totalPagos;
-      Remito? primerRemitoConDeuda;
-      for (final r in remitosCliente) {
-        if (pagosRestantes >= r.totalPesos) {
-          pagosRestantes -= r.totalPesos;
-        } else {
-          primerRemitoConDeuda = r;
+      // Primer bucket con deuda pendiente (el más viejo)
+      DeudaBucket? primero;
+      for (final b in bucketsDeudaCliente(cliente)) {
+        if (b.deuda > 0) {
+          primero = b;
           break;
         }
       }
+      if (primero == null) continue;
 
-      if (primerRemitoConDeuda == null) continue;
-
-      final vencimiento = primerRemitoConDeuda.fecha
-          .add(Duration(days: cliente.plazoPagoDias));
-      final diasVencido = DateTime.now().difference(vencimiento).inDays;
-
+      final diasVencido = ahora.difference(primero.vencimiento).inDays;
       if (diasVencido > 0) {
         resultado.add({
           'cliente': cliente,
@@ -558,7 +647,6 @@ class AppProvider extends ChangeNotifier {
       }
     }
 
-    // Ordenar por días vencido (más vencido primero)
     resultado.sort((a, b) =>
         (b['diasVencido'] as int).compareTo(a['diasVencido'] as int));
     return resultado;
@@ -571,7 +659,8 @@ class AppProvider extends ChangeNotifier {
         .length;
   }
 
-  /// Todos los remitos con deuda vencida (FIFO), ordenados por días vencido desc
+  /// Todos los cargos (remitos + notas de débito) con deuda vencida (FIFO),
+  /// ordenados por días vencido desc. Cada entrada trae 'remito' o 'nota'.
   List<Map<String, dynamic>> todosRemitosVencidos() {
     final resultado = <Map<String, dynamic>>[];
     final ahora = DateTime.now();
@@ -580,39 +669,18 @@ class AppProvider extends ChangeNotifier {
       final saldo = _saldosClientes[cliente.id] ?? 0;
       if (saldo <= 0) continue;
 
-      final remitosCliente = _remitos
-          .where((r) => r.clienteId == cliente.id && r.esConfirmado)
-          .toList()
-        ..sort((a, b) {
-          final cmp = a.fecha.compareTo(b.fecha);
-          return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
-        });
-
-      if (remitosCliente.isEmpty) continue;
-
-      final totalPagos = _pagos
-          .where((p) => p.clienteId == cliente.id)
-          .fold<double>(0, (s, p) => s + p.montoTotal);
-
-      double pagosRestantes = totalPagos;
-      for (final r in remitosCliente) {
-        if (pagosRestantes >= r.totalPesos) {
-          pagosRestantes -= r.totalPesos;
-        } else {
-          final deuda = r.totalPesos - pagosRestantes;
-          pagosRestantes = 0;
-          final vencimiento =
-              r.fecha.add(Duration(days: cliente.plazoPagoDias));
-          final diasVencido = ahora.difference(vencimiento).inDays;
-          if (diasVencido > 0) {
-            resultado.add({
-              'remito': r,
-              'cliente': cliente,
-              'vendedor': vendedorPorId(cliente.vendedorId),
-              'diasVencido': diasVencido,
-              'deuda': deuda,
-            });
-          }
+      for (final b in bucketsDeudaCliente(cliente)) {
+        if (b.deuda <= 0) continue;
+        final diasVencido = ahora.difference(b.vencimiento).inDays;
+        if (diasVencido > 0) {
+          resultado.add({
+            if (b.remito != null) 'remito': b.remito,
+            if (b.notaDebito != null) 'nota': b.notaDebito,
+            'cliente': cliente,
+            'vendedor': vendedorPorId(cliente.vendedorId),
+            'diasVencido': diasVencido,
+            'deuda': b.deuda,
+          });
         }
       }
     }
@@ -622,7 +690,7 @@ class AppProvider extends ChangeNotifier {
     return resultado;
   }
 
-  /// Todos los remitos con deuda NO vencida (FIFO), ordenados por días restantes desc
+  /// Todos los cargos con deuda NO vencida (FIFO), ordenados por días restantes desc
   List<Map<String, dynamic>> todosRemitosNoVencidos() {
     final resultado = <Map<String, dynamic>>[];
     final ahora = DateTime.now();
@@ -631,39 +699,18 @@ class AppProvider extends ChangeNotifier {
       final saldo = _saldosClientes[cliente.id] ?? 0;
       if (saldo <= 0) continue;
 
-      final remitosCliente = _remitos
-          .where((r) => r.clienteId == cliente.id && r.esConfirmado)
-          .toList()
-        ..sort((a, b) {
-          final cmp = a.fecha.compareTo(b.fecha);
-          return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
-        });
-
-      if (remitosCliente.isEmpty) continue;
-
-      final totalPagos = _pagos
-          .where((p) => p.clienteId == cliente.id)
-          .fold<double>(0, (s, p) => s + p.montoTotal);
-
-      double pagosRestantes = totalPagos;
-      for (final r in remitosCliente) {
-        if (pagosRestantes >= r.totalPesos) {
-          pagosRestantes -= r.totalPesos;
-        } else {
-          final deuda = r.totalPesos - pagosRestantes;
-          pagosRestantes = 0;
-          final vencimiento =
-              r.fecha.add(Duration(days: cliente.plazoPagoDias));
-          final diasVencido = ahora.difference(vencimiento).inDays;
-          if (diasVencido <= 0) {
-            resultado.add({
-              'remito': r,
-              'cliente': cliente,
-              'vendedor': vendedorPorId(cliente.vendedorId),
-              'diasRestantes': -diasVencido,
-              'deuda': deuda,
-            });
-          }
+      for (final b in bucketsDeudaCliente(cliente)) {
+        if (b.deuda <= 0) continue;
+        final diasVencido = ahora.difference(b.vencimiento).inDays;
+        if (diasVencido <= 0) {
+          resultado.add({
+            if (b.remito != null) 'remito': b.remito,
+            if (b.notaDebito != null) 'nota': b.notaDebito,
+            'cliente': cliente,
+            'vendedor': vendedorPorId(cliente.vendedorId),
+            'diasRestantes': -diasVencido,
+            'deuda': b.deuda,
+          });
         }
       }
     }
@@ -673,36 +720,14 @@ class AppProvider extends ChangeNotifier {
     return resultado;
   }
 
-  /// Cantidad de remitos con deuda vencida para un cliente (FIFO)
+  /// Cantidad de cargos con deuda vencida para un cliente (FIFO)
   int remitosVencidosCliente(String clienteId) {
-    final cliente = _clientes.firstWhere(
-      (c) => c.id == clienteId,
-      orElse: () => Cliente(
-          nombreRazonSocial: '', telefono: '', vendedorId: '', plazoPagoDias: 0),
-    );
-    final remitosCliente = _remitos
-        .where((r) => r.clienteId == clienteId && r.esConfirmado)
-        .toList()
-      ..sort((a, b) {
-        final cmp = a.fecha.compareTo(b.fecha);
-        return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
-      });
-
-    final totalPagos = _pagos
-        .where((p) => p.clienteId == clienteId)
-        .fold<double>(0, (s, p) => s + p.montoTotal);
-
-    double pagosRestantes = totalPagos;
+    final cliente = _clientePorIdOrEmpty(clienteId);
     int vencidos = 0;
     final ahora = DateTime.now();
-    for (final r in remitosCliente) {
-      if (pagosRestantes >= r.totalPesos) {
-        pagosRestantes -= r.totalPesos;
-      } else {
-        pagosRestantes = 0;
-        final vencimiento =
-            r.fecha.add(Duration(days: cliente.plazoPagoDias));
-        if (ahora.difference(vencimiento).inDays > 0) vencidos++;
+    for (final b in bucketsDeudaCliente(cliente)) {
+      if (b.deuda > 0 && ahora.difference(b.vencimiento).inDays > 0) {
+        vencidos++;
       }
     }
     return vencidos;
@@ -710,34 +735,12 @@ class AppProvider extends ChangeNotifier {
 
   /// Monto total vencido para un cliente (FIFO)
   double saldoVencidoCliente(String clienteId) {
-    final cliente = _clientes.firstWhere(
-      (c) => c.id == clienteId,
-      orElse: () => Cliente(
-          nombreRazonSocial: '', telefono: '', vendedorId: '', plazoPagoDias: 0),
-    );
-    final remitosCliente = _remitos
-        .where((r) => r.clienteId == clienteId && r.esConfirmado)
-        .toList()
-      ..sort((a, b) {
-        final cmp = a.fecha.compareTo(b.fecha);
-        return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
-      });
-
-    final totalPagos = _pagos
-        .where((p) => p.clienteId == clienteId)
-        .fold<double>(0, (s, p) => s + p.montoTotal);
-
-    double pagosRestantes = totalPagos;
+    final cliente = _clientePorIdOrEmpty(clienteId);
     double vencido = 0;
     final ahora = DateTime.now();
-    for (final r in remitosCliente) {
-      if (pagosRestantes >= r.totalPesos) {
-        pagosRestantes -= r.totalPesos;
-      } else {
-        final deuda = r.totalPesos - pagosRestantes;
-        pagosRestantes = 0;
-        final vencimiento = r.fecha.add(Duration(days: cliente.plazoPagoDias));
-        if (ahora.difference(vencimiento).inDays > 0) vencido += deuda;
+    for (final b in bucketsDeudaCliente(cliente)) {
+      if (b.deuda > 0 && ahora.difference(b.vencimiento).inDays > 0) {
+        vencido += b.deuda;
       }
     }
     return vencido;
@@ -996,4 +999,24 @@ class AppProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+}
+
+/// Bucket de deuda para el cálculo FIFO de vencidos: un remito confirmado o
+/// una nota de débito. `deuda` es el saldo pendiente tras aplicar créditos.
+class DeudaBucket {
+  final DateTime fecha;
+  final int orden;
+  final DateTime vencimiento;
+  final Remito? remito;
+  final NotaCreditoDebito? notaDebito;
+  double deuda;
+
+  DeudaBucket({
+    required this.fecha,
+    required this.orden,
+    required this.vencimiento,
+    this.remito,
+    this.notaDebito,
+    required this.deuda,
+  });
 }

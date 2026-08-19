@@ -727,6 +727,70 @@ class NotaPedidoEliminada {
 }
 
 // ─────────────────────────────────────────────
+// NOTA DE CRÉDITO / DÉBITO (ajuste manual de saldo)
+// ─────────────────────────────────────────────
+// tipo 'credito' → resta al saldo del cliente (a su favor, como un pago)
+// tipo 'debito'  → suma al saldo del cliente (cargo extra, como un remito)
+class NotaCreditoDebito {
+  final String id;
+  String clienteId;
+  String tipo; // 'credito' | 'debito'
+  DateTime fecha;
+  int numero; // secuencia separada por tipo
+  double monto;
+  String motivo;
+  String? registradoPor; // nombre_completo del usuario
+  final DateTime creadoEn;
+
+  NotaCreditoDebito({
+    String? id,
+    required this.clienteId,
+    required this.tipo,
+    required this.fecha,
+    this.numero = 0,
+    required this.monto,
+    this.motivo = '',
+    this.registradoPor,
+    DateTime? creadoEn,
+  })  : id = id ?? _uuid.v4(),
+        creadoEn = creadoEn ?? DateTime.now();
+
+  bool get esCredito => tipo == 'credito';
+  bool get esDebito => tipo == 'debito';
+
+  /// Número formateado: NC-0001 / ND-0001
+  String get numeroFormateado =>
+      '${esCredito ? 'NC' : 'ND'}-${numero.toString().padLeft(4, '0')}';
+
+  String get tipoLabel => esCredito ? 'Nota de crédito' : 'Nota de débito';
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'cliente_id': clienteId,
+        'tipo': tipo,
+        'fecha': fecha.toIso8601String(),
+        'numero': numero,
+        'monto': monto,
+        'motivo': motivo,
+        if (registradoPor != null) 'registrado_por': registradoPor,
+        'creado_en': creadoEn.toIso8601String(),
+      };
+
+  factory NotaCreditoDebito.fromMap(Map<String, dynamic> map) =>
+      NotaCreditoDebito(
+        id: map['id'],
+        clienteId: map['cliente_id'] ?? '',
+        tipo: map['tipo'] ?? 'credito',
+        fecha: DateTime.tryParse(map['fecha'] ?? '') ?? DateTime.now(),
+        numero: map['numero'] ?? 0,
+        monto: (map['monto'] ?? 0).toDouble(),
+        motivo: map['motivo'] ?? '',
+        registradoPor: map['registrado_por'],
+        creadoEn: DateTime.tryParse(map['creado_en'] ?? '') ?? DateTime.now(),
+      );
+}
+
+// ─────────────────────────────────────────────
 // PERMISO (catálogo fijo)
 // ─────────────────────────────────────────────
 class Permiso {

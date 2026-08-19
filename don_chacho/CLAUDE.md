@@ -70,7 +70,7 @@ ALTER TABLE permisos DISABLE ROW LEVEL SECURITY;
 ```
 don_chacho/lib/
 ├── main.dart                          # Login + sesión + tabs dinámicas por permisos + menú de acciones del FAB (admin: remito + NDP; secretaria: NDP)
-├── models/models.dart                 # Vendedor, Cliente, Remito, RemitoItem, Pago, PagoMedio, CostoSemanal, NotaPedido, NotaPedidoItem, Permiso, Rol, Usuario, RemitoEliminado, PagoEliminado
+├── models/models.dart                 # Vendedor, Cliente, Remito, RemitoItem, Pago, PagoMedio, CostoSemanal, NotaPedido, NotaPedidoItem, NotaCreditoDebito, Permiso, Rol, Usuario, RemitoEliminado, PagoEliminado
 ├── providers/app_provider.dart        # Estado global, FIFO, saldos, permisos, usuarioActual, NDPs
 ├── services/
 │   ├── auth_service.dart              # Login SHA-256, sesión persistente SharedPreferences, CRUD usuarios/roles
@@ -88,6 +88,7 @@ don_chacho/lib/
 │   ├── remito_form_screen.dart        # Carga manual (OCR eliminado en v18.17), solo para admin. Dropdown de tipo de carne (7 opciones)
 │   ├── nota_pedido_form_screen.dart   # Carga NDP para secretaria: filas dinámicas con kg/media, cliente de lista o texto libre. Dropdown de tipo de carne por fila (v18.17, reemplazó la descripción libre)
 │   ├── pago_form_screen.dart          # Múltiples medios, búsqueda cliente A→Z, ver/eliminar (NO editar — genera errores de saldo)
+│   ├── nota_cd_form_screen.dart       # Registrar Nota de Crédito / Débito (v18.21): SegmentedButton tipo, búsqueda cliente, saldo actual→resultante, monto, motivo. Accesible desde el FAB por todos los roles
 │   ├── consultas_screen.dart          # 5 tabs: Vencidos (1°), Ganancias, Saldos, Historial (remitos+pagos+NDPs), Directorio. Vencidos: lista todos los remitos vencidos con FIFO, resumen count+deuda total. Historial: onTap guarda por permiso (editar_remito/editar_pago); Saldos: tap a pago requiere crear_pago
 │   ├── costos_semana_screen.dart      # Historial costos, editar con alerta semana vieja
 │   ├── gestion_usuarios_screen.dart   # CRUD usuarios + roles con permisos checkboxes
@@ -124,6 +125,11 @@ don_chacho/lib/
 - `nota_pedido_items` (id UUID PK, nota_pedido_id FK CASCADE, descripcion TEXT, cantidad_medias INT, kgs_por_media JSONB array, precio_por_media NUMERIC, total_kg, total_pesos)
 - Ambas tablas con RLS deshabilitado
 
+### Tablas Notas de Crédito / Débito (v18.21)
+- `notas_credito_debito` (id UUID PK, cliente_id UUID FK, tipo TEXT CHECK IN ('credito','debito'), fecha DATE, numero INT, monto NUMERIC, motivo TEXT, registrado_por TEXT, creado_en TIMESTAMPTZ) — index en cliente_id, RLS deshabilitado
+- `notas_cd_eliminadas` (auditoría de notas borradas) — RLS deshabilitado
+- **NC** resta al saldo (a favor del cliente, como un pago); **ND** suma (cargo extra, como un remito). Numeración NC-XXXX / ND-XXXX, secuencia separada por tipo.
+
 ### Migraciones SQL (ya corridas en Supabase, en orden)
 1. `supabase_schema.sql` — esquema inicial
 2. `supabase_migration_fase2.sql` — pagos + medios
@@ -135,6 +141,8 @@ don_chacho/lib/
 8. Columnas `saldo_anterior` / `saldo_nuevo` en `pagos` (v18.11) — agregar manualmente en SQL Editor si no existen
 9. Tabla `pagos_eliminados` (v18.11) — auditoría de pagos borrados
 10. `supabase_migration_remitos_eliminados.sql` — tabla `remitos_eliminados` de auditoría (v18.11, en raíz del repo)
+11. `supabase_migration_ndp_tipo_carne.sql` — columna `tipo_carne` en `nota_pedido_items` (v18.19)
+12. `supabase_migration_notas_credito_debito.sql` — tablas `notas_credito_debito` + `notas_cd_eliminadas` (v18.21, **PENDIENTE de correr**)
 
 ### MedioPago enum en Dart
 `efectivo`, `transferencia`, `cheque`
@@ -316,16 +324,31 @@ vercel --prod
 | v18.14 (01/07) | **Ruta de cobranza (1ª versión)**: embebida en Consultas → Directorio, combo box (Clientes que deben / Solo remitos vencidos) + botón "Armar". Nuevo `ruta_cobranza_service.dart` (GPS, extracción de coords, orden por cercanía, URL Google Maps). Reemplazada por la tab "Ruta" en v18.15. |
 | v18.15 (01/07) | **Ruta de cobranza movida a tab propia "Ruta"** en Consultas (9 tabs). Filtros: cliente (búsqueda), vendedor (dropdown), "Con saldo pendiente" y "Solo vencidos" (FilterChips). Lista con checkboxes para **seleccionar clientes** (los sin ubicación quedan deshabilitados) + "Todos/Ninguno". Botón "Armar recorrido (N)" que calcula la ruta con los elegidos (GPS + orden por cercanía) y abre el panel de paradas → Google Maps. Se quitó el bloque de ruta del Directorio. |
 | v18.16 (02/07) | **Fix ubicaciones de la ruta + editar ubicación desde Directorio**: (1) `_parseCoords` reconoce ahora el formato **DMS** (`24°59'04.1"S`). (2) Nueva **Edge Function `resolver-maps`** (runtime nuevo, `withSupabase` con auth `["publishable","secret"]`) que resuelve del lado del servidor los **links cortos** `maps.app.goo.gl` (el navegador no puede por CORS): sigue el redirect y devuelve `lat/lng`, o si el link es un "compartir lugar" sin coords, devuelve la **dirección/nombre** (`q=…`). `RutaCobranzaService.construirParadas()` llama la función en lote para los clientes sin coords locales. `ParadaRuta` gana `direccionResuelta` y usa ese texto como punto ruteable. (3) En **Directorio**, botón de editar ubicación por tarjeta → bottom sheet para cargar/corregir Dirección + Link Maps (guarda con `editarCliente`). |
+| v18.21 (18/08) | **Notas de crédito / débito para clientes**: nueva opción para registrar NC (resta al saldo, a favor del cliente, como un pago) y ND (suma al saldo, cargo extra, como un remito). Fórmula de saldo: `remitos + débitos − pagos − créditos`. Formulario propio (`nota_cd_form_screen.dart`) accesible desde el FAB por **todos** los roles. Numeración NC-XXXX / ND-XXXX (secuencia separada por tipo). Integradas en: Historial (chip "Notas C/D", badge NC/ND, comprobante PDF, eliminar con permiso `editar_pago`), FIFO de vencidos (las ND son buckets de deuda; las NC se aplican como crédito FIFO igual que los pagos, vía `bucketsDeudaCliente`), tab Reporte + PDF de estado de cuenta. Tablas `notas_credito_debito` + `notas_cd_eliminadas` (`supabase_migration_notas_credito_debito.sql`). |
 | v18.20 (20/07) | **Link a WhatsApp en las tarjetas de cliente**: cada tarjeta con teléfono muestra un acceso directo a WhatsApp (ícono verde / link), igual que el link de ubicación. Se implementó en las 3 tarjetas: Directorio y Vencidos (`consultas_screen.dart`) y lista de Clientes (`clientes_screen.dart`). Helper compartido `abrirWhatsApp` (top-level en `consultas_screen.dart`) arma `wa.me/549` + área + número (saca el `0` inicial del área). |
 | v18.19 (08/07) | **Descripción libre de vuelta en la NDP (junto al Tipo de carne)**: cada fila de la nota de pedido tiene ahora **dos campos**: el dropdown "Tipo de carne" (v18.17) **y** un TextField "Descripción (opcional)" de texto libre. Nueva columna `tipo_carne` en `nota_pedido_items` (antes el tipo se guardaba en `descripcion`). La conversión NDP→Remito usa `tipo_carne` (fallback a `descripcion` para NDPs v18.17, luego regla por peso). PDF de NDP y card de bandeja muestran ambos campos. Migración `supabase_migration_ndp_tipo_carne.sql`. |
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v18.20) — EN PRODUCCIÓN
+## ESTADO ACTUAL (v18.21) — PENDIENTE DE DEPLOY
 
-Deployada el 20/07/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`
+v18.20 en producción (deployada el 20/07/2026). v18.21 (notas de crédito/débito) **codeada, compila limpio (`flutter analyze` sin errores), pendiente de correr la migración SQL en Supabase y de deployar**. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`
 
 > **PWA / service worker**: la app cachea `main.dart.js`. Tras un deploy, un simple refresh (incluso Cmd+Shift+R) puede seguir mostrando la versión vieja. Para forzar la nueva: recargar 2 veces, o DevTools → Application → Service Workers → Unregister + Clear site data, o probar en Incógnito.
+
+### Cambios v18.21 (18/08/2026)
+1. **Modelo** `lib/models/models.dart`: nueva clase `NotaCreditoDebito` (id, clienteId, tipo `'credito'|'debito'`, fecha, numero, monto, motivo, registradoPor, creadoEn). Getters `esCredito`/`esDebito`, `numeroFormateado` (`NC-0001`/`ND-0001`), `tipoLabel`. `toMap`/`fromMap`.
+2. **Migración** `supabase_migration_notas_credito_debito.sql` (raíz del repo, **PENDIENTE de correr en Supabase**): tabla `notas_credito_debito` (RLS off) + tabla de auditoría `notas_cd_eliminadas` (RLS off).
+3. **`lib/services/database_service.dart`**: `getNotasCreditoDebito()` (tolerante: devuelve `[]` si la tabla no existe todavía), `insertNotaCreditoDebito(nota)`, `deleteNotaCreditoDebito(nota, {eliminadoPor})` (best-effort: inserta en auditoría antes de borrar).
+4. **`lib/providers/app_provider.dart`**: lista `_notasCD` + getter `notasCreditoDebito`, cargada en `cargarDatos` (Future.wait). `_recalcularSaldos`: `saldo = totalRemitos + totalDebitos − totalPagos − totalCreditos`. `agregarNotaCreditoDebito(nota)` (autonumera por tipo: max + 1) y `eliminarNotaCreditoDebito(id, {eliminadoPor})`. **Nuevo helper unificado `bucketsDeudaCliente(cliente)`** que arma los buckets de deuda (remitos confirmados + notas débito) ordenados por fecha y les aplica los créditos (pagos + notas crédito) en FIFO; devuelve `List<DeudaBucket>` (fecha, orden, vencimiento, remito?, notaDebito?, deuda). Se reescribieron `clientesConSaldoVencido`, `todosRemitosVencidos`, `todosRemitosNoVencidos`, `remitosVencidosCliente`, `saldoVencidoCliente` para usar este helper (antes duplicaban el FIFO). Las listas de vencidos ahora emiten entradas con `'remito'` o `'nota'` según el bucket.
+5. **`lib/screens/nota_cd_form_screen.dart`** (nuevo): `NotaCdFormScreen` con `SegmentedButton` crédito/débito, búsqueda de cliente (patrón estándar), card de saldo actual → resultante, fecha, monto, motivo. Guarda con `agregarNotaCreditoDebito`.
+6. **`lib/main.dart`**: opción **"Nota de crédito / débito"** en el menú del FAB (ícono `swap_vert`), **sin gate de permiso** (la ven todos: admin y cajeras/secretarias).
+7. **`lib/screens/consultas_screen.dart`**:
+   - **Vencidos**: las tarjetas soportan ND como bucket de deuda (leen `'remito'` o `'nota'`).
+   - **Historial**: chip nuevo **"Notas C/D"** (`_filtroTipo == 'ncd'`); `_HistorialItem` gana `notaCD`; card con ícono `swap_vert` (verde crédito / rojo débito), badge NC/ND, motivo + registrado por, monto coloreado, botón de **comprobante PDF** y botón **eliminar** (requiere `editar_pago`, con confirmación). Resumen de totales incluye contador "N NC/ND".
+   - **Reporte**: `_Movimiento` pasó de `esRemito` bool a `tipo` (`'remito'|'pago'|'nc'|'nd'`) con getters `sumaDeuda`/`esBucketDeuda`. El FIFO de estado ahora usa buckets = remitos + ND y créditos = pagos + NC. NC muestra pill "Nota créd.", ND participa del estado Pagado/Vencido. Leyenda actualizada.
+8. **`lib/services/estado_cuenta_service.dart`**: `generarReporteCliente` acepta `notasCD` y replica el mismo FIFO/movimientos en el PDF. Nuevo `generarComprobanteNcd(nota, cliente, vendedor, saldoActual)` → PDF A4 de una página con el comprobante de la nota.
+9. **Deploy pendiente**: correr la migración SQL, luego `flutter clean` + `build_web.sh` + `vercel --prod`.
 
 ### Cambios v18.20 (20/07/2026)
 1. `lib/screens/consultas_screen.dart`: nueva función top-level `abrirWhatsApp(telefono)` — limpia no-dígitos, saca el `0` inicial del área y antepone `549` (celular Argentina), abre `https://wa.me/<num>` con `launchUrl`. Joaco carga los teléfonos como área + número, sin código de país.
@@ -497,4 +520,5 @@ URL: `https://web-six-indol-svg13avcfl.vercel.app`
 
 ## CAMBIOS PENDIENTES
 
+- **Ejecutar `supabase_migration_notas_credito_debito.sql`** en Supabase Dashboard → SQL Editor (una sola vez, v18.21). Crea las tablas `notas_credito_debito` + `notas_cd_eliminadas`. Hasta correrla, la app funciona igual (el getter tolera que la tabla no exista y devuelve lista vacía), pero no se pueden guardar notas.
 - **Ejecutar `supabase_migration_indices.sql`** en Supabase Dashboard → SQL Editor (una sola vez). Agrega 6 índices para acelerar la carga inicial.

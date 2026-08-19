@@ -474,6 +474,54 @@ class DatabaseService {
     await _client.from('notas_pedido').update(updates).eq('id', ndpId);
   }
 
+  // ═══════════════════════════════════════════
+  // NOTAS DE CRÉDITO / DÉBITO
+  // ═══════════════════════════════════════════
+
+  Future<List<NotaCreditoDebito>> getNotasCreditoDebito() async {
+    // Tolerante a que la tabla aún no exista (migración no corrida):
+    // devuelve lista vacía en vez de romper la carga inicial.
+    try {
+      final data = await _client
+          .from('notas_credito_debito')
+          .select()
+          .order('creado_en', ascending: false);
+      return data.map((e) => NotaCreditoDebito.fromMap(e)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<NotaCreditoDebito> insertNotaCreditoDebito(
+      NotaCreditoDebito nota) async {
+    final data = await _client
+        .from('notas_credito_debito')
+        .insert(nota.toMap())
+        .select()
+        .single();
+    return NotaCreditoDebito.fromMap(data);
+  }
+
+  Future<void> deleteNotaCreditoDebito(
+    NotaCreditoDebito nota, {
+    String? eliminadoPor,
+  }) async {
+    // Auditoría best-effort antes de borrar.
+    try {
+      await _client.from('notas_cd_eliminadas').insert({
+        'nota_id': nota.id,
+        'cliente_id': nota.clienteId,
+        'tipo': nota.tipo,
+        'fecha': nota.fecha.toIso8601String(),
+        'numero': nota.numero,
+        'monto': nota.monto,
+        'motivo': nota.motivo,
+        'eliminado_por': eliminadoPor,
+      });
+    } catch (_) {}
+    await _client.from('notas_credito_debito').delete().eq('id', nota.id);
+  }
+
   /// Confirma la NDP: crea Remito + RemitoItems, linkea remito_id, marca confirmada.
   /// Devuelve el Remito generado con su número asignado.
   Future<Remito> confirmarNotaPedido({

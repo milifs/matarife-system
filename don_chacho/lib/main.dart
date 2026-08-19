@@ -18,6 +18,7 @@ import 'screens/consultas_screen.dart';
 import 'screens/remito_form_screen.dart';
 import 'screens/nota_pedido_form_screen.dart';
 import 'screens/pago_form_screen.dart';
+import 'screens/nota_cd_form_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/gestion_usuarios_screen.dart';
 import 'screens/bandeja_remitos_screen.dart';
@@ -345,6 +346,25 @@ class _MainShellState extends State<MainShell> {
                   },
                 ),
               ],
+              // Nota de crédito / débito: disponible para todos los usuarios
+              const Divider(height: 1),
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: AppTheme.info.withOpacity(0.12),
+                  child: const Icon(Icons.swap_vert,
+                      color: AppTheme.info),
+                ),
+                title: const Text('Nota de crédito / débito'),
+                subtitle: const Text('Ajustar saldo de cliente'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const NotaCdFormScreen()),
+                  );
+                },
+              ),
               if (tiene('confirmar_remito')) ...[
                 const Divider(height: 1),
                 ListTile(

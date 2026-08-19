@@ -931,6 +931,7 @@ class EstadoCuentaService {
     Vendedor? vendedor,
     required List<Remito> remitos, // confirmados del cliente
     required List<Pago> pagos,
+    List<NotaCreditoDebito> notasCD = const [],
     required double saldoTotal,
   }) async {
     final logo = await _loadLogo();
@@ -944,84 +945,107 @@ class EstadoCuentaService {
         return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
       });
     final pagosOrd = [...pagos]..sort((a, b) => a.fecha.compareTo(b.fecha));
+    final notasOrd = [...notasCD]..sort((a, b) => a.fecha.compareTo(b.fecha));
 
-    // FIFO: deuda pendiente por remito (para marcar estado)
-    final deudaRemito = <String, double>{};
-    for (final r in remitosOrd) {
-      deudaRemito[r.id] = r.totalPesos;
-    }
-    double pagoRestante = pagosOrd.fold(0.0, (s, p) => s + p.montoTotal);
-    for (final r in remitosOrd) {
-      if (pagoRestante <= 0) break;
-      final d = deudaRemito[r.id]!;
-      if (pagoRestante >= d) {
-        pagoRestante -= d;
-        deudaRemito[r.id] = 0;
-      } else {
-        deudaRemito[r.id] = d - pagoRestante;
-        pagoRestante = 0;
-      }
-    }
-
-    // Movimientos unificados (remitos + pagos) en orden cronológico
+    // Movimientos unificados (remitos + pagos + notas C/D) en orden cronológico.
+    // tipo: 'remito' | 'pago' | 'nc' | 'nd'. Suma deuda: remito/nd. Resta: pago/nc.
     final movs = <Map<String, dynamic>>[];
     for (final r in remitosOrd) {
       movs.add({
         'fecha': r.fecha,
         'id': r.numeroFormateado,
-        'esRemito': true,
+        'tipo': 'remito',
         'monto': r.totalPesos,
-        'remitoFecha': r.fecha,
-        'remitoId': r.id,
+        'deudaFecha': r.fecha,
+        'bucketId': r.id,
       });
     }
     for (final p in pagosOrd) {
       movs.add({
         'fecha': p.fecha,
         'id': p.numeroFormateado,
-        'esRemito': false,
+        'tipo': 'pago',
         'monto': p.montoTotal,
       });
     }
+    for (final n in notasOrd) {
+      movs.add({
+        'fecha': n.fecha,
+        'id': n.numeroFormateado,
+        'tipo': n.esCredito ? 'nc' : 'nd',
+        'monto': n.monto,
+        if (n.esDebito) 'deudaFecha': n.fecha,
+        if (n.esDebito) 'bucketId': n.id,
+      });
+    }
+    bool sumaDeuda(Map<String, dynamic> m) =>
+        m['tipo'] == 'remito' || m['tipo'] == 'nd';
     movs.sort((a, b) {
       final cmp =
           (a['fecha'] as DateTime).compareTo(b['fecha'] as DateTime);
       if (cmp != 0) return cmp;
-      final ar = a['esRemito'] as bool;
-      final br = b['esRemito'] as bool;
-      if (ar && !br) return -1; // remitos antes que pagos del mismo día
-      if (!ar && br) return 1;
+      final ad = sumaDeuda(a);
+      final bd = sumaDeuda(b);
+      if (ad && !bd) return -1; // deudas antes que créditos del mismo día
+      if (!ad && bd) return 1;
       return 0;
     });
+
+    // FIFO: buckets de deuda = remitos + notas débito; créditos = pagos + notas crédito.
+    final buckets = movs.where(sumaDeuda).toList()
+      ..sort((a, b) {
+        final cmp = (a['deudaFecha'] as DateTime)
+            .compareTo(b['deudaFecha'] as DateTime);
+        return cmp != 0 ? cmp : (a['id'] as String).compareTo(b['id'] as String);
+      });
+    final deudaBucket = <String, double>{};
+    for (final m in buckets) {
+      deudaBucket[m['bucketId'] as String] = m['monto'] as double;
+    }
+    double creditoRestante = pagosOrd.fold(0.0, (s, p) => s + p.montoTotal) +
+        notasOrd.where((n) => n.esCredito).fold(0.0, (s, n) => s + n.monto);
+    for (final m in buckets) {
+      if (creditoRestante <= 0) break;
+      final id = m['bucketId'] as String;
+      final d = deudaBucket[id]!;
+      if (creditoRestante >= d) {
+        creditoRestante -= d;
+        deudaBucket[id] = 0;
+      } else {
+        deudaBucket[id] = d - creditoRestante;
+        creditoRestante = 0;
+      }
+    }
 
     // Filas con saldo acumulado
     double saldoAcum = 0;
     final filas = <pw.TableRow>[];
     for (final mov in movs) {
-      final esRemito = mov['esRemito'] as bool;
+      final suma = sumaDeuda(mov);
+      final esBucket = mov['bucketId'] != null;
       final monto = mov['monto'] as double;
-      saldoAcum += esRemito ? monto : -monto;
+      saldoAcum += suma ? monto : -monto;
 
-      final montoColor = esRemito
+      final montoColor = suma
           ? PdfColor.fromHex('#B71C1C')
           : PdfColor.fromHex('#2E7D32');
       final saldoColor = saldoAcum > 0
           ? PdfColor.fromHex('#B71C1C')
           : PdfColor.fromHex('#2E7D32');
-      final montoStr = '${esRemito ? '+' : '-'}${formatPesos(monto)}';
+      final montoStr = '${suma ? '+' : '-'}${formatPesos(monto)}';
 
       String estadoStr;
       PdfColor estadoBg;
       PdfColor estadoFg;
-      if (esRemito) {
-        final deudaPend = deudaRemito[mov['remitoId']] ?? 0;
+      if (esBucket) {
+        final deudaPend = deudaBucket[mov['bucketId']] ?? 0;
         if (deudaPend <= 0) {
           estadoStr = 'Pagado';
           estadoBg = PdfColor.fromHex('#E8F5E9');
           estadoFg = PdfColor.fromHex('#2E7D32');
         } else {
           final venc =
-              (mov['remitoFecha'] as DateTime).add(Duration(days: plazo));
+              (mov['deudaFecha'] as DateTime).add(Duration(days: plazo));
           final diasVenc = ahora.difference(venc).inDays;
           if (diasVenc > 0) {
             estadoStr = 'Vencido $diasVenc d.';
@@ -1037,6 +1061,10 @@ class EstadoCuentaService {
             estadoFg = PdfColor.fromHex('#2E7D32');
           }
         }
+      } else if (mov['tipo'] == 'nc') {
+        estadoStr = 'Nota créd.';
+        estadoBg = PdfColor.fromHex('#E8F5E9');
+        estadoFg = PdfColor.fromHex('#2E7D32');
       } else {
         estadoStr = 'Pago';
         estadoBg = PdfColor.fromHex('#E8F5E9');
@@ -1107,10 +1135,10 @@ class EstadoCuentaService {
           // Leyenda de colores
           pw.Row(children: [
             _leyendaPdf(
-                PdfColor.fromHex('#B71C1C'), 'Remito - suma deuda (+)'),
+                PdfColor.fromHex('#B71C1C'), 'Remito / Nota debito - suma (+)'),
             pw.SizedBox(width: 16),
             _leyendaPdf(
-                PdfColor.fromHex('#2E7D32'), 'Pago - resta deuda (-)'),
+                PdfColor.fromHex('#2E7D32'), 'Pago / Nota credito - resta (-)'),
           ]),
           pw.SizedBox(height: 8),
           if (movs.isEmpty)
@@ -1358,6 +1386,139 @@ class EstadoCuentaService {
     final bytes = await pdf.save();
     final nombre =
         '${ndp.numeroFormateado}_${clienteNombre.replaceAll(' ', '_')}_${formatFecha(ndp.fecha).replaceAll('/', '-')}.pdf';
+    await Printing.sharePdf(bytes: bytes, filename: nombre);
+  }
+
+  // ═══════════════════════════════════════════
+  // COMPROBANTE PDF DE NOTA DE CRÉDITO / DÉBITO
+  // ═══════════════════════════════════════════
+
+  static Future<void> generarComprobanteNcd({
+    required NotaCreditoDebito nota,
+    required Cliente cliente,
+    Vendedor? vendedor,
+    required double saldoActual,
+  }) async {
+    final logo = await _loadLogo();
+    final pdf = pw.Document();
+    final esCredito = nota.esCredito;
+    final acento =
+        esCredito ? PdfColor.fromHex('#2E7D32') : PdfColor.fromHex('#C62828');
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(40),
+        build: (_) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            _buildHeader(cliente, vendedor, logo),
+            pw.SizedBox(height: 20),
+            pw.Container(
+              width: double.infinity,
+              padding: const pw.EdgeInsets.all(16),
+              decoration: pw.BoxDecoration(
+                color: PdfColor.fromHex(esCredito ? '#E8F5E9' : '#FDECEA'),
+                borderRadius: pw.BorderRadius.circular(8),
+                border: pw.Border.all(color: acento, width: 0.5),
+              ),
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(nota.tipoLabel.toUpperCase(),
+                          style: pw.TextStyle(
+                            fontSize: 14,
+                            fontWeight: pw.FontWeight.bold,
+                            color: acento,
+                          )),
+                      pw.SizedBox(height: 2),
+                      pw.Text('N° ${nota.numeroFormateado}',
+                          style: const pw.TextStyle(
+                              fontSize: 11, color: PdfColors.grey700)),
+                      pw.Text('Fecha: ${formatFecha(nota.fecha)}',
+                          style: const pw.TextStyle(
+                              fontSize: 10, color: PdfColors.grey600)),
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text('Monto',
+                          style: const pw.TextStyle(
+                              fontSize: 9, color: PdfColors.grey600)),
+                      pw.Text(
+                          '${esCredito ? '-' : '+'} ${formatPesos(nota.monto)}',
+                          style: pw.TextStyle(
+                            fontSize: 20,
+                            fontWeight: pw.FontWeight.bold,
+                            color: acento,
+                          )),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 16),
+            if (nota.motivo.trim().isNotEmpty) ...[
+              pw.Text('MOTIVO',
+                  style: pw.TextStyle(
+                    fontSize: 8,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.grey500,
+                    letterSpacing: 1,
+                  )),
+              pw.SizedBox(height: 4),
+              pw.Text(nota.motivo.trim(),
+                  style: const pw.TextStyle(fontSize: 11)),
+              pw.SizedBox(height: 16),
+            ],
+            pw.Container(
+              width: double.infinity,
+              padding: const pw.EdgeInsets.all(14),
+              decoration: pw.BoxDecoration(
+                color: PdfColor.fromHex('#FAFAFA'),
+                borderRadius: pw.BorderRadius.circular(8),
+                border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
+              ),
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('Saldo actual del cliente',
+                      style: const pw.TextStyle(
+                          fontSize: 11, color: PdfColors.grey700)),
+                  pw.Text(formatPesos(saldoActual),
+                      style: pw.TextStyle(
+                        fontSize: 14,
+                        fontWeight: pw.FontWeight.bold,
+                      )),
+                ],
+              ),
+            ),
+            if (nota.registradoPor != null &&
+                nota.registradoPor!.trim().isNotEmpty) ...[
+              pw.SizedBox(height: 12),
+              pw.Text('Registrado por ${nota.registradoPor}',
+                  style: const pw.TextStyle(
+                      fontSize: 9, color: PdfColors.grey600)),
+            ],
+            pw.Spacer(),
+            pw.Divider(color: PdfColors.grey300, thickness: 0.5),
+            pw.SizedBox(height: 4),
+            pw.Text(
+              'Don Chacho - Comprobante generado el ${formatFecha(DateTime.now())}',
+              style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey400),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final bytes = await pdf.save();
+    final nombre =
+        '${nota.numeroFormateado}_${cliente.nombreRazonSocial.replaceAll(' ', '_')}_${formatFecha(nota.fecha).replaceAll('/', '-')}.pdf';
     await Printing.sharePdf(bytes: bytes, filename: nombre);
   }
 
