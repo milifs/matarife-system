@@ -96,17 +96,30 @@ class DatabaseService {
     DateTime? desde,
     DateTime? hasta,
   }) async {
-    var query = _client.from('remitos').select();
-    if (clienteId != null) {
-      query = query.eq('cliente_id', clienteId);
+    // Paginado: PostgREST corta en 1000 filas por defecto. Traemos todas las
+    // páginas para no perder registros viejos (si no, se inflan los saldos).
+    const pageSize = 1000;
+    final data = <Map<String, dynamic>>[];
+    var from = 0;
+    while (true) {
+      var query = _client.from('remitos').select();
+      if (clienteId != null) {
+        query = query.eq('cliente_id', clienteId);
+      }
+      if (desde != null) {
+        query = query.gte('fecha', desde.toIso8601String());
+      }
+      if (hasta != null) {
+        query = query.lte('fecha', hasta.toIso8601String());
+      }
+      final batch = await query
+          .order('fecha', ascending: false)
+          .order('id')
+          .range(from, from + pageSize - 1);
+      data.addAll(batch);
+      if (batch.length < pageSize) break;
+      from += pageSize;
     }
-    if (desde != null) {
-      query = query.gte('fecha', desde.toIso8601String());
-    }
-    if (hasta != null) {
-      query = query.lte('fecha', hasta.toIso8601String());
-    }
-    final data = await query.order('fecha', ascending: false);
     return data.map((e) => Remito.fromMap(e)).toList();
   }
 
@@ -188,7 +201,20 @@ class DatabaseService {
   /// Trae los items de TODOS los remitos en una sola query.
   /// Se agrupan en memoria por remito_id en el caller.
   Future<List<RemitoItem>> getAllRemitoItems() async {
-    final data = await _client.from('remito_items').select();
+    // Paginado: PostgREST corta en 1000 filas por defecto.
+    const pageSize = 1000;
+    final data = <Map<String, dynamic>>[];
+    var from = 0;
+    while (true) {
+      final batch = await _client
+          .from('remito_items')
+          .select()
+          .order('id')
+          .range(from, from + pageSize - 1);
+      data.addAll(batch);
+      if (batch.length < pageSize) break;
+      from += pageSize;
+    }
     return data.map((e) => RemitoItem.fromMap(e)).toList();
   }
 
@@ -201,17 +227,30 @@ class DatabaseService {
     DateTime? desde,
     DateTime? hasta,
   }) async {
-    var query = _client.from('pagos').select();
-    if (clienteId != null) {
-      query = query.eq('cliente_id', clienteId);
+    // Paginado: PostgREST corta en 1000 filas por defecto. Traemos todas las
+    // páginas para no perder pagos viejos (si no, se inflan los saldos).
+    const pageSize = 1000;
+    final data = <Map<String, dynamic>>[];
+    var from = 0;
+    while (true) {
+      var query = _client.from('pagos').select();
+      if (clienteId != null) {
+        query = query.eq('cliente_id', clienteId);
+      }
+      if (desde != null) {
+        query = query.gte('fecha', desde.toIso8601String());
+      }
+      if (hasta != null) {
+        query = query.lte('fecha', hasta.toIso8601String());
+      }
+      final batch = await query
+          .order('fecha', ascending: false)
+          .order('id')
+          .range(from, from + pageSize - 1);
+      data.addAll(batch);
+      if (batch.length < pageSize) break;
+      from += pageSize;
     }
-    if (desde != null) {
-      query = query.gte('fecha', desde.toIso8601String());
-    }
-    if (hasta != null) {
-      query = query.lte('fecha', hasta.toIso8601String());
-    }
-    final data = await query.order('fecha', ascending: false);
     return data.map((e) => Pago.fromMap(e)).toList();
   }
 
