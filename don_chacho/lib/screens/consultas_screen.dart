@@ -1798,15 +1798,29 @@ class _HistorialTabState extends State<_HistorialTab> {
           return cmp != 0 ? cmp < 0 : p.numero < pago.numero;
         })
         .toList();
+    // Notas de crédito/débito hasta la fecha de este pago (para que la tabla de
+    // deuda refleje el estado del momento, no notas posteriores).
+    final notasHastaEste = app.notasCreditoDebito
+        .where((n) =>
+            n.clienteId == pago.clienteId &&
+            n.fecha.compareTo(pago.fecha) <= 0)
+        .toList();
 
-    // Saldo restante = saldo guardado del pago; si es viejo y está en NULL,
-    // se reconstruye (remitos confirmados − pagos hasta este inclusive).
+    // Saldo restante = saldo guardado del pago; si es viejo y está en NULL, se
+    // reconstruye (remitos + débitos − pagos − créditos hasta este inclusive).
     final totalRemitos =
         remitosCliente.fold<double>(0, (s, r) => s + r.totalPesos);
     final pagosHastaEste =
         pagosPrevios.fold<double>(0, (s, p) => s + p.montoTotal) +
             pago.montoTotal;
-    final saldoRestante = pago.saldoNuevo ?? (totalRemitos - pagosHastaEste);
+    final totalDebitos = notasHastaEste
+        .where((n) => n.esDebito)
+        .fold<double>(0, (s, n) => s + n.monto);
+    final totalCreditos = notasHastaEste
+        .where((n) => n.esCredito)
+        .fold<double>(0, (s, n) => s + n.monto);
+    final saldoRestante = pago.saldoNuevo ??
+        (totalRemitos + totalDebitos - pagosHastaEste - totalCreditos);
     final saldoAnterior =
         pago.saldoAnterior ?? (saldoRestante + pago.montoTotal);
 
@@ -1819,6 +1833,7 @@ class _HistorialTabState extends State<_HistorialTab> {
       saldoRestante: saldoRestante,
       remitosCliente: remitosCliente,
       pagosCliente: pagosPrevios,
+      notasCliente: notasHastaEste,
     );
   }
 

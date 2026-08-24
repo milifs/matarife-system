@@ -29,6 +29,7 @@ class ReciboService {
     double? saldoRestante,
     List<Remito> remitosCliente = const [],
     List<Pago> pagosCliente = const [],
+    List<NotaCreditoDebito> notasCliente = const [],
   }) async {
     final logo = await _loadLogo();
     final pdf = _generarPdf(
@@ -40,6 +41,7 @@ class ReciboService {
       saldoRestante: saldoRestante,
       remitosCliente: remitosCliente,
       pagosCliente: pagosCliente,
+      notasCliente: notasCliente,
       logo: logo,
     );
 
@@ -77,26 +79,22 @@ class ReciboService {
     double? saldoRestante,
     List<Remito> remitosCliente = const [],
     List<Pago> pagosCliente = const [],
+    List<NotaCreditoDebito> notasCliente = const [],
     required pw.MemoryImage logo,
   }) {
-    // Calcular saldo vencido con FIFO
+    // Calcular saldo vencido con FIFO (remitos + notas débito como deuda;
+    // pagos + notas crédito como crédito). Incluir el pago actual.
     final ahora = DateTime.now();
-    final remitosOrdFifo = [...remitosCliente]
-      ..sort((a, b) {
-        final cmp = a.fecha.compareTo(b.fecha);
-        return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
-      });
-    // Incluir el pago actual para reflejar el saldo vencido post-pago
-    double pagosRestantesFifo = pagosCliente.fold(0.0, (s, p) => s + p.montoTotal) + pago.montoTotal;
+    final bucketsFifo = _buildBuckets(
+      remitos: remitosCliente,
+      notas: notasCliente,
+      pagos: [...pagosCliente, pago],
+      plazoDias: cliente.plazoPagoDias,
+    );
     double saldoVencido = 0;
-    for (final r in remitosOrdFifo) {
-      if (pagosRestantesFifo >= r.totalPesos) {
-        pagosRestantesFifo -= r.totalPesos;
-      } else {
-        final deuda = r.totalPesos - pagosRestantesFifo;
-        pagosRestantesFifo = 0;
-        final vencimiento = r.fecha.add(Duration(days: cliente.plazoPagoDias));
-        if (ahora.difference(vencimiento).inDays > 0) saldoVencido += deuda;
+    for (final b in bucketsFifo) {
+      if (b.deuda > 0 && ahora.difference(b.vencimiento).inDays > 0) {
+        saldoVencido += b.deuda;
       }
     }
 
@@ -373,6 +371,7 @@ class ReciboService {
                 cliente: cliente,
                 remitosCliente: remitosCliente,
                 pagosCliente: [...pagosCliente, pago],
+                notasCliente: notasCliente,
               ),
 
               pw.Spacer(),
@@ -418,60 +417,33 @@ class ReciboService {
     );
   }
 
-  /// Sección de remitos pendientes (deuda por remito con FIFO)
+  /// Sección de cargos pendientes (remitos + notas de débito) con FIFO.
+  /// Los pagos y notas de crédito se aplican como crédito del más viejo al más
+  /// nuevo, igual que el saldo del cliente (remitos + débitos − pagos − créditos).
   static pw.Widget _buildDetalleDeuda({
     required Cliente cliente,
     required List<Remito> remitosCliente,
     required List<Pago> pagosCliente,
+    List<NotaCreditoDebito> notasCliente = const [],
   }) {
     final ahora = DateTime.now();
 
-    // FIFO: simular aplicación de pagos a remitos
-    final remitosOrd = [...remitosCliente];
-    remitosOrd.sort((a, b) {
-      final cmp = a.fecha.compareTo(b.fecha);
-      return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
-    });
-    final pagosOrd = [...pagosCliente];
-    pagosOrd.sort((a, b) => a.fecha.compareTo(b.fecha));
+    final buckets = _buildBuckets(
+      remitos: remitosCliente,
+      notas: notasCliente,
+      pagos: pagosCliente,
+      plazoDias: cliente.plazoPagoDias,
+    );
 
-    // Trackear deuda restante por remito
-    final remitoRestante = <String, double>{};
-    for (final r in remitosOrd) {
-      remitoRestante[r.id] = r.totalPesos;
-    }
-
-    int idxRemito = 0;
-    for (final p in pagosOrd) {
-      double restantePago = p.montoTotal;
-      while (restantePago > 0 && idxRemito < remitosOrd.length) {
-        final r = remitosOrd[idxRemito];
-        final deudaR = remitoRestante[r.id]!;
-        if (deudaR <= 0) {
-          idxRemito++;
-          continue;
-        }
-        if (restantePago >= deudaR) {
-          remitoRestante[r.id] = 0;
-          restantePago -= deudaR;
-          idxRemito++;
-        } else {
-          remitoRestante[r.id] = deudaR - restantePago;
-          restantePago = 0;
-        }
-      }
-    }
-
-    // Remitos con deuda pendiente
+    // Cargos con deuda pendiente
     final remitosConDeuda = <Map<String, dynamic>>[];
-    for (final r in remitosOrd) {
-      final deuda = remitoRestante[r.id]!;
-      if (deuda > 0) {
-        final venc = r.fecha.add(Duration(days: cliente.plazoPagoDias));
-        final diasV = ahora.difference(venc).inDays;
+    for (final b in buckets) {
+      if (b.deuda > 0) {
+        final diasV = ahora.difference(b.vencimiento).inDays;
         remitosConDeuda.add({
-          'remito': r,
-          'deuda': deuda,
+          'id': b.idFormateado,
+          'fecha': b.fecha,
+          'deuda': b.deuda,
           'diasVencido': diasV,
           'vencido': diasV > 0,
         });
@@ -518,7 +490,8 @@ class ReciboService {
                 ],
               ),
               ...remitosConDeuda.map((d) {
-                final r = d['remito'] as Remito;
+                final idStr = d['id'] as String;
+                final fecha = d['fecha'] as DateTime;
                 final deuda = d['deuda'] as double;
                 final diasV = d['diasVencido'] as int;
                 final vencido = d['vencido'] as bool;
@@ -526,8 +499,8 @@ class ReciboService {
                 final diasFalta = diasV.abs();
                 return pw.TableRow(
                   children: [
-                    _tableCell(r.numeroFormateado),
-                    _tableCell(formatFecha(r.fecha)),
+                    _tableCell(idStr),
+                    _tableCell(formatFecha(fecha)),
                     pw.Container(
                       color: vencido ? PdfColor.fromHex('#FFF176') : null,
                       padding: const pw.EdgeInsets.symmetric(
@@ -573,4 +546,69 @@ class ReciboService {
       ],
     );
   }
+
+  /// FIFO de deuda del cliente para el recibo. Buckets de deuda = remitos
+  /// confirmados + notas de débito, ordenados por fecha (desempate por número).
+  /// Los créditos (pagos + notas de crédito) se aplican del más viejo al más
+  /// nuevo. Espeja `AppProvider.bucketsDeudaCliente` para que el recibo cuadre
+  /// con el saldo real (remitos + débitos − pagos − créditos).
+  static List<_ReciboBucket> _buildBuckets({
+    required List<Remito> remitos,
+    required List<NotaCreditoDebito> notas,
+    required List<Pago> pagos,
+    required int plazoDias,
+  }) {
+    final buckets = <_ReciboBucket>[];
+    for (final r in remitos) {
+      buckets.add(_ReciboBucket(
+        fecha: r.fecha,
+        orden: r.numero,
+        idFormateado: r.numeroFormateado,
+        vencimiento: r.fecha.add(Duration(days: plazoDias)),
+        deuda: r.totalPesos,
+      ));
+    }
+    for (final n in notas.where((n) => n.esDebito)) {
+      buckets.add(_ReciboBucket(
+        fecha: n.fecha,
+        orden: n.numero,
+        idFormateado: n.numeroFormateado,
+        vencimiento: n.fecha.add(Duration(days: plazoDias)),
+        deuda: n.monto,
+      ));
+    }
+    buckets.sort((a, b) {
+      final cmp = a.fecha.compareTo(b.fecha);
+      return cmp != 0 ? cmp : a.orden.compareTo(b.orden);
+    });
+
+    double creditos = pagos.fold<double>(0, (s, p) => s + p.montoTotal) +
+        notas.where((n) => n.esCredito).fold<double>(0, (s, n) => s + n.monto);
+    for (final b in buckets) {
+      if (creditos >= b.deuda) {
+        creditos -= b.deuda;
+        b.deuda = 0;
+      } else {
+        b.deuda -= creditos;
+        creditos = 0;
+      }
+    }
+    return buckets;
+  }
+}
+
+class _ReciboBucket {
+  final DateTime fecha;
+  final int orden;
+  final String idFormateado;
+  final DateTime vencimiento;
+  double deuda;
+
+  _ReciboBucket({
+    required this.fecha,
+    required this.orden,
+    required this.idFormateado,
+    required this.vencimiento,
+    required this.deuda,
+  });
 }

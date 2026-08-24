@@ -667,6 +667,9 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
     final pagosParaRecibo = app.pagos
         .where((p) => p.clienteId == _clienteId!)
         .toList();
+    final notasParaRecibo = app.notasCreditoDebito
+        .where((n) => n.clienteId == _clienteId!)
+        .toList();
 
     final saldoAnterior = app.getSaldoCliente(_clienteId!);
     final saldoNuevo = saldoAnterior - _montoTotal;
@@ -705,6 +708,7 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
       saldoRestante: saldoNuevo,
       remitosCliente: remitosParaRecibo,
       pagosCliente: pagosParaRecibo,
+      notasCliente: notasParaRecibo,
     );
 
     setState(() => _guardando = false);
