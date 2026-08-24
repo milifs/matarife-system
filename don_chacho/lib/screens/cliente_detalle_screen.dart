@@ -116,49 +116,35 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
               .where((p) => p.clienteId == _cliente.id)
               .toList();
 
-          final totalRemitos = remitosCliente.fold<double>(
-              0, (sum, r) => sum + r.totalPesos);
-          final totalPagos = pagosCliente.fold<double>(
-              0, (sum, p) => sum + p.montoTotal);
-
-          // Calcular estado de TODOS los remitos (saldados + pendientes) con FIFO
-          final remitosConEstado = <Map<String, dynamic>>[];
-          double pagosAplicados = totalPagos;
-
-          // Ordenar remitos del más antiguo al más nuevo para aplicar FIFO
-          final remitosOrdenados = [...remitosCliente];
-          remitosOrdenados.sort((a, b) {
-            final cmp = a.fecha.compareTo(b.fecha);
-            return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
-          });
-
-          for (final remito in remitosOrdenados) {
-            if (pagosAplicados >= remito.totalPesos) {
-              // Remito completamente saldado
-              pagosAplicados -= remito.totalPesos;
-              remitosConEstado.add({
-                'remito': remito,
-                'saldado': true,
-                'deuda': 0.0,
-                'diasVencido': 0,
-              });
-            } else {
-              // Remito con deuda pendiente
-              final deudaRestante = remito.totalPesos - pagosAplicados;
-              pagosAplicados = 0;
-
-              final vencimiento = remito.fecha
-                  .add(Duration(days: _cliente.plazoPagoDias));
-              final diasVencido =
-                  DateTime.now().difference(vencimiento).inDays;
-
-              remitosConEstado.add({
-                'remito': remito,
-                'saldado': false,
-                'deuda': deudaRestante,
-                'diasVencido': diasVencido,
-              });
+          // Estado de TODOS los remitos (saldados + pendientes) con el FIFO
+          // unificado del provider: aplica pagos + notas de crédito como crédito
+          // y contempla las notas de débito como deuda. Así coincide con el saldo
+          // real (remitos + débitos − pagos − créditos) y no reaparecen remitos
+          // ya saldados por una nota de crédito.
+          final buckets = app.bucketsDeudaCliente(_cliente);
+          final deudaPorRemito = <String, double>{};
+          final vencPorRemito = <String, DateTime>{};
+          for (final b in buckets) {
+            if (b.remito != null) {
+              deudaPorRemito[b.remito!.id] = b.deuda;
+              vencPorRemito[b.remito!.id] = b.vencimiento;
             }
+          }
+
+          final remitosConEstado = <Map<String, dynamic>>[];
+          for (final remito in remitosCliente) {
+            final deuda = deudaPorRemito[remito.id] ?? 0.0;
+            final saldado = deuda <= 0;
+            final vencimiento = vencPorRemito[remito.id] ??
+                remito.fecha.add(Duration(days: _cliente.plazoPagoDias));
+            final diasVencido =
+                saldado ? 0 : DateTime.now().difference(vencimiento).inDays;
+            remitosConEstado.add({
+              'remito': remito,
+              'saldado': saldado,
+              'deuda': deuda,
+              'diasVencido': diasVencido,
+            });
           }
 
           // Ordenar del más reciente al más antiguo
@@ -535,12 +521,16 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
     List<Pago> pagos,
     double saldo,
   ) async {
+    final notasCliente = app.notasCreditoDebito
+        .where((n) => n.clienteId == cliente.id)
+        .toList();
     await EstadoCuentaService.generarYCompartir(
       cliente: cliente,
       vendedor: vendedor,
       remitos: remitos,
       pagos: pagos,
       saldoTotal: saldo,
+      notasCD: notasCliente,
     );
   }
 }

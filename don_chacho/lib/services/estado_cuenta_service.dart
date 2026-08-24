@@ -27,6 +27,7 @@ class EstadoCuentaService {
     required List<Remito> remitos,
     required List<Pago> pagos,
     required double saldoTotal,
+    List<NotaCreditoDebito> notasCD = const [],
   }) async {
     final logo = await _loadLogo();
     final pdf = _generarPdf(
@@ -35,6 +36,7 @@ class EstadoCuentaService {
       remitos: remitos,
       pagos: pagos,
       saldoTotal: saldoTotal,
+      notasCD: notasCD,
       logo: logo,
     );
 
@@ -52,90 +54,113 @@ class EstadoCuentaService {
     required List<Remito> remitos,
     required List<Pago> pagos,
     required double saldoTotal,
+    List<NotaCreditoDebito> notasCD = const [],
     required pw.MemoryImage logo,
   }) {
     final pdf = pw.Document();
     final ahora = DateTime.now();
 
-    // Ordenar remitos y pagos por fecha (FIFO)
-    final remitosOrdenados = [...remitos];
-    remitosOrdenados.sort((a, b) {
-      final cmp = a.fecha.compareTo(b.fecha);
-      return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
+    // Buckets de deuda FIFO: remitos + notas de débito, ordenados por fecha
+    final buckets = <Map<String, dynamic>>[];
+    for (final r in remitos) {
+      buckets.add({
+        'tipo': 'remito',
+        'id': r.id,
+        'fecha': r.fecha,
+        'orden': r.numero,
+        'numero': r.numeroFormateado,
+        'remito': r,
+        'restante': r.totalPesos,
+      });
+    }
+    for (final n in notasCD.where((n) => n.esDebito)) {
+      buckets.add({
+        'tipo': 'debito',
+        'id': n.id,
+        'fecha': n.fecha,
+        'orden': n.numero,
+        'numero': n.numeroFormateado,
+        'restante': n.monto,
+      });
+    }
+    buckets.sort((a, b) {
+      final cmp = (a['fecha'] as DateTime).compareTo(b['fecha'] as DateTime);
+      return cmp != 0 ? cmp : (a['orden'] as int).compareTo(b['orden'] as int);
     });
-    final pagosOrdenados = [...pagos];
-    pagosOrdenados.sort((a, b) => a.fecha.compareTo(b.fecha));
 
-    // Simulación FIFO: aplicamos pagos sobre remitos en orden
-    // Para cada remito trackeamos cuánto se pagó
-    // Para cada pago trackeamos a qué remitos se aplicó
-    final remitoRestante = <String, double>{};
-    for (final r in remitosOrdenados) {
-      remitoRestante[r.id] = r.totalPesos;
+    // Créditos FIFO: pagos + notas de crédito, ordenados por fecha
+    final creditos = <Map<String, dynamic>>[];
+    for (final p in pagos) {
+      creditos.add({
+        'esPago': true,
+        'pago': p,
+        'fecha': p.fecha,
+        'orden': p.numero,
+        'monto': p.montoTotal,
+      });
     }
+    for (final n in notasCD.where((n) => n.esCredito)) {
+      creditos.add({
+        'esPago': false,
+        'fecha': n.fecha,
+        'orden': n.numero,
+        'monto': n.monto,
+      });
+    }
+    creditos.sort((a, b) {
+      final cmp = (a['fecha'] as DateTime).compareTo(b['fecha'] as DateTime);
+      return cmp != 0 ? cmp : (a['orden'] as int).compareTo(b['orden'] as int);
+    });
 
+    // Aplicar créditos FIFO sobre buckets; trackear cobertura por pago
     final pagoRemitosCubiertos = <String, Set<String>>{};
-    final pagoTieneRemitoPendiente = <String, bool>{};
-    for (final p in pagosOrdenados) {
+    for (final p in pagos) {
       pagoRemitosCubiertos[p.id] = <String>{};
-      pagoTieneRemitoPendiente[p.id] = false;
     }
 
-    int idxRemito = 0;
-    for (final p in pagosOrdenados) {
-      double restantePago = p.montoTotal;
-      while (restantePago > 0 && idxRemito < remitosOrdenados.length) {
-        final r = remitosOrdenados[idxRemito];
-        final deudaRemito = remitoRestante[r.id]!;
-        if (deudaRemito <= 0) {
-          idxRemito++;
+    int idxBucket = 0;
+    for (final c in creditos) {
+      double restante = c['monto'] as double;
+      final pagoId = (c['esPago'] as bool) ? (c['pago'] as Pago).id : null;
+      while (restante > 0 && idxBucket < buckets.length) {
+        final b = buckets[idxBucket];
+        final deudaB = b['restante'] as double;
+        if (deudaB <= 0) {
+          idxBucket++;
           continue;
         }
-        if (restantePago >= deudaRemito) {
-          // Cubre este remito completamente
-          remitoRestante[r.id] = 0;
-          pagoRemitosCubiertos[p.id]!.add(r.id);
-          restantePago -= deudaRemito;
-          idxRemito++;
-        } else {
-          // Cubre parcialmente este remito
-          remitoRestante[r.id] = deudaRemito - restantePago;
-          pagoRemitosCubiertos[p.id]!.add(r.id);
-          restantePago = 0;
+        final aplica = restante >= deudaB ? deudaB : restante;
+        b['restante'] = deudaB - aplica;
+        restante -= aplica;
+        if (pagoId != null && b['tipo'] == 'remito') {
+          pagoRemitosCubiertos[pagoId]!.add(b['id'] as String);
         }
+        if ((b['restante'] as double) <= 0) idxBucket++;
       }
     }
 
-    // Determinar qué remitos tienen deuda pendiente (los que quedaron con restante > 0)
-    final remitosConDeudaIds = <String>{};
-    for (final entry in remitoRestante.entries) {
-      if (entry.value > 0) remitosConDeudaIds.add(entry.key);
-    }
+    // Remitos con deuda pendiente (para determinar pagos visibles)
+    final remitosConDeudaIds = buckets
+        .where((b) => b['tipo'] == 'remito' && (b['restante'] as double) > 0)
+        .map((b) => b['id'] as String)
+        .toSet();
 
-    // Un pago es "visible" si cubrió (total o parcialmente) al menos un remito
-    // que actualmente tiene deuda pendiente
-    for (final p in pagosOrdenados) {
-      final cubiertos = pagoRemitosCubiertos[p.id]!;
-      pagoTieneRemitoPendiente[p.id] =
-          cubiertos.any((rid) => remitosConDeudaIds.contains(rid));
-    }
-
-    // Armar detalleDeuda para la tabla de remitos pendientes
+    // Armar detalleDeuda con buckets pendientes (remitos + notas débito)
     final detalleDeuda = <Map<String, dynamic>>[];
-    for (final r in remitosOrdenados) {
-      final deuda = remitoRestante[r.id]!;
-      if (deuda > 0) {
-        final vencimiento =
-            r.fecha.add(Duration(days: cliente.plazoPagoDias));
-        final diasVencido = ahora.difference(vencimiento).inDays;
-        detalleDeuda.add({
-          'remito': r,
-          'deuda': deuda,
-          'vencimiento': vencimiento,
-          'diasVencido': diasVencido,
-          'vencido': diasVencido > 0,
-        });
-      }
+    for (final b in buckets) {
+      final deuda = b['restante'] as double;
+      if (deuda <= 0) continue;
+      final fecha = b['fecha'] as DateTime;
+      final vencimiento = fecha.add(Duration(days: cliente.plazoPagoDias));
+      final diasVencido = ahora.difference(vencimiento).inDays;
+      detalleDeuda.add({
+        'numero': b['numero'] as String,
+        'fecha': fecha,
+        'deuda': deuda,
+        'vencimiento': vencimiento,
+        'diasVencido': diasVencido,
+        'vencido': diasVencido > 0,
+      });
     }
 
     final saldoVencido = detalleDeuda
@@ -146,8 +171,10 @@ class EstadoCuentaService {
         .fold<double>(0, (sum, d) => sum + (d['deuda'] as double));
 
     // Pagos visibles = los que cubren al menos un remito pendiente
-    final pagosVisibles = pagosOrdenados
-        .where((p) => pagoTieneRemitoPendiente[p.id] == true)
+    final pagosVisibles = ([...pagos]
+          ..sort((a, b) => a.fecha.compareTo(b.fecha)))
+        .where((p) => pagoRemitosCubiertos[p.id]!
+            .any((rid) => remitosConDeudaIds.contains(rid)))
         .toList();
     final totalPagosVisibles =
         pagosVisibles.fold<double>(0, (sum, p) => sum + p.montoTotal);
@@ -226,7 +253,6 @@ class EstadoCuentaService {
                   ],
                 ),
                 ...detalleDeuda.map((d) {
-                  final r = d['remito'] as Remito;
                   final venc = d['vencimiento'] as DateTime;
                   final vencido = d['vencido'] as bool;
                   final dias = d['diasVencido'] as int;
@@ -237,8 +263,8 @@ class EstadoCuentaService {
                             color: PdfColor.fromHex('#FFF176'))
                         : null,
                     children: [
-                      _cell(r.numeroFormateado),
-                      _cell(formatFecha(r.fecha)),
+                      _cell(d['numero'] as String),
+                      _cell(formatFecha(d['fecha'] as DateTime)),
                       _cell(formatFecha(venc)),
                       _cell(vencido
                           ? 'Vencido $dias d.'
@@ -570,6 +596,7 @@ class EstadoCuentaService {
     required List<Cliente> clientes,
     required List<Remito> remitos,
     required List<Pago> pagos,
+    List<NotaCreditoDebito> notasCD = const [],
   }) async {
     final logo = await _loadLogo();
     final pdf = pw.Document();
@@ -583,40 +610,78 @@ class EstadoCuentaService {
           remitos.where((r) => r.clienteId == cliente.id).toList();
       final pagosCliente =
           pagos.where((p) => p.clienteId == cliente.id).toList();
+      final notasCliente =
+          notasCD.where((n) => n.clienteId == cliente.id).toList();
 
       final totalRemitos =
           remitosCliente.fold<double>(0, (s, r) => s + r.totalPesos);
       final totalPagos =
           pagosCliente.fold<double>(0, (s, p) => s + p.montoTotal);
-      final saldo = totalRemitos - totalPagos;
+      final totalDebitos = notasCliente
+          .where((n) => n.esDebito)
+          .fold<double>(0, (s, n) => s + n.monto);
+      final totalCreditos = notasCliente
+          .where((n) => n.esCredito)
+          .fold<double>(0, (s, n) => s + n.monto);
+      final saldo =
+          totalRemitos + totalDebitos - totalPagos - totalCreditos;
 
       if (saldo <= 0) continue;
 
-      // FIFO para deuda por remito
-      final remitosOrd = [...remitosCliente];
-      remitosOrd.sort((a, b) {
-        final cmp = a.fecha.compareTo(b.fecha);
-        return cmp != 0 ? cmp : a.numero.compareTo(b.numero);
+      // Buckets FIFO: remitos + notas débito
+      final buckets = <Map<String, dynamic>>[];
+      for (final r in remitosCliente) {
+        buckets.add({
+          'numero': r.numeroFormateado,
+          'fecha': r.fecha,
+          'orden': r.numero,
+          'restante': r.totalPesos,
+        });
+      }
+      for (final n in notasCliente.where((n) => n.esDebito)) {
+        buckets.add({
+          'numero': n.numeroFormateado,
+          'fecha': n.fecha,
+          'orden': n.numero,
+          'restante': n.monto,
+        });
+      }
+      buckets.sort((a, b) {
+        final cmp =
+            (a['fecha'] as DateTime).compareTo(b['fecha'] as DateTime);
+        return cmp != 0
+            ? cmp
+            : (a['orden'] as int).compareTo(b['orden'] as int);
       });
-      final detalleDeuda = <Map<String, dynamic>>[];
-      double pagosApl = totalPagos;
-      for (final r in remitosOrd) {
-        if (pagosApl >= r.totalPesos) {
-          pagosApl -= r.totalPesos;
+
+      // Aplicar créditos (pagos + notas crédito) FIFO
+      double creditos = totalPagos + totalCreditos;
+      for (final b in buckets) {
+        final deudaB = b['restante'] as double;
+        if (creditos >= deudaB) {
+          creditos -= deudaB;
+          b['restante'] = 0.0;
         } else {
-          final deuda = r.totalPesos - pagosApl;
-          pagosApl = 0;
-          final venc =
-              r.fecha.add(Duration(days: cliente.plazoPagoDias));
-          final diasV = ahora.difference(venc).inDays;
-          detalleDeuda.add({
-            'remito': r,
-            'deuda': deuda,
-            'vencimiento': venc,
-            'diasVencido': diasV,
-            'vencido': diasV > 0,
-          });
+          b['restante'] = deudaB - creditos;
+          creditos = 0;
         }
+      }
+
+      final detalleDeuda = <Map<String, dynamic>>[];
+      for (final b in buckets) {
+        final deuda = b['restante'] as double;
+        if (deuda <= 0) continue;
+        final fecha = b['fecha'] as DateTime;
+        final venc = fecha.add(Duration(days: cliente.plazoPagoDias));
+        final diasV = ahora.difference(venc).inDays;
+        detalleDeuda.add({
+          'numero': b['numero'] as String,
+          'fecha': fecha,
+          'deuda': deuda,
+          'vencimiento': venc,
+          'diasVencido': diasV,
+          'vencido': diasV > 0,
+        });
       }
 
       clientesData.add({
@@ -844,15 +909,14 @@ class EstadoCuentaService {
                           ],
                         ),
                         ...detalleDeuda.map((d) {
-                          final r = d['remito'] as Remito;
                           final deuda = d['deuda'] as double;
                           final diasV = d['diasVencido'] as int;
                           final vencido = d['vencido'] as bool;
                           final diasFalta = diasV.abs();
                           return pw.TableRow(
                             children: [
-                              _cell(r.numeroFormateado),
-                              _cell(formatFecha(r.fecha)),
+                              _cell(d['numero'] as String),
+                              _cell(formatFecha(d['fecha'] as DateTime)),
                               pw.Container(
                                 color: vencido
                                     ? PdfColor.fromHex('#FFF176')

@@ -393,12 +393,14 @@ class VendedorDetalleScreen extends StatelessWidget {
     final clientes = app.clientesDeVendedor(vendedor.id);
     final remitos = app.remitos;
     final pagos = app.pagos;
+    final notasCD = app.notasCreditoDebito;
 
     await EstadoCuentaService.generarReporteVendedor(
       vendedor: vendedor,
       clientes: clientes,
       remitos: remitos,
       pagos: pagos,
+      notasCD: notasCD,
     );
 
     if (context.mounted) {
