@@ -791,6 +791,107 @@ class NotaCreditoDebito {
 }
 
 // ─────────────────────────────────────────────
+// REPARTO — LISTA (logística semanal, sin plata)
+// ─────────────────────────────────────────────
+// Dos listas por semana: 'jueves' y 'viernes'. TOTAL MEDIAS es manual;
+// el sobrante se calcula en la app (total - repartido).
+class RepartoLista {
+  final String id;
+  DateTime semanaInicio; // lunes de la semana
+  String dia; // 'jueves' | 'viernes'
+  int totalMediasCarne;
+  int totalMediasCerdo;
+  String notas;
+  final DateTime creadoEn;
+  List<RepartoItem> items;
+
+  RepartoLista({
+    String? id,
+    required this.semanaInicio,
+    required this.dia,
+    this.totalMediasCarne = 0,
+    this.totalMediasCerdo = 0,
+    this.notas = '',
+    DateTime? creadoEn,
+    this.items = const [],
+  })  : id = id ?? _uuid.v4(),
+        creadoEn = creadoEn ?? DateTime.now();
+
+  String get diaLabel => dia.isEmpty ? '' : '${dia[0].toUpperCase()}${dia.substring(1)}';
+
+  /// Suma de medias de carne ya asignadas a clientes
+  int get repartidoCarne => items.fold(0, (s, i) => s + i.mediasCarne);
+  int get repartidoCerdo => items.fold(0, (s, i) => s + i.mediasCerdo);
+
+  /// Sobrante en depósito = total cargado - repartido
+  int get sobranteCarne => totalMediasCarne - repartidoCarne;
+  int get sobranteCerdo => totalMediasCerdo - repartidoCerdo;
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'semana_inicio': semanaInicio.toIso8601String(),
+        'dia': dia,
+        'total_medias_carne': totalMediasCarne,
+        'total_medias_cerdo': totalMediasCerdo,
+        'notas': notas,
+        'creado_en': creadoEn.toIso8601String(),
+      };
+
+  factory RepartoLista.fromMap(Map<String, dynamic> map,
+          {List<RepartoItem> items = const []}) =>
+      RepartoLista(
+        id: map['id'],
+        semanaInicio:
+            DateTime.tryParse(map['semana_inicio'] ?? '') ?? DateTime.now(),
+        dia: map['dia'] ?? 'jueves',
+        totalMediasCarne: map['total_medias_carne'] ?? 0,
+        totalMediasCerdo: map['total_medias_cerdo'] ?? 0,
+        notas: map['notas'] ?? '',
+        creadoEn: DateTime.tryParse(map['creado_en'] ?? '') ?? DateTime.now(),
+        items: items,
+      );
+}
+
+// ─────────────────────────────────────────────
+// REPARTO — ITEM (fila por cliente)
+// ─────────────────────────────────────────────
+class RepartoItem {
+  final String id;
+  String listaId;
+  String clienteId;
+  int mediasCarne;
+  int mediasCerdo;
+  int orden;
+
+  RepartoItem({
+    String? id,
+    this.listaId = '',
+    required this.clienteId,
+    this.mediasCarne = 0,
+    this.mediasCerdo = 0,
+    this.orden = 0,
+  }) : id = id ?? _uuid.v4();
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'lista_id': listaId,
+        'cliente_id': clienteId,
+        'medias_carne': mediasCarne,
+        'medias_cerdo': mediasCerdo,
+        'orden': orden,
+      };
+
+  factory RepartoItem.fromMap(Map<String, dynamic> map) => RepartoItem(
+        id: map['id'],
+        listaId: map['lista_id'] ?? '',
+        clienteId: map['cliente_id'] ?? '',
+        mediasCarne: map['medias_carne'] ?? 0,
+        mediasCerdo: map['medias_cerdo'] ?? 0,
+        orden: map['orden'] ?? 0,
+      );
+}
+
+// ─────────────────────────────────────────────
 // PERMISO (catálogo fijo)
 // ─────────────────────────────────────────────
 class Permiso {

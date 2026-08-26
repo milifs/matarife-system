@@ -19,6 +19,7 @@ import 'screens/remito_form_screen.dart';
 import 'screens/nota_pedido_form_screen.dart';
 import 'screens/pago_form_screen.dart';
 import 'screens/nota_cd_form_screen.dart';
+import 'screens/reparto_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/gestion_usuarios_screen.dart';
 import 'screens/bandeja_remitos_screen.dart';
@@ -362,6 +363,25 @@ class _MainShellState extends State<MainShell> {
                     context,
                     MaterialPageRoute(
                         builder: (_) => const NotaCdFormScreen()),
+                  );
+                },
+              ),
+              // Lista de reparto: logística semanal, disponible para todos
+              const Divider(height: 1),
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: AppTheme.primary.withOpacity(0.1),
+                  child: const Icon(Icons.local_shipping,
+                      color: AppTheme.primary),
+                ),
+                title: const Text('Lista de reparto'),
+                subtitle: const Text('Armar el reparto de la semana'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const RepartoScreen()),
                   );
                 },
               ),

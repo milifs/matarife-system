@@ -70,12 +70,13 @@ ALTER TABLE permisos DISABLE ROW LEVEL SECURITY;
 ```
 don_chacho/lib/
 ├── main.dart                          # Login + sesión + tabs dinámicas por permisos + menú de acciones del FAB (admin: remito + NDP; secretaria: NDP)
-├── models/models.dart                 # Vendedor, Cliente, Remito, RemitoItem, Pago, PagoMedio, CostoSemanal, NotaPedido, NotaPedidoItem, NotaCreditoDebito, Permiso, Rol, Usuario, RemitoEliminado, PagoEliminado
+├── models/models.dart                 # Vendedor, Cliente, Remito, RemitoItem, Pago, PagoMedio, CostoSemanal, NotaPedido, NotaPedidoItem, NotaCreditoDebito, RepartoLista, RepartoItem, Permiso, Rol, Usuario, RemitoEliminado, PagoEliminado
 ├── providers/app_provider.dart        # Estado global, FIFO, saldos, permisos, usuarioActual, NDPs
 ├── services/
 │   ├── auth_service.dart              # Login SHA-256, sesión persistente SharedPreferences, CRUD usuarios/roles
-│   ├── database_service.dart          # CRUD Supabase para todo + confirmarNotaPedido (convierte a remito)
+│   ├── database_service.dart          # CRUD Supabase para todo + confirmarNotaPedido (convierte a remito) + getRepartoLista/guardarReparto
 │   ├── estado_cuenta_service.dart     # PDF estado de cuenta + reporte vendedor + reporte cliente (movimientos) + PDF nota de pedido + comisión
+│   ├── reparto_service.dart           # PDF de la lista de reparto para el repartidor (tabla CARNE/CERDO, TOTAL MEDIAS, SOBRANTE DEPÓSITO, notas) — v18.24
 │   ├── recibo_service.dart            # PDF recibo de pago con detalle deuda FIFO
 │   └── ruta_cobranza_service.dart     # Ruta de cobranza: extrae coords (incl. DMS), GPS web, resuelve links cortos vía Edge Function resolver-maps, orden vecino-cercano, URL Google Maps multi-parada (v18.14, ampliado v18.16)
 ├── screens/
@@ -92,7 +93,8 @@ don_chacho/lib/
 │   ├── consultas_screen.dart          # 5 tabs: Vencidos (1°), Ganancias, Saldos, Historial (remitos+pagos+NDPs), Directorio. Vencidos: lista todos los remitos vencidos con FIFO, resumen count+deuda total. Historial: onTap guarda por permiso (editar_remito/editar_pago); Saldos: tap a pago requiere crear_pago
 │   ├── costos_semana_screen.dart      # Historial costos, editar con alerta semana vieja
 │   ├── gestion_usuarios_screen.dart   # CRUD usuarios + roles con permisos checkboxes
-│   └── bandeja_remitos_screen.dart    # 3 tabs: Notas de Pedido (1°) / Remitos pendientes / Rechazados
+│   ├── bandeja_remitos_screen.dart    # 3 tabs: Notas de Pedido (1°) / Remitos pendientes / Rechazados
+│   └── reparto_screen.dart            # Lista de reparto semanal (Jueves/Viernes): navegación semanal < >, TOTAL MEDIAS manual, clientes de la lista, SOBRANTE auto, notas, PDF. Módulo logístico aparte (sin plata). Accesible desde el FAB (v18.24)
 └── utils/
     ├── formatters.dart                # formatPesos, formatKg, formatFecha, formatRangoSemana
     └── theme.dart                     # AppTheme + StatusPill widget + StatusType enum
@@ -143,6 +145,12 @@ don_chacho/lib/
 10. `supabase_migration_remitos_eliminados.sql` — tabla `remitos_eliminados` de auditoría (v18.11, en raíz del repo)
 11. `supabase_migration_ndp_tipo_carne.sql` — columna `tipo_carne` en `nota_pedido_items` (v18.19)
 12. `supabase_migration_notas_credito_debito.sql` — tablas `notas_credito_debito` + `notas_cd_eliminadas` (v18.21)
+13. `supabase_migration_reparto.sql` — tablas `reparto_listas` + `reparto_items` (v18.24, en raíz del repo)
+
+### Tablas Lista de reparto (v18.24)
+- `reparto_listas` (id UUID PK, semana_inicio DATE, dia TEXT CHECK IN ('jueves','viernes'), total_medias_carne INT, total_medias_cerdo INT, notas TEXT, creado_en, **UNIQUE (semana_inicio, dia)**) — RLS off
+- `reparto_items` (id UUID PK, lista_id UUID FK CASCADE, cliente_id UUID FK clientes, medias_carne INT, medias_cerdo INT, orden INT, creado_en) — index en lista_id, RLS off
+- **Módulo 100% logístico, aparte del flujo comercial: NO toca plata, saldos ni remitos.** Solo qué carne (novillo=CARNE / cerdo=CERDO) va a cada cliente por semana.
 
 ### MedioPago enum en Dart
 `efectivo`, `transferencia`, `cheque`
@@ -324,6 +332,7 @@ vercel --prod
 | v18.14 (01/07) | **Ruta de cobranza (1ª versión)**: embebida en Consultas → Directorio, combo box (Clientes que deben / Solo remitos vencidos) + botón "Armar". Nuevo `ruta_cobranza_service.dart` (GPS, extracción de coords, orden por cercanía, URL Google Maps). Reemplazada por la tab "Ruta" en v18.15. |
 | v18.15 (01/07) | **Ruta de cobranza movida a tab propia "Ruta"** en Consultas (9 tabs). Filtros: cliente (búsqueda), vendedor (dropdown), "Con saldo pendiente" y "Solo vencidos" (FilterChips). Lista con checkboxes para **seleccionar clientes** (los sin ubicación quedan deshabilitados) + "Todos/Ninguno". Botón "Armar recorrido (N)" que calcula la ruta con los elegidos (GPS + orden por cercanía) y abre el panel de paradas → Google Maps. Se quitó el bloque de ruta del Directorio. |
 | v18.16 (02/07) | **Fix ubicaciones de la ruta + editar ubicación desde Directorio**: (1) `_parseCoords` reconoce ahora el formato **DMS** (`24°59'04.1"S`). (2) Nueva **Edge Function `resolver-maps`** (runtime nuevo, `withSupabase` con auth `["publishable","secret"]`) que resuelve del lado del servidor los **links cortos** `maps.app.goo.gl` (el navegador no puede por CORS): sigue el redirect y devuelve `lat/lng`, o si el link es un "compartir lugar" sin coords, devuelve la **dirección/nombre** (`q=…`). `RutaCobranzaService.construirParadas()` llama la función en lote para los clientes sin coords locales. `ParadaRuta` gana `direccionResuelta` y usa ese texto como punto ruteable. (3) En **Directorio**, botón de editar ubicación por tarjeta → bottom sheet para cargar/corregir Dirección + Link Maps (guarda con `editarCliente`). |
+| v18.24 (26/08) | **Lista de reparto semanal (módulo logístico, aparte de lo comercial — NO toca plata)**: nuevo módulo para armar el reparto de carne de la semana, basado en la planilla "REPARTO CERDO". Dos listas por semana (**Jueves / Viernes**), navegación semanal `< >`, columnas fijas **CARNE** (novillo) / **CERDO**. TOTAL MEDIAS se carga a mano; **SOBRANTE DEPÓSITO = TOTAL − repartido** (auto, rojo si negativo). Clientes elegidos de la lista existente (no texto libre). Campo de NOTAS SUELTAS. **PDF para el repartidor** (`reparto_service.dart`). Accesible desde el menú del FAB (sin gate de permiso). Tablas `reparto_listas` + `reparto_items` (`supabase_migration_reparto.sql`). Fase 2 pendiente: carga por audio. |
 | v18.23 (26/08) | **Teléfono como link directo a WhatsApp en la ficha del cliente**: en `cliente_detalle_screen.dart` la fila del teléfono dejó de ser texto plano (`_InfoRow`) y ahora es tocable (ícono verde de chat + número subrayado en verde) → abre WhatsApp con el helper compartido `abrirWhatsApp` (importado de `consultas_screen.dart`, v18.20). Mismo comportamiento que Directorio, Vencidos y la lista de Clientes. |
 | v18.22 (24/08) | **Fix crítico de saldos: paginación PostgREST (límite 1000 filas)** + notas C/D en más vistas. La tabla `pagos` superó las 1000 filas y `getPagos`/`getRemitos`/`getAllRemitoItems` traían sin paginar (`.select()` → PostgREST corta en 1000 y descarta el resto en silencio). Clientes con historial largo perdían pagos viejos → saldos inflados y remitos ya saldados reaparecían como vencidos. Fix: paginación en batches de 1000 con `.range()` + orden estable en los tres métodos de `database_service.dart`. Además, recibo PDF, ficha de cliente, estado de cuenta y reporte vendedor ahora contemplan notas C/D en el FIFO de deuda. Commits `5595059`, `ca2106c`, `fbe0db4`. |
 | v18.21 (18/08) | **Notas de crédito / débito para clientes**: nueva opción para registrar NC (resta al saldo, a favor del cliente, como un pago) y ND (suma al saldo, cargo extra, como un remito). Fórmula de saldo: `remitos + débitos − pagos − créditos`. Formulario propio (`nota_cd_form_screen.dart`) accesible desde el FAB por **todos** los roles. Numeración NC-XXXX / ND-XXXX (secuencia separada por tipo). Integradas en: Historial (chip "Notas C/D", badge NC/ND, comprobante PDF, eliminar con permiso `editar_pago`), FIFO de vencidos (las ND son buckets de deuda; las NC se aplican como crédito FIFO igual que los pagos, vía `bucketsDeudaCliente`), tab Reporte + PDF de estado de cuenta. Tablas `notas_credito_debito` + `notas_cd_eliminadas` (`supabase_migration_notas_credito_debito.sql`). |
@@ -332,9 +341,19 @@ vercel --prod
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v18.23) — EN PRODUCCIÓN
+## ESTADO ACTUAL (v18.24) — EN PRODUCCIÓN
 
-Deployada el 26/08/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`. Sigue en la rama `feat/notas-credito-debito` (v18.21 → v18.23), **no mergeada a `master`**.
+Deployada el 26/08/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`. Sigue en la rama `feat/notas-credito-debito` (v18.21 → v18.24), **no mergeada a `master`**.
+
+### Cambios v18.24 (26/08/2026) — Lista de reparto
+1. **Migración** `supabase_migration_reparto.sql` (raíz del repo, **ya ejecutada en Supabase**): tablas `reparto_listas` (UNIQUE semana_inicio+dia) y `reparto_items` (FK a listas CASCADE + FK a clientes), ambas con RLS off. Ver "Tablas Lista de reparto (v18.24)".
+2. **`lib/models/models.dart`**: nuevas clases `RepartoLista` (semanaInicio, dia `'jueves'|'viernes'`, totalMediasCarne/Cerdo, notas, items; getters `diaLabel`, `repartidoCarne/Cerdo`, `sobranteCarne/Cerdo` = total − repartido) y `RepartoItem` (clienteId, mediasCarne/Cerdo, orden, listaId).
+3. **`lib/services/database_service.dart`**: `getRepartoLista(semanaInicio, dia)` (normaliza a lunes de la semana, carga items por `orden`; tolerante si la tabla no existe → null) y `guardarReparto(lista)` (reusa el id existente de (semana,dia) para no violar el UNIQUE, upsert de cabecera + delete/insert de items).
+4. **`lib/services/reparto_service.dart`** (nuevo): `RepartoService.generarYCompartir({lista, clientes})` → PDF A4 con logo, título "LISTA DE REPARTO" + "Reparto del {día}" + rango de semana, tabla CLIENTES/CARNE/CERDO con fila TOTAL MEDIAS (celeste), filas por cliente en orden y fila SOBRANTE DEPOSITO, y recuadro de NOTAS si hay. `Printing.sharePdf`.
+5. **`lib/screens/reparto_screen.dart`** (nuevo): `RepartoScreen`. Navegación semanal `< >` (`>` deshabilitado en semana actual), `SegmentedButton` Jueves/Viernes (auto-guarda al cambiar si hay contenido), TOTAL MEDIAS editable arriba, filas por cliente con dos campos numéricos + borrar, SOBRANTE calculado en vivo (rojo si negativo), TextField de NOTAS. FAB "Agregar cliente" (bottom sheet con búsqueda, excluye ya agregados). Acciones de AppBar: Guardar y Generar PDF (persiste antes de generar).
+6. **`lib/main.dart`**: opción **"Lista de reparto"** en el menú del FAB (ícono `local_shipping`, subtítulo "Armar el reparto de la semana"), **sin gate de permiso**, hace `Navigator.push` a `RepartoScreen`.
+7. **Fase 2 pendiente (explícito "después")**: carga de la lista por **audio de WhatsApp** (audio → transcripción → parseo estructurado). No implementado.
+8. **Deploy**: rama `feat/notas-credito-debito`. Build con `flutter clean` + `flutter pub get` + `build_web.sh` + `vercel --prod --yes` desde `build/web`. Alias `web-six-indol-svg13avcfl.vercel.app` apuntando al nuevo deploy.
 
 > **PWA / service worker**: la app cachea `main.dart.js`. Tras un deploy, un simple refresh (incluso Cmd+Shift+R) puede seguir mostrando la versión vieja. Para forzar la nueva: recargar 2 veces, o DevTools → Application → Service Workers → Unregister + Clear site data, o probar en Incógnito.
 
@@ -532,7 +551,8 @@ URL: `https://web-six-indol-svg13avcfl.vercel.app`
 
 ## CAMBIOS PENDIENTES
 
-- **Mergear la rama `feat/notas-credito-debito` a `master`** (v18.21 + v18.22 ya deployadas a producción, pero el código vive en la rama, no en `master`).
+- **Mergear la rama `feat/notas-credito-debito` a `master`** (v18.21 → v18.24 ya deployadas a producción, pero el código vive en la rama, no en `master`).
+- **Lista de reparto — Fase 2 (audio)**: cargar la lista por audio de WhatsApp (audio → transcripción Whisper/Gemini → parseo estructurado con Claude). Diferido explícitamente por el usuario.
 - **Ejecutar `supabase_migration_indices.sql`** en Supabase Dashboard → SQL Editor (una sola vez). Agrega 6 índices para acelerar la carga inicial.
 - **Borrar los 3 pagos de prueba de Perico + el cliente duplicado "A" vacío** (ver v18.22, punto 3). Se hace desde la app; verificar saldo $4.906.800 después.
 - **Prevenir clientes duplicados por teléfono** (mejora ofrecida, no implementada): avisar/impedir crear un cliente con un teléfono que ya existe. Motivó el bug del Perico duplicado.

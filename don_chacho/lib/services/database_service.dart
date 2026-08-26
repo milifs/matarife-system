@@ -615,4 +615,72 @@ class DatabaseService {
 
     return remitoGuardado;
   }
+
+  // ═══════════════════════════════════════════
+  // REPARTO (listas de logística semanal)
+  // ═══════════════════════════════════════════
+
+  /// Normaliza una fecha al lunes de esa semana (medianoche).
+  DateTime _lunesDe(DateTime fecha) {
+    final lunes = fecha.subtract(Duration(days: fecha.weekday - 1));
+    return DateTime(lunes.year, lunes.month, lunes.day);
+  }
+
+  /// Trae la lista de reparto de una semana/día con sus items.
+  /// Devuelve null si todavía no se cargó (o si la tabla no existe).
+  Future<RepartoLista?> getRepartoLista(
+      DateTime semanaInicio, String dia) async {
+    try {
+      final lunesStr = _lunesDe(semanaInicio).toIso8601String();
+      final data = await _client
+          .from('reparto_listas')
+          .select()
+          .eq('semana_inicio', lunesStr)
+          .eq('dia', dia)
+          .maybeSingle();
+      if (data == null) return null;
+
+      final lista = RepartoLista.fromMap(data);
+      final itemsData = await _client
+          .from('reparto_items')
+          .select()
+          .eq('lista_id', lista.id)
+          .order('orden');
+      lista.items =
+          itemsData.map((e) => RepartoItem.fromMap(e)).toList();
+      return lista;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Guarda (crea o actualiza) la lista de reparto y reemplaza sus items.
+  Future<RepartoLista> guardarReparto(RepartoLista lista) async {
+    final lunesStr = _lunesDe(lista.semanaInicio).toIso8601String();
+
+    // Reusar el id de una lista existente para no violar UNIQUE(semana,dia).
+    final existente = await _client
+        .from('reparto_listas')
+        .select('id')
+        .eq('semana_inicio', lunesStr)
+        .eq('dia', lista.dia)
+        .maybeSingle();
+    final id = existente != null ? existente['id'] as String : lista.id;
+
+    final payload = lista.toMap()
+      ..['id'] = id
+      ..['semana_inicio'] = lunesStr;
+    await _client.from('reparto_listas').upsert(payload);
+
+    // Reemplazar items (más simple que diffear).
+    await _client.from('reparto_items').delete().eq('lista_id', id);
+    for (var i = 0; i < lista.items.length; i++) {
+      final it = lista.items[i];
+      it.listaId = id;
+      it.orden = i;
+      await _client.from('reparto_items').insert(it.toMap());
+    }
+
+    return lista;
+  }
 }
