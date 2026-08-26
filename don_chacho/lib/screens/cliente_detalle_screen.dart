@@ -15,6 +15,7 @@ import '../utils/theme.dart';
 import '../services/estado_cuenta_service.dart';
 import 'pago_form_screen.dart';
 import 'remito_form_screen.dart';
+import 'consultas_screen.dart' show abrirWhatsApp;
 
 class ClienteDetalleScreen extends StatefulWidget {
   final Cliente cliente;
@@ -219,10 +220,37 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
 
                       // Info de contacto
                       if (_cliente.telefono.isNotEmpty)
-                        _InfoRow(
-                            icon: Icons.phone_outlined,
-                            label: 'Teléfono',
-                            value: _cliente.telefono),
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: InkWell(
+                            onTap: () =>
+                                abrirWhatsApp(_cliente.telefono),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.chat,
+                                    size: 16,
+                                    color: Color(0xFF25D366)),
+                                const SizedBox(width: 8),
+                                const Text('Teléfono: ',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color:
+                                            AppTheme.textSecondary)),
+                                Expanded(
+                                  child: Text(
+                                    _cliente.telefono,
+                                    style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF128C7E),
+                                        decoration:
+                                            TextDecoration.underline),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       _InfoRow(
                           icon: Icons.schedule_outlined,
                           label: 'Plazo de pago',
