@@ -79,12 +79,13 @@ class RepartoService {
           ),
         );
 
-    pw.TableRow fila(String cliente, int carne, int cerdo,
+    pw.TableRow fila(String cliente, String sucursal, int carne, int cerdo,
             {bool bold = false, PdfColor? bg}) =>
         pw.TableRow(
           decoration: bg != null ? pw.BoxDecoration(color: bg) : null,
           children: [
             celdaTexto(cliente, bold: bold),
+            celdaTexto(sucursal),
             celdaNum(carne == 0 ? '' : '$carne', bold: bold),
             celdaNum(cerdo == 0 ? '' : '$cerdo', bold: bold),
           ],
@@ -125,9 +126,10 @@ class RepartoService {
           pw.Table(
             border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
             columnWidths: const {
-              0: pw.FlexColumnWidth(3),
-              1: pw.FlexColumnWidth(1),
-              2: pw.FlexColumnWidth(1),
+              0: pw.FlexColumnWidth(2.4),
+              1: pw.FlexColumnWidth(1.8),
+              2: pw.FlexColumnWidth(0.9),
+              3: pw.FlexColumnWidth(0.9),
             },
             children: [
               // Header de columnas
@@ -135,19 +137,21 @@ class RepartoService {
                 decoration: const pw.BoxDecoration(color: gris),
                 children: [
                   celdaTexto('CLIENTES', bold: true),
+                  celdaTexto('SUCURSAL', bold: true),
                   celdaNum('CARNE', bold: true),
                   celdaNum('CERDO', bold: true),
                 ],
               ),
               // TOTAL MEDIAS
-              fila('TOTAL MEDIAS', lista.totalMediasCarne,
+              fila('TOTAL MEDIAS', '', lista.totalMediasCarne,
                   lista.totalMediasCerdo,
                   bold: true, bg: celeste),
               // Filas de clientes (respeta el orden cargado)
               for (final it in lista.items)
-                fila(nombre(it.clienteId), it.mediasCarne, it.mediasCerdo),
+                fila(nombre(it.clienteId), it.sucursal, it.mediasCarne,
+                    it.mediasCerdo),
               // SOBRANTE DEPOSITO
-              fila('SOBRANTE DEPOSITO', lista.sobranteCarne,
+              fila('SOBRANTE DEPOSITO', '', lista.sobranteCarne,
                   lista.sobranteCerdo,
                   bold: true, bg: celeste),
             ],

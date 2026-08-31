@@ -19,9 +19,9 @@ String formatPesosCorto(double monto) {
   return formatPesos(monto);
 }
 
-/// Formatea kilogramos: 1.234 kg
+/// Formatea kilogramos: 1.234 kg (muestra hasta 3 decimales solo si los hay)
 String formatKg(double kg) {
-  final formatter = NumberFormat('#,##0', 'es_AR');
+  final formatter = NumberFormat('#,##0.###', 'es_AR');
   return '${formatter.format(kg)} kg';
 }
 

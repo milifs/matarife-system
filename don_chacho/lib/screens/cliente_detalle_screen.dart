@@ -159,10 +159,11 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
                   !(m['saldado'] as bool) && (m['diasVencido'] as int) > 0)
               .length;
 
-          final deudaVencida = remitosConEstado
-              .where((m) =>
-                  !(m['saldado'] as bool) && (m['diasVencido'] as int) > 0)
-              .fold<double>(0, (s, m) => s + (m['deuda'] as double));
+          // Deuda vencida = todos los buckets vencidos (remitos + notas de
+          // débito), igual que el provider. Así coincide con el saldo cuando
+          // toda la deuda está vencida; el cálculo por remitos solo omitía las
+          // notas de débito.
+          final deudaVencida = app.saldoVencidoCliente(_cliente.id);
 
           return ListView(
             padding: const EdgeInsets.all(16),

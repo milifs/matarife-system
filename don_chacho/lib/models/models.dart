@@ -861,6 +861,7 @@ class RepartoItem {
   String clienteId;
   int mediasCarne;
   int mediasCerdo;
+  String sucursal; // texto libre (máx 40): a qué sucursal del cliente va
   int orden;
 
   RepartoItem({
@@ -869,6 +870,7 @@ class RepartoItem {
     required this.clienteId,
     this.mediasCarne = 0,
     this.mediasCerdo = 0,
+    this.sucursal = '',
     this.orden = 0,
   }) : id = id ?? _uuid.v4();
 
@@ -878,6 +880,7 @@ class RepartoItem {
         'cliente_id': clienteId,
         'medias_carne': mediasCarne,
         'medias_cerdo': mediasCerdo,
+        'sucursal': sucursal,
         'orden': orden,
       };
 
@@ -887,6 +890,7 @@ class RepartoItem {
         clienteId: map['cliente_id'] ?? '',
         mediasCarne: map['medias_carne'] ?? 0,
         mediasCerdo: map['medias_cerdo'] ?? 0,
+        sucursal: map['sucursal'] ?? '',
         orden: map['orden'] ?? 0,
       );
 }

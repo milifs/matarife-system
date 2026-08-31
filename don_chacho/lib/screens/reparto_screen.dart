@@ -84,6 +84,7 @@ class _RepartoScreenState extends State<RepartoScreen> {
           clienteId: it.clienteId,
           carne: it.mediasCarne,
           cerdo: it.mediasCerdo,
+          sucursal: it.sucursal,
         ));
       }
     } else {
@@ -103,6 +104,7 @@ class _RepartoScreenState extends State<RepartoScreen> {
         clienteId: f.clienteId,
         mediasCarne: int.tryParse(f.carneCtrl.text.trim()) ?? 0,
         mediasCerdo: int.tryParse(f.cerdoCtrl.text.trim()) ?? 0,
+        sucursal: f.sucursalCtrl.text.trim(),
         orden: i,
       ));
     }
@@ -166,10 +168,9 @@ class _RepartoScreenState extends State<RepartoScreen> {
 
   Future<void> _agregarCliente() async {
     final app = context.read<AppProvider>();
-    final yaAgregados = _filas.map((f) => f.clienteId).toSet();
-    final disponibles = app.clientes
-        .where((c) => !yaAgregados.contains(c.id))
-        .toList()
+    // Se permite agregar el mismo cliente más de una vez (una fila por
+    // sucursal), así que no se excluyen los ya agregados.
+    final disponibles = app.clientes.toList()
       ..sort((a, b) =>
           a.nombreRazonSocial.toLowerCase().compareTo(
               b.nombreRazonSocial.toLowerCase()));
@@ -430,13 +431,43 @@ class _RepartoScreenState extends State<RepartoScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: Text(nombre, style: const TextStyle(fontSize: 14)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 8),
+                Text(nombre, style: const TextStyle(fontSize: 14)),
+                TextField(
+                  controller: fila.sucursalCtrl,
+                  maxLength: 40,
+                  onChanged: (_) => setState(() {}),
+                  style: const TextStyle(fontSize: 12),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    counterText: '',
+                    contentPadding:
+                        EdgeInsets.symmetric(vertical: 4, horizontal: 0),
+                    hintText: 'Sucursal (opcional)',
+                    hintStyle:
+                        TextStyle(fontSize: 12, color: AppTheme.textHint),
+                    border: InputBorder.none,
+                    isCollapsed: true,
+                  ),
+                ),
+              ],
+            ),
           ),
-          _campoNumero(fila.carneCtrl),
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: _campoNumero(fila.carneCtrl),
+          ),
           const SizedBox(width: 8),
-          _campoNumero(fila.cerdoCtrl),
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: _campoNumero(fila.cerdoCtrl),
+          ),
           SizedBox(
             width: 40,
             child: IconButton(
@@ -522,16 +553,23 @@ class _Fila {
   final String clienteId;
   final TextEditingController carneCtrl;
   final TextEditingController cerdoCtrl;
+  final TextEditingController sucursalCtrl;
 
-  _Fila({required this.clienteId, int carne = 0, int cerdo = 0})
-      : carneCtrl =
+  _Fila({
+    required this.clienteId,
+    int carne = 0,
+    int cerdo = 0,
+    String sucursal = '',
+  })  : carneCtrl =
             TextEditingController(text: carne == 0 ? '' : '$carne'),
         cerdoCtrl =
-            TextEditingController(text: cerdo == 0 ? '' : '$cerdo');
+            TextEditingController(text: cerdo == 0 ? '' : '$cerdo'),
+        sucursalCtrl = TextEditingController(text: sucursal);
 
   void dispose() {
     carneCtrl.dispose();
     cerdoCtrl.dispose();
+    sucursalCtrl.dispose();
   }
 }
 
