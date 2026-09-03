@@ -117,46 +117,64 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
               .where((p) => p.clienteId == _cliente.id)
               .toList();
 
-          // Estado de TODOS los remitos (saldados + pendientes) con el FIFO
-          // unificado del provider: aplica pagos + notas de crédito como crédito
-          // y contempla las notas de débito como deuda. Así coincide con el saldo
-          // real (remitos + débitos − pagos − créditos) y no reaparecen remitos
-          // ya saldados por una nota de crédito.
+          // Notas de crédito / débito del cliente (para mostrarlas en la lista).
+          final notasCliente = app.notasCreditoDebito
+              .where((n) => n.clienteId == _cliente.id)
+              .toList();
+
+          // Movimientos de TODOS los remitos + notas C/D con el FIFO unificado
+          // del provider: aplica pagos + notas de crédito como crédito y
+          // contempla las notas de débito como deuda. Así la lista explica el
+          // saldo real (remitos + débitos − pagos − créditos): las ND suman
+          // deuda y las NC restan, y no reaparecen remitos ya saldados por una
+          // nota de crédito.
           final buckets = app.bucketsDeudaCliente(_cliente);
-          final deudaPorRemito = <String, double>{};
-          final vencPorRemito = <String, DateTime>{};
+          final movimientosVisibles = <Map<String, dynamic>>[];
           for (final b in buckets) {
+            final saldado = b.deuda <= 0;
+            final diasVencido =
+                saldado ? 0 : DateTime.now().difference(b.vencimiento).inDays;
             if (b.remito != null) {
-              deudaPorRemito[b.remito!.id] = b.deuda;
-              vencPorRemito[b.remito!.id] = b.vencimiento;
+              movimientosVisibles.add({
+                'tipo': 'remito',
+                'fecha': b.remito!.fecha,
+                'remito': b.remito,
+                'saldado': saldado,
+                'deuda': b.deuda,
+                'diasVencido': diasVencido,
+              });
+            } else if (b.notaDebito != null) {
+              movimientosVisibles.add({
+                'tipo': 'nd',
+                'fecha': b.notaDebito!.fecha,
+                'nota': b.notaDebito,
+                'saldado': saldado,
+                'deuda': b.deuda,
+                'diasVencido': diasVencido,
+              });
             }
           }
-
-          final remitosConEstado = <Map<String, dynamic>>[];
-          for (final remito in remitosCliente) {
-            final deuda = deudaPorRemito[remito.id] ?? 0.0;
-            final saldado = deuda <= 0;
-            final vencimiento = vencPorRemito[remito.id] ??
-                remito.fecha.add(Duration(days: _cliente.plazoPagoDias));
-            final diasVencido =
-                saldado ? 0 : DateTime.now().difference(vencimiento).inDays;
-            remitosConEstado.add({
-              'remito': remito,
-              'saldado': saldado,
-              'deuda': deuda,
-              'diasVencido': diasVencido,
+          // Notas de crédito: crédito a favor del cliente (restan al saldo).
+          for (final n in notasCliente.where((n) => n.esCredito)) {
+            movimientosVisibles.add({
+              'tipo': 'nc',
+              'fecha': n.fecha,
+              'nota': n,
+              'saldado': false,
+              'deuda': 0.0,
+              'diasVencido': 0,
             });
           }
 
           // Ordenar del más reciente al más antiguo
-          final movimientosVisibles = [...remitosConEstado];
           movimientosVisibles.sort((a, b) =>
-              (b['remito'] as Remito).fecha.compareTo(
-                  (a['remito'] as Remito).fecha));
+              (b['fecha'] as DateTime).compareTo(a['fecha'] as DateTime));
 
-          final cantVencidos = remitosConEstado
+          final cantVencidos = movimientosVisibles
               .where((m) =>
-                  !(m['saldado'] as bool) && (m['diasVencido'] as int) > 0)
+                  (m['tipo'] as String) != 'nc' &&
+                  !(m['saldado'] as bool) &&
+                  (m['diasVencido'] as int) > 0)
               .length;
 
           // Deuda vencida = todos los buckets vencidos (remitos + notas de
@@ -360,12 +378,12 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Remitos',
+                  const Text('Remitos y notas',
                       style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
                           color: AppTheme.textSecondary)),
-                  Text('${remitosCliente.length} en total',
+                  Text('${movimientosVisibles.length} en total',
                       style: const TextStyle(
                           fontSize: 13, color: AppTheme.textHint)),
                 ],
@@ -391,11 +409,92 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
                 )
               else
                 ...movimientosVisibles.map((m) {
-                  final remito = m['remito'] as Remito;
+                  final tipo = m['tipo'] as String;
+
+                  // ── Nota de crédito: crédito a favor (resta al saldo) ──
+                  if (tipo == 'nc') {
+                    final nota = m['nota'] as NotaCreditoDebito;
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: const BoxDecoration(
+                          border: Border(
+                            left: BorderSide(
+                                color: AppTheme.success, width: 3),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.remove_circle_outline,
+                                        size: 16, color: AppTheme.success),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '${nota.numeroFormateado} · ${formatFecha(nota.fecha)}',
+                                      style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500),
+                                    ),
+                                  ],
+                                ),
+                                const StatusPill(
+                                  text: 'Crédito',
+                                  type: StatusType.success,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    nota.motivo.isEmpty
+                                        ? 'Nota de crédito'
+                                        : nota.motivo,
+                                    style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppTheme.textSecondary),
+                                  ),
+                                ),
+                                Text(
+                                  '- ${formatPesos(nota.monto)}',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.success,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  // ── Remito o nota de débito: cargo que suma deuda ──
+                  final esNd = tipo == 'nd';
+                  final Remito? remito =
+                      esNd ? null : m['remito'] as Remito;
+                  final NotaCreditoDebito? notaDeb =
+                      esNd ? m['nota'] as NotaCreditoDebito : null;
                   final saldado = m['saldado'] as bool;
                   final deuda = m['deuda'] as double;
                   final diasVencido = m['diasVencido'] as int;
                   final estaVencido = !saldado && diasVencido > 0;
+
+                  final numero = esNd
+                      ? notaDeb!.numeroFormateado
+                      : remito!.numeroFormateado;
+                  final fecha = esNd ? notaDeb!.fecha : remito!.fecha;
+                  final total = esNd ? notaDeb!.monto : remito!.totalPesos;
 
                   final Color borderColor;
                   if (saldado) {
@@ -409,15 +508,17 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
                   return Card(
                     margin: const EdgeInsets.only(bottom: 8),
                     child: InkWell(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => RemitoFormScreen(
-                                remitoInicial: remito),
-                          ),
-                        );
-                      },
+                      onTap: esNd
+                          ? null
+                          : () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => RemitoFormScreen(
+                                      remitoInicial: remito),
+                                ),
+                              );
+                            },
                       child: Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
@@ -448,7 +549,7 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
                                     ),
                                     const SizedBox(width: 6),
                                     Text(
-                                      '${remito.numeroFormateado} · ${formatFecha(remito.fecha)}',
+                                      '$numero · ${formatFecha(fecha)}',
                                       style: const TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w500),
@@ -481,14 +582,20 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'Total: ${formatPesos(remito.totalPesos)}',
+                                        esNd
+                                            ? 'Débito: ${formatPesos(total)}'
+                                            : 'Total: ${formatPesos(total)}',
                                         style: const TextStyle(
                                             fontSize: 12,
                                             color:
                                                 AppTheme.textSecondary),
                                       ),
                                       Text(
-                                        formatKg(remito.totalKg),
+                                        esNd
+                                            ? (notaDeb!.motivo.isEmpty
+                                                ? 'Nota de débito'
+                                                : notaDeb.motivo)
+                                            : formatKg(remito!.totalKg),
                                         style: const TextStyle(
                                             fontSize: 12,
                                             color:
