@@ -11,17 +11,20 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/app_provider.dart';
+import '../services/estado_cuenta_service.dart';
 import '../utils/formatters.dart';
 import '../utils/theme.dart';
 
 class NotaCdFormScreen extends StatefulWidget {
   final Cliente? clienteInicial;
   final String? tipoInicial; // 'credito' | 'debito'
+  final NotaCreditoDebito? notaInicial; // si viene → modo ver (solo lectura)
 
   const NotaCdFormScreen({
     super.key,
     this.clienteInicial,
     this.tipoInicial,
+    this.notaInicial,
   });
 
   @override
@@ -38,9 +41,20 @@ class _NotaCdFormScreenState extends State<NotaCdFormScreen> {
   DateTime _fecha = DateTime.now();
   bool _guardando = false;
 
+  bool get _soloLectura => widget.notaInicial != null;
+
   @override
   void initState() {
     super.initState();
+    final nota = widget.notaInicial;
+    if (nota != null) {
+      _clienteId = nota.clienteId;
+      _tipo = nota.tipo;
+      _fecha = nota.fecha;
+      _montoCtrl.text = nota.monto.toString();
+      _motivoCtrl.text = nota.motivo;
+      return;
+    }
     _clienteId = widget.clienteInicial?.id;
     if (widget.tipoInicial != null) _tipo = widget.tipoInicial!;
   }
@@ -71,6 +85,10 @@ class _NotaCdFormScreenState extends State<NotaCdFormScreen> {
     // Saldo resultante: NC resta, ND suma.
     final saldoResultante =
         saldoCliente + (_esCredito ? -_monto : _monto);
+
+    if (_soloLectura) {
+      return _buildSoloLectura(app, cliente, vendedor, saldoCliente);
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -385,6 +403,185 @@ class _NotaCdFormScreenState extends State<NotaCdFormScreen> {
         ],
       ),
     );
+  }
+
+  // ── Modo ver (solo lectura): abierto desde la ficha del cliente ──
+  Widget _buildSoloLectura(
+    AppProvider app,
+    Cliente? cliente,
+    Vendedor? vendedor,
+    double saldoCliente,
+  ) {
+    final nota = widget.notaInicial!;
+    final Color acento = nota.esCredito ? AppTheme.success : AppTheme.danger;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Ver ${nota.tipoLabel.toLowerCase()}'),
+        actions: [
+          if (app.tienePermiso('editar_pago'))
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Eliminar',
+              onPressed: () => _eliminarNota(app, nota),
+            ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            nota.esCredito
+                                ? Icons.remove_circle_outline
+                                : Icons.add_circle_outline,
+                            size: 20,
+                            color: acento,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            nota.numeroFormateado,
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                      StatusPill(
+                        text: nota.esCredito ? 'Crédito' : 'Débito',
+                        type: nota.esCredito
+                            ? StatusType.success
+                            : StatusType.danger,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    nota.esCredito
+                        ? 'Resta al saldo del cliente (a su favor).'
+                        : 'Suma al saldo del cliente (cargo extra).',
+                    style: const TextStyle(
+                        fontSize: 12, color: AppTheme.textSecondary),
+                  ),
+                  const Divider(height: 24),
+                  _filaLectura('Cliente',
+                      cliente?.nombreRazonSocial ?? '—'),
+                  if (vendedor != null)
+                    _filaLectura('Vendedor', vendedor.nombreCompleto),
+                  _filaLectura('Fecha', formatFecha(nota.fecha)),
+                  _filaLectura(
+                    'Monto',
+                    '${nota.esCredito ? '- ' : ''}${formatPesos(nota.monto)}',
+                    valueColor: acento,
+                    bold: true,
+                  ),
+                  if (nota.motivo.trim().isNotEmpty)
+                    _filaLectura('Motivo', nota.motivo),
+                  if ((nota.registradoPor ?? '').isNotEmpty)
+                    _filaLectura('Registrado por', nota.registradoPor!),
+                  const Divider(height: 24),
+                  _filaLectura('Saldo actual del cliente',
+                      formatPesos(saldoCliente),
+                      valueColor: saldoCliente > 0
+                          ? AppTheme.danger
+                          : AppTheme.success,
+                      bold: true),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: () => _descargarComprobante(app, nota),
+            icon: const Icon(Icons.picture_as_pdf, size: 18),
+            label: const Text('Descargar comprobante'),
+          ),
+          const SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
+
+  Widget _filaLectura(String label, String value,
+      {Color? valueColor, bool bold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 130,
+            child: Text(label,
+                style: const TextStyle(
+                    fontSize: 12, color: AppTheme.textSecondary)),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: bold ? 15 : 13,
+                fontWeight: bold ? FontWeight.w600 : FontWeight.normal,
+                color: valueColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _descargarComprobante(
+      AppProvider app, NotaCreditoDebito nota) async {
+    final cliente = app.clientePorId(nota.clienteId);
+    if (cliente == null) return;
+    final vendedor = app.vendedorPorId(cliente.vendedorId);
+    await EstadoCuentaService.generarComprobanteNcd(
+      nota: nota,
+      cliente: cliente,
+      vendedor: vendedor,
+      saldoActual: app.getSaldoCliente(nota.clienteId),
+    );
+  }
+
+  Future<void> _eliminarNota(
+      AppProvider app, NotaCreditoDebito nota) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Eliminar ${nota.numeroFormateado}'),
+        content: Text(
+            '¿Seguro que querés eliminar esta ${nota.tipoLabel.toLowerCase()} de ${formatPesos(nota.monto)}? El saldo del cliente se recalcula.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Eliminar',
+                style: TextStyle(color: AppTheme.danger)),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+    await app.eliminarNotaCreditoDebito(nota.id,
+        eliminadoPor: app.usuarioActual?.nombreCompleto);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${nota.numeroFormateado} eliminada')),
+      );
+      Navigator.pop(context, 'eliminada');
+    }
   }
 
   Future<void> _guardar() async {

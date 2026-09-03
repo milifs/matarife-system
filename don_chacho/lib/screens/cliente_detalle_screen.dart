@@ -15,6 +15,7 @@ import '../utils/theme.dart';
 import '../services/estado_cuenta_service.dart';
 import 'pago_form_screen.dart';
 import 'remito_form_screen.dart';
+import 'nota_cd_form_screen.dart';
 import 'consultas_screen.dart' show abrirWhatsApp;
 
 class ClienteDetalleScreen extends StatefulWidget {
@@ -416,7 +417,9 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
                     final nota = m['nota'] as NotaCreditoDebito;
                     return Card(
                       margin: const EdgeInsets.only(bottom: 8),
-                      child: Container(
+                      child: InkWell(
+                        onTap: () => _verNota(context, nota),
+                        child: Container(
                         padding: const EdgeInsets.all(14),
                         decoration: const BoxDecoration(
                           border: Border(
@@ -476,6 +479,7 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
                           ],
                         ),
                       ),
+                      ),
                     );
                   }
 
@@ -509,7 +513,7 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
                     margin: const EdgeInsets.only(bottom: 8),
                     child: InkWell(
                       onTap: esNd
-                          ? null
+                          ? () => _verNota(context, notaDeb!)
                           : () {
                               Navigator.push(
                                 context,
@@ -637,6 +641,16 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Future<void> _verNota(
+      BuildContext context, NotaCreditoDebito nota) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NotaCdFormScreen(notaInicial: nota),
       ),
     );
   }
