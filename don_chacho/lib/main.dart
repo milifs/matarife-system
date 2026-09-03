@@ -20,6 +20,7 @@ import 'screens/nota_pedido_form_screen.dart';
 import 'screens/pago_form_screen.dart';
 import 'screens/nota_cd_form_screen.dart';
 import 'screens/reparto_screen.dart';
+import 'screens/asistente_reparto_sheet.dart';
 import 'screens/login_screen.dart';
 import 'screens/gestion_usuarios_screen.dart';
 import 'screens/bandeja_remitos_screen.dart';
@@ -212,9 +213,25 @@ class _MainShellState extends State<MainShell> {
     final tieneFab = tiene('crear_remito') || tiene('crear_pago');
 
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: tabs.map((t) => t.screen).toList(),
+      body: Stack(
+        children: [
+          IndexedStack(
+            index: _currentIndex,
+            children: tabs.map((t) => t.screen).toList(),
+          ),
+          // Botón flotante del asistente de reparto (robot), siempre visible.
+          Positioned(
+            right: 16,
+            bottom: 20,
+            child: FloatingActionButton(
+              heroTag: 'robot_asistente',
+              backgroundColor: AppTheme.primary,
+              tooltip: 'Asistente de reparto',
+              onPressed: () => mostrarAsistenteReparto(context),
+              child: const Icon(Icons.smart_toy, size: 26),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: tieneFab
           ? FloatingActionButton(
