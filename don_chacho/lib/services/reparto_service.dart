@@ -146,8 +146,10 @@ class RepartoService {
               fila('TOTAL MEDIAS', '', lista.totalMediasCarne,
                   lista.totalMediasCerdo,
                   bold: true, bg: celeste),
-              // Filas de clientes (respeta el orden cargado)
-              for (final it in lista.items)
+              // Filas de clientes (orden alfabético por nombre)
+              for (final it in ([...lista.items]..sort((a, b) => nombre(a.clienteId)
+                  .toLowerCase()
+                  .compareTo(nombre(b.clienteId).toLowerCase()))))
                 fila(nombre(it.clienteId), it.sucursal, it.mediasCarne,
                     it.mediasCerdo),
               // SOBRANTE DEPOSITO

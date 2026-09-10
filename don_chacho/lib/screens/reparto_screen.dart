@@ -318,6 +318,11 @@ class _RepartoScreenState extends State<RepartoScreen> {
   }
 
   Widget _grilla(AppProvider app, int sobranteCarne, int sobranteCerdo) {
+    final filasOrdenadas = [..._filas]..sort((a, b) {
+      final na = app.clientePorId(a.clienteId)?.nombreRazonSocial ?? '';
+      final nb = app.clientePorId(b.clienteId)?.nombreRazonSocial ?? '';
+      return na.toLowerCase().compareTo(nb.toLowerCase());
+    });
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
       children: [
@@ -345,8 +350,7 @@ class _RepartoScreenState extends State<RepartoScreen> {
             ),
           )
         else
-          for (var i = 0; i < _filas.length; i++)
-            _filaCliente(app, _filas[i]),
+          for (final fila in filasOrdenadas) _filaCliente(app, fila),
         const SizedBox(height: 4),
         // SOBRANTE DEPÓSITO (calculado)
         _filaSobrante(sobranteCarne, sobranteCerdo),
