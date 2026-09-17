@@ -648,6 +648,14 @@ class DatabaseService {
           .order('orden');
       lista.items =
           itemsData.map((e) => RepartoItem.fromMap(e)).toList();
+      // Colapsar filas exactamente idénticas (mismo cliente, sucursal y medias):
+      // nunca son intencionales y evita que se dupliquen en pantalla / al sembrar.
+      final vistos = <String>{};
+      lista.items = lista.items.where((it) {
+        final clave =
+            '${it.clienteId}|${it.sucursal}|${it.mediasCarne}|${it.mediasCerdo}';
+        return vistos.add(clave);
+      }).toList();
       return lista;
     } catch (_) {
       return null;
