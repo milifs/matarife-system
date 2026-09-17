@@ -204,6 +204,37 @@ class _AsistenteRepartoSheetState extends State<_AsistenteRepartoSheet> {
     _scrollAbajo();
   }
 
+  /// Muestra la lista de reparto actual del día elegido (para revisar sobre
+  /// qué se está trabajando antes o después de dictar cambios).
+  Future<void> _verLista() async {
+    final app = context.read<AppProvider>();
+    setState(() => _procesando = true);
+    ({RepartoLista lista, bool precargado}) res;
+    try {
+      res = await _db.getRepartoListaOPlantilla(_semana, _dia);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _procesando = false);
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _procesando = false);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _VistaLista(
+        dia: _dia,
+        lista: res.lista,
+        precargado: res.precargado,
+        nombre: (id) =>
+            app.clientePorId(id)?.nombreRazonSocial ?? '(cliente eliminado)',
+      ),
+    );
+  }
+
   Future<void> _elegirCliente(_Resolucion r) async {
     final app = context.read<AppProvider>();
     final ordenados = app.clientes.toList()
@@ -231,10 +262,11 @@ class _AsistenteRepartoSheetState extends State<_AsistenteRepartoSheet> {
         .toList();
 
     try {
-      // Cargar (o crear) la lista del día destino en la semana actual.
-      final existente = await _db.getRepartoLista(_semana, prop.dia);
-      final lista = existente ??
-          RepartoLista(semanaInicio: _semana, dia: prop.dia, items: []);
+      // Cargar la lista del día destino en la semana actual. Si todavía no
+      // existe, viene sembrada con la de la semana anterior, así el update /
+      // insert / delete se hace sobre esa base (los clientes que repiten).
+      final lista =
+          (await _db.getRepartoListaOPlantilla(_semana, prop.dia)).lista;
       final items = List<RepartoItem>.from(lista.items);
 
       var cargados = 0;
@@ -372,6 +404,11 @@ class _AsistenteRepartoSheetState extends State<_AsistenteRepartoSheet> {
             ],
             selected: {_dia},
             onSelectionChanged: (s) => setState(() => _dia = s.first),
+          ),
+          IconButton(
+            tooltip: 'Ver lista del día',
+            onPressed: _procesando ? null : _verLista,
+            icon: const Icon(Icons.receipt_long),
           ),
           IconButton(
             tooltip: 'Cerrar',
@@ -656,6 +693,124 @@ class _AsistenteRepartoSheetState extends State<_AsistenteRepartoSheet> {
                   ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Vista de la lista de reparto del día (solo lectura)
+// ─────────────────────────────────────────────
+class _VistaLista extends StatelessWidget {
+  final String dia;
+  final RepartoLista lista;
+  final bool precargado;
+  final String Function(String clienteId) nombre;
+
+  const _VistaLista({
+    required this.dia,
+    required this.lista,
+    required this.precargado,
+    required this.nombre,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final diaLabel = dia.isEmpty ? '' : '${dia[0].toUpperCase()}${dia.substring(1)}';
+    final items = [...lista.items]
+      ..sort((a, b) =>
+          nombre(a.clienteId).toLowerCase().compareTo(
+              nombre(b.clienteId).toLowerCase()));
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text('Reparto del $diaLabel',
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w600)),
+              ),
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close),
+              ),
+            ],
+          ),
+          if (precargado)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Precargado de la semana pasada (todavía sin guardar).',
+                style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+              ),
+            ),
+          const SizedBox(height: 4),
+          _fila('CLIENTE', 'CARNE', 'CERDO', header: true),
+          _fila('TOTAL MEDIAS', '${lista.totalMediasCarne}',
+              '${lista.totalMediasCerdo}',
+              bold: true),
+          const Divider(),
+          if (items.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text('Todavía no hay clientes en esta lista',
+                    style: TextStyle(color: AppTheme.textSecondary)),
+              ),
+            )
+          else
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    for (final it in items)
+                      _fila(
+                        nombre(it.clienteId) +
+                            (it.sucursal.isNotEmpty ? ' (${it.sucursal})' : ''),
+                        it.mediasCarne == 0 ? '' : '${it.mediasCarne}',
+                        it.mediasCerdo == 0 ? '' : '${it.mediasCerdo}',
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          const Divider(),
+          _fila('SOBRANTE DEPÓSITO', '${lista.sobranteCarne}',
+              '${lista.sobranteCerdo}',
+              bold: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _fila(String cliente, String carne, String cerdo,
+      {bool header = false, bool bold = false}) {
+    final estilo = TextStyle(
+      fontSize: header ? 12 : 14,
+      fontWeight: (header || bold) ? FontWeight.bold : FontWeight.normal,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Expanded(child: Text(cliente, style: estilo)),
+          SizedBox(
+              width: 56,
+              child: Text(carne, textAlign: TextAlign.center, style: estilo)),
+          SizedBox(
+              width: 56,
+              child: Text(cerdo, textAlign: TextAlign.center, style: estilo)),
+        ],
       ),
     );
   }

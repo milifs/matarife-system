@@ -32,6 +32,10 @@ class _RepartoScreenState extends State<RepartoScreen> {
 
   bool _cargando = true;
   bool _guardando = false;
+  // La lista mostrada se sembró de la semana anterior y todavía no se guardó
+  // para esta semana. Sirve para el banner y para no auto-guardar una
+  // plantilla que el usuario no llegó a tocar.
+  bool _precargado = false;
 
   final _totalCarneCtrl = TextEditingController();
   final _totalCerdoCtrl = TextEditingController();
@@ -66,31 +70,29 @@ class _RepartoScreenState extends State<RepartoScreen> {
 
   Future<void> _cargar() async {
     setState(() => _cargando = true);
-    final lista = await _db.getRepartoLista(_semana, _dia);
+    // Si la semana todavía no tiene lista, viene sembrada con la de la semana
+    // anterior (misma lógica que usa el asistente de reparto).
+    final res = await _db.getRepartoListaOPlantilla(_semana, _dia);
+    final lista = res.lista;
 
     for (final f in _filas) {
       f.dispose();
     }
     _filas = [];
+    _precargado = res.precargado;
 
-    if (lista != null) {
-      _totalCarneCtrl.text =
-          lista.totalMediasCarne == 0 ? '' : '${lista.totalMediasCarne}';
-      _totalCerdoCtrl.text =
-          lista.totalMediasCerdo == 0 ? '' : '${lista.totalMediasCerdo}';
-      _notasCtrl.text = lista.notas;
-      for (final it in lista.items) {
-        _filas.add(_Fila(
-          clienteId: it.clienteId,
-          carne: it.mediasCarne,
-          cerdo: it.mediasCerdo,
-          sucursal: it.sucursal,
-        ));
-      }
-    } else {
-      _totalCarneCtrl.text = '';
-      _totalCerdoCtrl.text = '';
-      _notasCtrl.text = '';
+    _totalCarneCtrl.text =
+        lista.totalMediasCarne == 0 ? '' : '${lista.totalMediasCarne}';
+    _totalCerdoCtrl.text =
+        lista.totalMediasCerdo == 0 ? '' : '${lista.totalMediasCerdo}';
+    _notasCtrl.text = lista.notas;
+    for (final it in lista.items) {
+      _filas.add(_Fila(
+        clienteId: it.clienteId,
+        carne: it.mediasCarne,
+        cerdo: it.mediasCerdo,
+        sucursal: it.sucursal,
+      ));
     }
 
     if (mounted) setState(() => _cargando = false);
@@ -118,10 +120,17 @@ class _RepartoScreenState extends State<RepartoScreen> {
     );
   }
 
+  // Al tocar cualquier campo, la plantilla precargada deja de serlo: pasa a
+  // ser la lista real de esta semana (se auto-guardará al navegar).
+  void _marcarModificado() {
+    if (_precargado) setState(() => _precargado = false);
+  }
+
   Future<void> _persistir({bool silencioso = false}) async {
     setState(() => _guardando = true);
     try {
       await _db.guardarReparto(_construirLista());
+      _precargado = false;
       if (!silencioso && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -145,7 +154,9 @@ class _RepartoScreenState extends State<RepartoScreen> {
   }
 
   Future<void> _cambiarSemana(int deltaSemanas) async {
-    if (_hayContenido) await _persistir(silencioso: true);
+    // Una plantilla precargada sin tocar no se guarda: evita crear listas
+    // fantasma solo por navegar entre semanas.
+    if (_hayContenido && !_precargado) await _persistir(silencioso: true);
     setState(() {
       _semana = _semana.add(Duration(days: 7 * deltaSemanas));
     });
@@ -154,7 +165,7 @@ class _RepartoScreenState extends State<RepartoScreen> {
 
   Future<void> _cambiarDia(String dia) async {
     if (dia == _dia) return;
-    if (_hayContenido) await _persistir(silencioso: true);
+    if (_hayContenido && !_precargado) await _persistir(silencioso: true);
     setState(() => _dia = dia);
     await _cargar();
   }
@@ -187,6 +198,7 @@ class _RepartoScreenState extends State<RepartoScreen> {
     if (elegido == null) return;
     setState(() {
       _filas.add(_Fila(clienteId: elegido.id));
+      _precargado = false;
     });
   }
 
@@ -251,6 +263,7 @@ class _RepartoScreenState extends State<RepartoScreen> {
           _barraSemana(),
           _selectorDia(),
           const Divider(height: 1),
+          if (_precargado && !_cargando) _bannerPrecargado(),
           Expanded(
             child: _cargando
                 ? const Center(child: CircularProgressIndicator())
@@ -265,6 +278,28 @@ class _RepartoScreenState extends State<RepartoScreen> {
               icon: const Icon(Icons.person_add_alt),
               label: const Text('Agregar cliente'),
             ),
+    );
+  }
+
+  Widget _bannerPrecargado() {
+    return Container(
+      width: double.infinity,
+      color: AppTheme.infoBg,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: const Row(
+        children: [
+          Icon(Icons.history, size: 18, color: AppTheme.textSecondary),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Precargado de la semana pasada. Revisá y tocá guardar para '
+              'confirmar la lista de esta semana.',
+              style:
+                  TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -360,6 +395,7 @@ class _RepartoScreenState extends State<RepartoScreen> {
           controller: _notasCtrl,
           minLines: 2,
           maxLines: 4,
+          onChanged: (_) => _marcarModificado(),
           decoration: const InputDecoration(
             labelText: 'Notas sueltas',
             hintText: 'Ej: buscar morcillas de La Florida',
@@ -446,7 +482,10 @@ class _RepartoScreenState extends State<RepartoScreen> {
                 TextField(
                   controller: fila.sucursalCtrl,
                   maxLength: 40,
-                  onChanged: (_) => setState(() {}),
+                  onChanged: (_) {
+                    _marcarModificado();
+                    setState(() {});
+                  },
                   style: const TextStyle(fontSize: 12),
                   decoration: const InputDecoration(
                     isDense: true,
@@ -483,6 +522,7 @@ class _RepartoScreenState extends State<RepartoScreen> {
                 setState(() {
                   fila.dispose();
                   _filas.remove(fila);
+                  _precargado = false;
                 });
               },
             ),
@@ -538,7 +578,10 @@ class _RepartoScreenState extends State<RepartoScreen> {
         textAlign: TextAlign.center,
         keyboardType: TextInputType.number,
         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        onChanged: (_) => setState(() {}),
+        onChanged: (_) {
+          _marcarModificado();
+          setState(() {});
+        },
         decoration: const InputDecoration(
           isDense: true,
           contentPadding:
