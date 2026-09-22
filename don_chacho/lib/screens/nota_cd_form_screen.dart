@@ -399,6 +399,14 @@ class _NotaCdFormScreenState extends State<NotaCdFormScreen> {
                     ? 'Registrar nota de crédito'
                     : 'Registrar nota de débito'),
           ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: _guardando || _clienteId == null || _monto <= 0
+                ? null
+                : _guardarYEnviar,
+            icon: const Icon(Icons.share, size: 18),
+            label: const Text('Guardar + Enviar'),
+          ),
           const SizedBox(height: 40),
         ],
       ),
@@ -618,6 +626,60 @@ class _NotaCdFormScreenState extends State<NotaCdFormScreen> {
         SnackBar(
           content: Text(
               '${_esCredito ? 'Nota de crédito' : 'Nota de débito'} registrada: ${formatPesos(_monto)}'),
+          backgroundColor: AppTheme.success,
+        ),
+      );
+      Navigator.pop(context, nota);
+    }
+  }
+
+  Future<void> _guardarYEnviar() async {
+    setState(() => _guardando = true);
+
+    final app = context.read<AppProvider>();
+    final cliente = app.clientePorId(_clienteId!);
+    final vendedor =
+        cliente != null ? app.vendedorPorId(cliente.vendedorId) : null;
+
+    final nota = NotaCreditoDebito(
+      clienteId: _clienteId!,
+      tipo: _tipo,
+      fecha: _fecha,
+      monto: _monto,
+      motivo: _motivoCtrl.text.trim(),
+      registradoPor: app.usuarioActual?.nombreCompleto,
+    );
+
+    try {
+      await app.agregarNotaCreditoDebito(nota);
+    } catch (e) {
+      setState(() => _guardando = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al guardar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (cliente != null) {
+      await EstadoCuentaService.generarComprobanteNcd(
+        nota: nota,
+        cliente: cliente,
+        vendedor: vendedor,
+        saldoActual: app.getSaldoCliente(_clienteId!),
+      );
+    }
+
+    setState(() => _guardando = false);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              '${_esCredito ? 'Nota de crédito' : 'Nota de débito'} registrada y comprobante generado'),
           backgroundColor: AppTheme.success,
         ),
       );
