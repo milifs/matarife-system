@@ -461,7 +461,7 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Neto recibido',
+                      const Text('Total recibido',
                           style: TextStyle(
                               fontSize: 14, fontWeight: FontWeight.w500)),
                       Text(
@@ -884,7 +884,7 @@ class _MedioCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Neto recibido',
+                        const Text('Total recibido',
                             style: TextStyle(
                                 fontSize: 11,
                                 color: AppTheme.textSecondary)),
