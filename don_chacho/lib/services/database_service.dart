@@ -648,10 +648,55 @@ class DatabaseService {
           .order('orden');
       lista.items =
           itemsData.map((e) => RepartoItem.fromMap(e)).toList();
+      // Colapsar filas exactamente idénticas (mismo cliente, sucursal y medias):
+      // nunca son intencionales y evita que se dupliquen en pantalla / al sembrar.
+      final vistos = <String>{};
+      lista.items = lista.items.where((it) {
+        final clave =
+            '${it.clienteId}|${it.sucursal}|${it.mediasCarne}|${it.mediasCerdo}';
+        return vistos.add(clave);
+      }).toList();
       return lista;
     } catch (_) {
       return null;
     }
+  }
+
+  /// Trae la lista de la semana/día, o —si todavía no existe— una plantilla
+  /// nueva sembrada con los clientes de la semana anterior (mismo día),
+  /// porque muchos clientes piden siempre lo mismo. Solo copia clientes,
+  /// medias y sucursal; el TOTAL MEDIAS y las notas quedan en blanco (son
+  /// propios de cada semana). [precargado] indica que lo devuelto es una
+  /// plantilla sin guardar. Lo usan la pantalla de reparto y el asistente,
+  /// para que ambos hagan update/insert/delete sobre la misma base.
+  Future<({RepartoLista lista, bool precargado})> getRepartoListaOPlantilla(
+      DateTime semanaInicio, String dia) async {
+    final existente = await getRepartoLista(semanaInicio, dia);
+    if (existente != null) {
+      return (lista: existente, precargado: false);
+    }
+    final lunes = _lunesDe(semanaInicio);
+    final previa =
+        await getRepartoLista(lunes.subtract(const Duration(days: 7)), dia);
+    final plantilla = RepartoLista(
+      semanaInicio: lunes,
+      dia: dia,
+      items: [
+        if (previa != null)
+          for (final it in previa.items)
+            RepartoItem(
+              clienteId: it.clienteId,
+              mediasCarne: it.mediasCarne,
+              mediasCerdo: it.mediasCerdo,
+              sucursal: it.sucursal,
+              orden: it.orden,
+            ),
+      ],
+    );
+    return (
+      lista: plantilla,
+      precargado: previa != null && previa.items.isNotEmpty,
+    );
   }
 
   /// Guarda (crea o actualiza) la lista de reparto y reemplaza sus items.
