@@ -163,6 +163,8 @@ class _BandejaRemitosScreenState extends State<BandejaRemitosScreen>
           ndp: ndp,
           app: app,
           onConfirmar: ndp.esPendiente ? () => _confirmarNdp(ndp) : null,
+          onConfirmarEnviar:
+              ndp.esPendiente ? () => _confirmarYEnviarNdp(ndp) : null,
           onEditar: ndp.esPendiente ? () => _editarNdp(ndp) : null,
           onRechazar: ndp.esPendiente ? () => _rechazarNdp(ndp) : null,
           onPdf: () => _descargarPdfNdp(ndp, app),
@@ -205,6 +207,7 @@ class _BandejaRemitosScreenState extends State<BandejaRemitosScreen>
               ndp: n,
               app: app,
               onConfirmar: null,
+              onConfirmarEnviar: null,
               onEditar: null,
               onRechazar: null,
               onPdf: () => _descargarPdfNdp(n, app),
@@ -306,6 +309,57 @@ class _BandejaRemitosScreenState extends State<BandejaRemitosScreen>
           ),
           backgroundColor:
               remito != null ? AppTheme.success : AppTheme.danger,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _procesando = false);
+    }
+  }
+
+  Future<void> _confirmarYEnviarNdp(NotaPedido ndp) async {
+    if (_procesando) return;
+
+    // Si el cliente es texto libre, pedir que elija de lista antes de confirmar
+    String? clienteId = ndp.clienteId;
+    if (clienteId == null) {
+      clienteId = await _seleccionarClienteParaNdp(ndp);
+      if (clienteId == null) return; // canceló
+    }
+
+    setState(() => _procesando = true);
+    try {
+      final app = context.read<AppProvider>();
+      final remito = await app.confirmarNotaPedido(
+          ndp, clienteId, widget.usuarioActual.id);
+
+      if (remito == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Error al confirmar la nota de pedido'),
+            backgroundColor: AppTheme.danger,
+          ));
+        }
+        return;
+      }
+
+      final cliente = app.clientePorId(clienteId);
+      final vendedor =
+          cliente != null ? app.vendedorPorId(cliente.vendedorId) : null;
+      final clienteNombre =
+          cliente?.nombreRazonSocial ?? ndp.clienteNombreLibre ?? '?';
+
+      await EstadoCuentaService.generarPdfNotaPedido(
+        ndp: ndp,
+        clienteNombre: clienteNombre,
+        remitoNumero: remito.numeroFormateado,
+        vendedorNombre: vendedor?.nombreCompleto,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              '${ndp.numeroFormateado} confirmada → ${remito.numeroFormateado}'),
+          backgroundColor: AppTheme.success,
         ));
       }
     } finally {
@@ -536,31 +590,25 @@ class _RemitoCard extends StatelessWidget {
             Row(
               children: [
                 if (onRechazar != null) ...[
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: onRechazar,
-                      icon: const Icon(Icons.close,
-                          size: 18, color: AppTheme.danger),
-                      label: const Text('Rechazar',
-                          style: TextStyle(color: AppTheme.danger)),
-                    ),
+                  _AccionIconButton(
+                    onPressed: onRechazar,
+                    icon: Icons.close,
+                    tooltip: 'Rechazar',
+                    color: AppTheme.danger,
                   ),
                   const SizedBox(width: 8),
                 ],
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: onEditar,
-                    icon: const Icon(Icons.edit, size: 18),
-                    label: const Text('Editar'),
-                  ),
+                _AccionIconButton(
+                  onPressed: onEditar,
+                  icon: Icons.edit,
+                  tooltip: 'Editar',
                 ),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: onConfirmar,
-                    icon: const Icon(Icons.check, size: 18),
-                    label: const Text('Confirmar'),
-                  ),
+                _AccionIconButton(
+                  onPressed: onConfirmar,
+                  icon: Icons.check,
+                  tooltip: 'Confirmar',
+                  filled: true,
                 ),
               ],
             ),
@@ -578,6 +626,7 @@ class _NdpCard extends StatelessWidget {
   final NotaPedido ndp;
   final AppProvider app;
   final VoidCallback? onConfirmar;
+  final VoidCallback? onConfirmarEnviar;
   final VoidCallback? onEditar;
   final VoidCallback? onRechazar;
   final VoidCallback? onPdf;
@@ -586,6 +635,7 @@ class _NdpCard extends StatelessWidget {
     required this.ndp,
     required this.app,
     this.onConfirmar,
+    this.onConfirmarEnviar,
     this.onEditar,
     this.onRechazar,
     this.onPdf,
@@ -688,34 +738,28 @@ class _NdpCard extends StatelessWidget {
               children: [
                 if (acciones) ...[
                   if (onRechazar != null) ...[
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: onRechazar,
-                        icon: const Icon(Icons.close,
-                            size: 18, color: AppTheme.danger),
-                        label: const Text('Rechazar',
-                            style: TextStyle(color: AppTheme.danger)),
-                      ),
+                    _AccionIconButton(
+                      onPressed: onRechazar,
+                      icon: Icons.close,
+                      tooltip: 'Rechazar',
+                      color: AppTheme.danger,
                     ),
                     const SizedBox(width: 8),
                   ],
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: onEditar,
-                      icon: const Icon(Icons.edit, size: 18),
-                      label: const Text('Editar'),
-                    ),
+                  _AccionIconButton(
+                    onPressed: onEditar,
+                    icon: Icons.edit,
+                    tooltip: 'Editar',
                   ),
                   const SizedBox(width: 8),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: onConfirmar,
-                      icon: const Icon(Icons.check, size: 18),
-                      label: const Text('Confirmar'),
-                    ),
+                  _AccionIconButton(
+                    onPressed: onConfirmar,
+                    icon: Icons.check,
+                    tooltip: 'Confirmar',
+                    filled: true,
                   ),
-                  const SizedBox(width: 8),
                 ],
+                const Spacer(),
                 OutlinedButton.icon(
                   onPressed: onPdf,
                   icon: const Icon(Icons.picture_as_pdf,
@@ -725,8 +769,61 @@ class _NdpCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (onConfirmarEnviar != null) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: onConfirmarEnviar,
+                  icon: const Icon(Icons.send, size: 18),
+                  label: const Text('Confirmar + Enviar'),
+                ),
+              ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// BOTÓN DE ACCIÓN SOLO ÍCONO (Rechazar/Editar/Confirmar)
+// ─────────────────────────────────────────────
+class _AccionIconButton extends StatelessWidget {
+  final VoidCallback? onPressed;
+  final IconData icon;
+  final String tooltip;
+  final Color? color;
+  final bool filled;
+
+  const _AccionIconButton({
+    required this.onPressed,
+    required this.icon,
+    required this.tooltip,
+    this.color,
+    this.filled = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (filled) {
+      return IconButton.filled(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 20),
+        tooltip: tooltip,
+        style: IconButton.styleFrom(
+          backgroundColor: AppTheme.primary,
+          foregroundColor: Colors.white,
+        ),
+      );
+    }
+    return IconButton.outlined(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 20, color: color),
+      tooltip: tooltip,
+      style: IconButton.styleFrom(
+        side: BorderSide(color: color ?? AppTheme.textHint),
       ),
     );
   }
