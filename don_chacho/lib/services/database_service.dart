@@ -410,15 +410,37 @@ class DatabaseService {
   // ═══════════════════════════════════════════
 
   Future<List<NotaPedido>> getNotasPedido() async {
-    final data = await _client
-        .from('notas_pedido')
-        .select()
-        .order('creado_en', ascending: false);
+    // Paginado: PostgREST corta en 1000 filas por defecto.
+    const pageSize = 1000;
+    final data = <Map<String, dynamic>>[];
+    var from = 0;
+    while (true) {
+      final batch = await _client
+          .from('notas_pedido')
+          .select()
+          .order('creado_en', ascending: false)
+          .order('id')
+          .range(from, from + pageSize - 1);
+      data.addAll(batch);
+      if (batch.length < pageSize) break;
+      from += pageSize;
+    }
 
     if (data.isEmpty) return [];
 
-    // Una sola query para TODOS los items
-    final allItemsData = await _client.from('nota_pedido_items').select();
+    // Todos los items, paginados igual
+    final allItemsData = <Map<String, dynamic>>[];
+    from = 0;
+    while (true) {
+      final batch = await _client
+          .from('nota_pedido_items')
+          .select()
+          .order('id')
+          .range(from, from + pageSize - 1);
+      allItemsData.addAll(batch);
+      if (batch.length < pageSize) break;
+      from += pageSize;
+    }
     final itemsPorNdp = <String, List<NotaPedidoItem>>{};
     for (final row in allItemsData) {
       final item = NotaPedidoItem.fromMap(row);
