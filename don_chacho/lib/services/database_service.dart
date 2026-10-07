@@ -11,15 +11,39 @@ import '../models/models.dart';
 class DatabaseService {
   final SupabaseClient _client = Supabase.instance.client;
 
+  /// PostgREST corta cualquier `.select()` en 1000 filas por defecto y
+  /// descarta el resto SIN error. Este helper pagina en bloques de 1000
+  /// hasta agotar el resultado, para que una lectura de tabla completa
+  /// nunca pueda perder filas en silencio a medida que la tabla crece
+  /// (bug real: v18.22 en remitos/pagos, v18.34 en notas de pedido).
+  /// Usarlo en toda lectura SIN filtro acotado a un padre (cliente/remito/
+  /// pago puntual); esas quedan chicas por construcción y no lo necesitan.
+  Future<List<Map<String, dynamic>>> _paginado(
+    PostgrestTransformBuilder<PostgrestList> Function(int from, int to)
+        pagina,
+  ) async {
+    const pageSize = 1000;
+    final data = <Map<String, dynamic>>[];
+    var from = 0;
+    while (true) {
+      final batch = await pagina(from, from + pageSize - 1);
+      data.addAll(batch);
+      if (batch.length < pageSize) break;
+      from += pageSize;
+    }
+    return data;
+  }
+
   // ═══════════════════════════════════════════
   // VENDEDORES
   // ═══════════════════════════════════════════
 
   Future<List<Vendedor>> getVendedores() async {
-    final data = await _client
+    final data = await _paginado((from, to) => _client
         .from('vendedores')
         .select()
-        .order('apellido');
+        .order('apellido')
+        .range(from, to));
     return data.map((e) => Vendedor.fromMap(e)).toList();
   }
 
@@ -59,11 +83,13 @@ class DatabaseService {
   // ═══════════════════════════════════════════
 
   Future<List<Cliente>> getClientes({String? vendedorId}) async {
-    var query = _client.from('clientes').select().eq('activo', true);
-    if (vendedorId != null) {
-      query = query.eq('vendedor_id', vendedorId);
-    }
-    final data = await query.order('nombre_razon_social');
+    final data = await _paginado((from, to) {
+      var query = _client.from('clientes').select().eq('activo', true);
+      if (vendedorId != null) {
+        query = query.eq('vendedor_id', vendedorId);
+      }
+      return query.order('nombre_razon_social').range(from, to);
+    });
     return data.map((e) => Cliente.fromMap(e)).toList();
   }
 
@@ -96,12 +122,7 @@ class DatabaseService {
     DateTime? desde,
     DateTime? hasta,
   }) async {
-    // Paginado: PostgREST corta en 1000 filas por defecto. Traemos todas las
-    // páginas para no perder registros viejos (si no, se inflan los saldos).
-    const pageSize = 1000;
-    final data = <Map<String, dynamic>>[];
-    var from = 0;
-    while (true) {
+    final data = await _paginado((from, to) {
       var query = _client.from('remitos').select();
       if (clienteId != null) {
         query = query.eq('cliente_id', clienteId);
@@ -112,14 +133,11 @@ class DatabaseService {
       if (hasta != null) {
         query = query.lte('fecha', hasta.toIso8601String());
       }
-      final batch = await query
+      return query
           .order('fecha', ascending: false)
           .order('id')
-          .range(from, from + pageSize - 1);
-      data.addAll(batch);
-      if (batch.length < pageSize) break;
-      from += pageSize;
-    }
+          .range(from, to);
+    });
     return data.map((e) => Remito.fromMap(e)).toList();
   }
 
@@ -201,20 +219,11 @@ class DatabaseService {
   /// Trae los items de TODOS los remitos en una sola query.
   /// Se agrupan en memoria por remito_id en el caller.
   Future<List<RemitoItem>> getAllRemitoItems() async {
-    // Paginado: PostgREST corta en 1000 filas por defecto.
-    const pageSize = 1000;
-    final data = <Map<String, dynamic>>[];
-    var from = 0;
-    while (true) {
-      final batch = await _client
-          .from('remito_items')
-          .select()
-          .order('id')
-          .range(from, from + pageSize - 1);
-      data.addAll(batch);
-      if (batch.length < pageSize) break;
-      from += pageSize;
-    }
+    final data = await _paginado((from, to) => _client
+        .from('remito_items')
+        .select()
+        .order('id')
+        .range(from, to));
     return data.map((e) => RemitoItem.fromMap(e)).toList();
   }
 
@@ -227,12 +236,7 @@ class DatabaseService {
     DateTime? desde,
     DateTime? hasta,
   }) async {
-    // Paginado: PostgREST corta en 1000 filas por defecto. Traemos todas las
-    // páginas para no perder pagos viejos (si no, se inflan los saldos).
-    const pageSize = 1000;
-    final data = <Map<String, dynamic>>[];
-    var from = 0;
-    while (true) {
+    final data = await _paginado((from, to) {
       var query = _client.from('pagos').select();
       if (clienteId != null) {
         query = query.eq('cliente_id', clienteId);
@@ -243,14 +247,11 @@ class DatabaseService {
       if (hasta != null) {
         query = query.lte('fecha', hasta.toIso8601String());
       }
-      final batch = await query
+      return query
           .order('fecha', ascending: false)
           .order('id')
-          .range(from, from + pageSize - 1);
-      data.addAll(batch);
-      if (batch.length < pageSize) break;
-      from += pageSize;
-    }
+          .range(from, to);
+    });
     return data.map((e) => Pago.fromMap(e)).toList();
   }
 
@@ -308,10 +309,11 @@ class DatabaseService {
   }
 
   Future<List<PagoEliminado>> getPagosEliminados() async {
-    final data = await _client
+    final data = await _paginado((from, to) => _client
         .from('pagos_eliminados')
         .select()
-        .order('eliminado_en', ascending: false);
+        .order('eliminado_en', ascending: false)
+        .range(from, to));
     return data.map((e) => PagoEliminado.fromMap(e)).toList();
   }
 
@@ -320,10 +322,11 @@ class DatabaseService {
   }
 
   Future<List<RemitoEliminado>> getRemitoEliminados() async {
-    final data = await _client
+    final data = await _paginado((from, to) => _client
         .from('remitos_eliminados')
         .select()
-        .order('eliminado_en', ascending: false);
+        .order('eliminado_en', ascending: false)
+        .range(from, to));
     return data.map((e) => RemitoEliminado.fromMap(e)).toList();
   }
 
@@ -335,10 +338,11 @@ class DatabaseService {
     // Tolerante a que la tabla aún no exista (migración no corrida):
     // devuelve lista vacía en vez de romper la carga inicial.
     try {
-      final data = await _client
+      final data = await _paginado((from, to) => _client
           .from('notas_pedido_eliminadas')
           .select()
-          .order('eliminado_en', ascending: false);
+          .order('eliminado_en', ascending: false)
+          .range(from, to));
       return data.map((e) => NotaPedidoEliminada.fromMap(e)).toList();
     } catch (_) {
       return [];
@@ -362,10 +366,11 @@ class DatabaseService {
   }
 
   Future<List<CostoSemanal>> getAllCostosSemana() async {
-    final data = await _client
+    final data = await _paginado((from, to) => _client
         .from('costos_semana')
         .select()
-        .order('semana_inicio', ascending: false);
+        .order('semana_inicio', ascending: false)
+        .range(from, to));
     return data.map<CostoSemanal>((e) => CostoSemanal.fromMap(e)).toList();
   }
 
@@ -410,37 +415,21 @@ class DatabaseService {
   // ═══════════════════════════════════════════
 
   Future<List<NotaPedido>> getNotasPedido() async {
-    // Paginado: PostgREST corta en 1000 filas por defecto.
-    const pageSize = 1000;
-    final data = <Map<String, dynamic>>[];
-    var from = 0;
-    while (true) {
-      final batch = await _client
-          .from('notas_pedido')
-          .select()
-          .order('creado_en', ascending: false)
-          .order('id')
-          .range(from, from + pageSize - 1);
-      data.addAll(batch);
-      if (batch.length < pageSize) break;
-      from += pageSize;
-    }
+    final data = await _paginado((from, to) => _client
+        .from('notas_pedido')
+        .select()
+        .order('creado_en', ascending: false)
+        .order('id')
+        .range(from, to));
 
     if (data.isEmpty) return [];
 
     // Todos los items, paginados igual
-    final allItemsData = <Map<String, dynamic>>[];
-    from = 0;
-    while (true) {
-      final batch = await _client
-          .from('nota_pedido_items')
-          .select()
-          .order('id')
-          .range(from, from + pageSize - 1);
-      allItemsData.addAll(batch);
-      if (batch.length < pageSize) break;
-      from += pageSize;
-    }
+    final allItemsData = await _paginado((from, to) => _client
+        .from('nota_pedido_items')
+        .select()
+        .order('id')
+        .range(from, to));
     final itemsPorNdp = <String, List<NotaPedidoItem>>{};
     for (final row in allItemsData) {
       final item = NotaPedidoItem.fromMap(row);
@@ -543,10 +532,11 @@ class DatabaseService {
     // Tolerante a que la tabla aún no exista (migración no corrida):
     // devuelve lista vacía en vez de romper la carga inicial.
     try {
-      final data = await _client
+      final data = await _paginado((from, to) => _client
           .from('notas_credito_debito')
           .select()
-          .order('creado_en', ascending: false);
+          .order('creado_en', ascending: false)
+          .range(from, to));
       return data.map((e) => NotaCreditoDebito.fromMap(e)).toList();
     } catch (_) {
       return [];
