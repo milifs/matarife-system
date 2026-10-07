@@ -360,7 +360,7 @@ vercel --prod
 
 ## ESTADO ACTUAL (v18.36) — EN PRODUCCIÓN
 
-Deployada el 07/10/2026 desde la rama **`feat/soporte`** (PR #1 abierto, **NO mergeada a `master` todavía**). Deploy `web-5gub63yg0`, alias `web-six-indol-svg13avcfl.vercel.app` apuntando ahí. La migración `supabase_migration_soporte.sql` ya se corrió (tabla `soportes` verificada por REST). `AppConfig.soporteWhatsapp` quedó en `5493874159555` (WhatsApp de Mili, la desarrolladora).
+Deployada el 07/10/2026 desde la rama **`feat/soporte`** (PR #1 abierto, **NO mergeada a `master` todavía**). Deploy `web-5gub63yg0`, alias `web-six-indol-svg13avcfl.vercel.app` apuntando ahí. La migración `supabase_migration_soporte.sql` ya se corrió: tabla `soportes` verificada por REST y bucket `soporte-adjuntos` verificado en el dashboard. `AppConfig.soporteWhatsapp` quedó en `5493874159555` (WhatsApp de Mili, la desarrolladora).
 
 ### v18.31 — deployada el 22/09/2026
 
@@ -630,7 +630,6 @@ URL: `https://web-six-indol-svg13avcfl.vercel.app`
 
 ## CAMBIOS PENDIENTES
 
-- **Soporte — verificar el bucket**: la tabla `soportes` quedó confirmada, pero **falta confirmar en Supabase → Storage que exista `soporte-adjuntos`** (el endpoint de metadata de buckets necesita la service_role key, así que no se pudo chequear por REST). Si no existe, el reclamo se manda igual pero sin la foto: `subirAdjunto` falla, el form avisa y sigue. Se arregla corriendo solo el bloque `INSERT INTO storage.buckets` + las dos policies de la migración.
 - **Soporte — mejoras no implementadas**: badge con la cantidad de tickets abiertos en el item del FAB (requiere sumar la query a `AppProvider.cargarDatos`); aviso push/mail en vez del WhatsApp manual.
 - **Lista de reparto — Fase 2 (audio)**: cargar la lista por audio de WhatsApp (audio → transcripción Whisper/Gemini → parseo estructurado con Claude). Diferido explícitamente por el usuario.
 - **Ejecutar `supabase_migration_indices.sql`** en Supabase Dashboard → SQL Editor (una sola vez). Agrega 6 índices para acelerar la carga inicial.
