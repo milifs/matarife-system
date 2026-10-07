@@ -361,7 +361,7 @@ vercel --prod
 
 ## ESTADO ACTUAL (v18.37) — EN PRODUCCIÓN
 
-Deployada el 07/10/2026 desde la rama `fix/soporte-whatsapp` (commit `5a506d7`). Deploy `web-2f6u8cxou`, alias `web-six-indol-svg13avcfl.vercel.app` apuntando ahí. Arregla el aviso de WhatsApp del módulo de Soporte, que no abría nunca (ver fila v18.37 del historial). **Falta probarlo desde el celular**: el ticket ya se guardaba bien, lo que no funcionaba era el link.
+Deployada el 07/10/2026 desde la rama `fix/soporte-whatsapp`, **ya mergeada a `master`** (PR #2, merge commit `d457360`) — master y producción coinciden. Deploy `web-2f6u8cxou`, alias `web-six-indol-svg13avcfl.vercel.app` apuntando ahí. Arregla el aviso de WhatsApp del módulo de Soporte, que no abría nunca (ver fila v18.37 del historial). **Probado desde el celular el 07/10/2026: el flujo completo anda** (reclamo → diálogo → "Abrir WhatsApp" → chat con el mensaje escrito).
 
 ### v18.36 — deployada el 07/10/2026
 
