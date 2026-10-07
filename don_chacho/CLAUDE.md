@@ -358,11 +358,11 @@ vercel --prod
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL
+## ESTADO ACTUAL (v18.36) — EN PRODUCCIÓN
 
-**v18.36 (Soporte) está en `master` sin deployar.** Falta: (1) correr `supabase_migration_soporte.sql` en Supabase, (2) cargar el WhatsApp de soporte en `AppConfig.soporteWhatsapp`, (3) buildear y deployar.
+Deployada el 07/10/2026 desde la rama **`feat/soporte`** (PR #1 abierto, **NO mergeada a `master` todavía**). Deploy `web-5gub63yg0`, alias `web-six-indol-svg13avcfl.vercel.app` apuntando ahí. La migración `supabase_migration_soporte.sql` ya se corrió (tabla `soportes` verificada por REST). `AppConfig.soporteWhatsapp` quedó en `5493874159555` (WhatsApp de Mili, la desarrolladora).
 
-### v18.31 — EN PRODUCCIÓN
+### v18.31 — deployada el 22/09/2026
 
 Deployada el 22/09/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`. **v18.31 salió de la rama `feat/reparto-precarga` (deployada a prod pero NO mergeada a `master` todavía; la rama acumula v18.30 + v18.31). La versión previa `feat/reparto-voz` sí está mergeada a `master` (v18.29).**
 
@@ -630,7 +630,7 @@ URL: `https://web-six-indol-svg13avcfl.vercel.app`
 
 ## CAMBIOS PENDIENTES
 
-- **Soporte (v18.36) — para que funcione**: (1) correr `supabase_migration_soporte.sql` en Supabase Dashboard → SQL Editor; hasta entonces la bandeja muestra el error que lo avisa. (2) Poner el WhatsApp de soporte en `AppConfig.soporteWhatsapp` o buildear con `--dart-define=SOPORTE_WHATSAPP=549...`; con el campo vacío el ticket se guarda pero no se abre WhatsApp.
+- **Soporte — verificar el bucket**: la tabla `soportes` quedó confirmada, pero **falta confirmar en Supabase → Storage que exista `soporte-adjuntos`** (el endpoint de metadata de buckets necesita la service_role key, así que no se pudo chequear por REST). Si no existe, el reclamo se manda igual pero sin la foto: `subirAdjunto` falla, el form avisa y sigue. Se arregla corriendo solo el bloque `INSERT INTO storage.buckets` + las dos policies de la migración.
 - **Soporte — mejoras no implementadas**: badge con la cantidad de tickets abiertos en el item del FAB (requiere sumar la query a `AppProvider.cargarDatos`); aviso push/mail en vez del WhatsApp manual.
 - **Lista de reparto — Fase 2 (audio)**: cargar la lista por audio de WhatsApp (audio → transcripción Whisper/Gemini → parseo estructurado con Claude). Diferido explícitamente por el usuario.
 - **Ejecutar `supabase_migration_indices.sql`** en Supabase Dashboard → SQL Editor (una sola vez). Agrega 6 índices para acelerar la carga inicial.
