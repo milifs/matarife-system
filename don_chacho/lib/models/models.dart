@@ -1005,3 +1005,96 @@ class Usuario {
         creadoEn: DateTime.tryParse(map['creado_en'] ?? '') ?? DateTime.now(),
       );
 }
+
+// ─────────────────────────────────────────────
+// TICKET DE SOPORTE (v18.36)
+// ─────────────────────────────────────────────
+// Reclamo que carga el cliente cuando algo no funciona. El número lo asigna
+// Postgres (IDENTITY), así que no se manda en el insert.
+class TicketSoporte {
+  final String id;
+  int numero;
+  String modulo;
+  String descripcion;
+  bool bloqueante;
+  String? adjuntoPath; // path dentro del bucket, no URL
+  String estado; // 'abierto' | 'en_revision' | 'resuelto'
+  String respuesta;
+  String? reportadoPor;
+  String? rol;
+  String? appVersion;
+  String? plataforma;
+  final DateTime creadoEn;
+  DateTime? resueltoEn;
+  String? resueltoPor;
+
+  TicketSoporte({
+    String? id,
+    this.numero = 0,
+    this.modulo = '',
+    this.descripcion = '',
+    this.bloqueante = false,
+    this.adjuntoPath,
+    this.estado = 'abierto',
+    this.respuesta = '',
+    this.reportadoPor,
+    this.rol,
+    this.appVersion,
+    this.plataforma,
+    DateTime? creadoEn,
+    this.resueltoEn,
+    this.resueltoPor,
+  })  : id = id ?? _uuid.v4(),
+        creadoEn = creadoEn ?? DateTime.now();
+
+  bool get esAbierto => estado == 'abierto';
+  bool get esEnRevision => estado == 'en_revision';
+  bool get esResuelto => estado == 'resuelto';
+  bool get tieneAdjunto => (adjuntoPath ?? '').isNotEmpty;
+
+  /// Número formateado: S-0001
+  String get numeroFormateado => 'S-${numero.toString().padLeft(4, '0')}';
+
+  String get estadoLabel => switch (estado) {
+        'en_revision' => 'En revisión',
+        'resuelto' => 'Resuelto',
+        _ => 'Abierto',
+      };
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        // numero lo asigna la secuencia de Postgres en el insert
+        if (numero > 0) 'numero': numero,
+        'modulo': modulo,
+        'descripcion': descripcion,
+        'bloqueante': bloqueante,
+        if (adjuntoPath != null) 'adjunto_path': adjuntoPath,
+        'estado': estado,
+        'respuesta': respuesta,
+        if (reportadoPor != null) 'reportado_por': reportadoPor,
+        if (rol != null) 'rol': rol,
+        if (appVersion != null) 'app_version': appVersion,
+        if (plataforma != null) 'plataforma': plataforma,
+        'creado_en': creadoEn.toIso8601String(),
+        if (resueltoEn != null) 'resuelto_en': resueltoEn!.toIso8601String(),
+        if (resueltoPor != null) 'resuelto_por': resueltoPor,
+      };
+
+  factory TicketSoporte.fromMap(Map<String, dynamic> map) => TicketSoporte(
+        id: map['id'],
+        numero: map['numero'] ?? 0,
+        modulo: map['modulo'] ?? '',
+        descripcion: map['descripcion'] ?? '',
+        bloqueante: map['bloqueante'] ?? false,
+        adjuntoPath: map['adjunto_path'],
+        estado: map['estado'] ?? 'abierto',
+        respuesta: map['respuesta'] ?? '',
+        reportadoPor: map['reportado_por'],
+        rol: map['rol'],
+        appVersion: map['app_version'],
+        plataforma: map['plataforma'],
+        creadoEn: DateTime.tryParse(map['creado_en'] ?? '') ?? DateTime.now(),
+        resueltoEn: DateTime.tryParse(map['resuelto_en'] ?? ''),
+        resueltoPor: map['resuelto_por'],
+      );
+}

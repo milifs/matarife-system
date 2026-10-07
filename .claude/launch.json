@@ -9,8 +9,8 @@
     },
     {
       "name": "flutter-web",
-      "runtimeExecutable": "flutter",
-      "runtimeArgs": ["run", "-d", "web-server", "--web-port", "8080", "--web-hostname", "localhost"],
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd don_chacho && flutter run -d web-server --web-port 8080 --web-hostname localhost"],
       "port": 8080
     }
   ]
