@@ -22,7 +22,7 @@ class AppConfig {
   /// sin + ni espacios (Argentina celular: 549 + área sin 0 + número).
   /// Vacío = el ticket se guarda igual pero no se abre WhatsApp.
   static const String soporteWhatsapp =
-      String.fromEnvironment('SOPORTE_WHATSAPP', defaultValue: '');
+      String.fromEnvironment('SOPORTE_WHATSAPP', defaultValue: '5493874159555');
 
   static bool get tieneWhatsappSoporte => soporteWhatsapp.trim().isNotEmpty;
 }
