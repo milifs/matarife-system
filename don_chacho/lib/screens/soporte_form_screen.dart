@@ -359,19 +359,66 @@ class _SoporteFormScreenState extends State<SoporteFormScreen> {
       return;
     }
 
-    final abrioWhatsapp = await _soporte.avisarPorWhatsapp(guardado);
+    final uriWhatsapp = await _soporte.uriWhatsapp(guardado);
 
     if (!mounted) return;
     setState(() => _enviando = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(abrioWhatsapp
-            ? 'Reclamo ${guardado.numeroFormateado} registrado. '
-                'Apretá enviar en WhatsApp.'
-            : 'Reclamo ${guardado.numeroFormateado} registrado.'),
-        backgroundColor: AppTheme.success,
+
+    if (uriWhatsapp == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Reclamo ${guardado.numeroFormateado} registrado.'),
+          backgroundColor: AppTheme.success,
+        ),
+      );
+      Navigator.pop(context, guardado);
+      return;
+    }
+
+    await _mostrarAvisoWhatsapp(guardado, uriWhatsapp);
+    if (!mounted) return;
+    Navigator.pop(context, guardado);
+  }
+
+  /// El link se abre desde el botón del diálogo, no al terminar de guardar:
+  /// en web el navegador bloquea la ventana nueva si no sale de un toque.
+  Future<void> _mostrarAvisoWhatsapp(TicketSoporte ticket, Uri uri) {
+    // El aviso de fallo puede llegar cuando esta pantalla ya se cerró.
+    final messenger = ScaffoldMessenger.of(context);
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text('Reclamo ${ticket.numeroFormateado} registrado'),
+        content: const Text(
+          'Ya quedó guardado. Avisale a soporte por WhatsApp: se abre con el '
+          'mensaje escrito y solo tenés que apretar enviar.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Después'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              final abriendo = _soporte.abrirWhatsapp(uri);
+              Navigator.pop(dialogCtx);
+              abriendo.then((abrio) {
+                if (abrio) return;
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('No se pudo abrir WhatsApp. El reclamo ya '
+                        'quedó registrado igual.'),
+                    backgroundColor: AppTheme.warning,
+                  ),
+                );
+              });
+            },
+            icon: const Icon(Icons.send, size: 18),
+            label: const Text('Abrir WhatsApp'),
+          ),
+        ],
       ),
     );
-    Navigator.pop(context, guardado);
   }
 }
