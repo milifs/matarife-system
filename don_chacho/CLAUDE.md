@@ -149,7 +149,7 @@ don_chacho/lib/
 11. `supabase_migration_ndp_tipo_carne.sql` — columna `tipo_carne` en `nota_pedido_items` (v18.19)
 12. `supabase_migration_notas_credito_debito.sql` — tablas `notas_credito_debito` + `notas_cd_eliminadas` (v18.21)
 13. `supabase_migration_reparto.sql` — tablas `reparto_listas` + `reparto_items` (v18.24, en raíz del repo)
-14. `supabase_migration_soporte.sql` — tabla `soportes` + bucket `soporte-adjuntos` + policies (v18.36, en raíz del repo). **PENDIENTE de correr en Supabase.**
+14. `supabase_migration_soporte.sql` — tabla `soportes` + bucket `soporte-adjuntos` + policies (v18.36, en raíz del repo). Ya corrida el 07/10/2026.
 
 ### Tablas Lista de reparto (v18.24)
 - `reparto_listas` (id UUID PK, semana_inicio DATE, dia TEXT CHECK IN ('jueves','viernes'), total_medias_carne INT, total_medias_cerdo INT, notas TEXT, creado_en, **UNIQUE (semana_inicio, dia)**) — RLS off
@@ -359,16 +359,20 @@ vercel --prod
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v18.36) — EN PRODUCCIÓN
+## ESTADO ACTUAL (v18.37) — EN PRODUCCIÓN
 
-Deployada el 07/10/2026 desde la rama `feat/soporte`, **ya mergeada a `master`** (PR #1, merge commit `6760477`) — master y producción coinciden. Deploy `web-5gub63yg0`, alias `web-six-indol-svg13avcfl.vercel.app` apuntando ahí. La migración `supabase_migration_soporte.sql` ya se corrió: tabla `soportes` verificada por REST y bucket `soporte-adjuntos` verificado en el dashboard. `AppConfig.soporteWhatsapp` quedó en `5493874159555` (WhatsApp de Mili, la desarrolladora).
+Deployada el 07/10/2026 desde la rama `fix/soporte-whatsapp` (commit `5a506d7`). Deploy `web-2f6u8cxou`, alias `web-six-indol-svg13avcfl.vercel.app` apuntando ahí. Arregla el aviso de WhatsApp del módulo de Soporte, que no abría nunca (ver fila v18.37 del historial). **Falta probarlo desde el celular**: el ticket ya se guardaba bien, lo que no funcionaba era el link.
+
+### v18.36 — deployada el 07/10/2026
+
+Deployada desde la rama `feat/soporte`, **ya mergeada a `master`** (PR #1, merge commit `6760477`). Deploy `web-5gub63yg0`. La migración `supabase_migration_soporte.sql` ya se corrió: tabla `soportes` verificada por REST y bucket `soporte-adjuntos` verificado en el dashboard. `AppConfig.soporteWhatsapp` quedó en `5493874159555` (WhatsApp de Mili, la desarrolladora).
 
 ### v18.31 — deployada el 22/09/2026
 
 Deployada el 22/09/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`. **v18.31 salió de la rama `feat/reparto-precarga` (deployada a prod pero NO mergeada a `master` todavía; la rama acumula v18.30 + v18.31). La versión previa `feat/reparto-voz` sí está mergeada a `master` (v18.29).**
 
 ### Cambios v18.36 (07/10/2026) — Módulo de Soporte
-1. **`supabase_migration_soporte.sql`** (raíz del repo, **PENDIENTE de correr**): tabla `soportes` + bucket privado `soporte-adjuntos` + policies de insert/select para el rol `anon`. Ver "Tabla Soporte (v18.36)".
+1. **`supabase_migration_soporte.sql`** (raíz del repo, ya corrida): tabla `soportes` + bucket privado `soporte-adjuntos` + policies de insert/select para el rol `anon`. Ver "Tabla Soporte (v18.36)".
 2. **`lib/utils/app_config.dart`** (nuevo): `version`, `clienteNombre` y `soporteWhatsapp` vía `String.fromEnvironment` (`--dart-define`). `soporteWhatsapp` **arranca vacío**: hasta que tenga un número, el ticket se guarda igual pero no se abre WhatsApp y el botón del formulario dice "Registrar el problema" en vez de "Enviar a soporte" (getter `tieneWhatsappSoporte`). Formato internacional sin `+` ni espacios (Argentina celular: `549` + área sin 0 + número). Existe para que el módulo sirva en otras instalaciones sin tocar código.
 3. **`lib/models/models.dart`**: clase `TicketSoporte` (modulo, descripcion, bloqueante, adjuntoPath, estado, respuesta, reportadoPor, rol, appVersion, plataforma, resueltoEn/Por). Getters `numeroFormateado` (`S-0001`), `estadoLabel`, `tieneAdjunto`, `esAbierto/esEnRevision/esResuelto`. `toMap()` **omite `numero` cuando es 0** para que lo asigne la secuencia de Postgres.
 4. **`lib/services/database_service.dart`**: `getTicketsSoporte({reportadoPor})` (usa el helper `_paginado`, ordena bloqueantes primero y después por fecha desc), `insertTicketSoporte` (`.select().single()` para recuperar el número asignado) y `updateTicketSoporte` (estado, respuesta, resuelto_en/por).
