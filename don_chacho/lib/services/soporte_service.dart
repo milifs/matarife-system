@@ -77,14 +77,18 @@ class SoporteService {
   Future<String> urlAdjunto(String path) =>
       _client.storage.from(_bucket).createSignedUrl(path, _vigenciaLinkSegundos);
 
-  /// Abre WhatsApp con el ticket ya escrito. Devuelve false si no hay número
-  /// de soporte configurado o si el dispositivo no puede abrir el link.
-  Future<bool> avisarPorWhatsapp(TicketSoporte ticket) async {
-    if (!AppConfig.tieneWhatsappSoporte) return false;
+  /// Arma el link de WhatsApp con el ticket ya escrito. Null si no hay número
+  /// de soporte configurado.
+  ///
+  /// Va separado de [abrirWhatsapp] porque en web el navegador solo deja abrir
+  /// una ventana nueva durante el gesto del usuario: si entre el toque y el
+  /// launch hay un await de red, la bloquea sin avisar.
+  Future<Uri?> uriWhatsapp(TicketSoporte ticket) async {
+    if (!AppConfig.tieneWhatsappSoporte) return null;
 
     final numero =
         AppConfig.soporteWhatsapp.replaceAll(RegExp(r'[^0-9]'), '');
-    if (numero.isEmpty) return false;
+    if (numero.isEmpty) return null;
 
     String? linkAdjunto;
     if (ticket.tieneAdjunto) {
@@ -95,13 +99,20 @@ class SoporteService {
       }
     }
 
-    final uri = Uri.https(
+    return Uri.https(
       'wa.me',
       '/$numero',
       {'text': _mensajeWhatsapp(ticket, linkAdjunto: linkAdjunto)},
     );
-    if (!await canLaunchUrl(uri)) return false;
-    return launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  /// Abre WhatsApp. Llamar directo desde el onPressed, sin ningún await antes.
+  Future<bool> abrirWhatsapp(Uri uri) async {
+    try {
+      return await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      return false;
+    }
   }
 
   static String _mensajeWhatsapp(TicketSoporte ticket, {String? linkAdjunto}) {
