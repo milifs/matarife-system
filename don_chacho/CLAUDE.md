@@ -360,7 +360,7 @@ vercel --prod
 
 ## ESTADO ACTUAL (v18.36) — EN PRODUCCIÓN
 
-Deployada el 07/10/2026 desde la rama **`feat/soporte`** (PR #1 abierto, **NO mergeada a `master` todavía**). Deploy `web-5gub63yg0`, alias `web-six-indol-svg13avcfl.vercel.app` apuntando ahí. La migración `supabase_migration_soporte.sql` ya se corrió: tabla `soportes` verificada por REST y bucket `soporte-adjuntos` verificado en el dashboard. `AppConfig.soporteWhatsapp` quedó en `5493874159555` (WhatsApp de Mili, la desarrolladora).
+Deployada el 07/10/2026 desde la rama `feat/soporte`, **ya mergeada a `master`** (PR #1, merge commit `6760477`) — master y producción coinciden. Deploy `web-5gub63yg0`, alias `web-six-indol-svg13avcfl.vercel.app` apuntando ahí. La migración `supabase_migration_soporte.sql` ya se corrió: tabla `soportes` verificada por REST y bucket `soporte-adjuntos` verificado en el dashboard. `AppConfig.soporteWhatsapp` quedó en `5493874159555` (WhatsApp de Mili, la desarrolladora).
 
 ### v18.31 — deployada el 22/09/2026
 
