@@ -740,4 +740,48 @@ class DatabaseService {
 
     return lista;
   }
+
+  // ═══════════════════════════════════════════
+  // SOPORTE (v18.36)
+  // ═══════════════════════════════════════════
+
+  /// Tickets ordenados por los que hay que mirar primero: bloqueantes arriba,
+  /// y dentro de cada grupo los más nuevos primero.
+  /// Con `reportadoPor` trae solo los de ese usuario (para que vea en qué
+  /// quedaron los suyos).
+  Future<List<TicketSoporte>> getTicketsSoporte({
+    String? reportadoPor,
+  }) async {
+    final data = await _paginado((from, to) {
+      var query = _client.from('soportes').select();
+      if (reportadoPor != null) {
+        query = query.eq('reportado_por', reportadoPor);
+      }
+      return query
+          .order('bloqueante', ascending: false)
+          .order('creado_en', ascending: false)
+          .range(from, to);
+    });
+    return data.map((e) => TicketSoporte.fromMap(e)).toList();
+  }
+
+  /// Inserta el ticket. El número lo asigna la secuencia de Postgres, así que
+  /// el ticket devuelto es el que hay que usar (ya trae `numero`).
+  Future<TicketSoporte> insertTicketSoporte(TicketSoporte ticket) async {
+    final data = await _client
+        .from('soportes')
+        .insert(ticket.toMap())
+        .select()
+        .single();
+    return TicketSoporte.fromMap(data);
+  }
+
+  Future<void> updateTicketSoporte(TicketSoporte ticket) async {
+    await _client.from('soportes').update({
+      'estado': ticket.estado,
+      'respuesta': ticket.respuesta,
+      'resuelto_en': ticket.resueltoEn?.toIso8601String(),
+      'resuelto_por': ticket.resueltoPor,
+    }).eq('id', ticket.id);
+  }
 }

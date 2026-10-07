@@ -35,6 +35,11 @@ String formatFechaCorta(DateTime fecha) {
   return DateFormat('dd MMM', 'es').format(fecha);
 }
 
+/// Formatea fecha con hora: 30/03/2026 14:32
+String formatFechaHora(DateTime fecha) {
+  return DateFormat('dd/MM/yyyy HH:mm').format(fecha);
+}
+
 /// Obtiene el lunes de la semana actual
 DateTime lunesDeSemana(DateTime fecha) {
   return fecha.subtract(Duration(days: fecha.weekday - 1));

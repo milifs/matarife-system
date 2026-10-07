@@ -24,6 +24,8 @@ import 'screens/asistente_reparto_sheet.dart';
 import 'screens/login_screen.dart';
 import 'screens/gestion_usuarios_screen.dart';
 import 'screens/bandeja_remitos_screen.dart';
+import 'screens/soporte_form_screen.dart';
+import 'screens/bandeja_soporte_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -210,8 +212,6 @@ class _MainShellState extends State<MainShell> {
       _currentIndex = 0;
     }
 
-    final tieneFab = tiene('crear_remito') || tiene('crear_pago');
-
     return Scaffold(
       body: Stack(
         children: [
@@ -233,13 +233,13 @@ class _MainShellState extends State<MainShell> {
           ),
         ],
       ),
-      floatingActionButton: tieneFab
-          ? FloatingActionButton(
-              onPressed: () => _mostrarAcciones(context),
-              tooltip: 'Nuevo',
-              child: const Icon(Icons.add, size: 32),
-            )
-          : null,
+      // Siempre visible: además de remito/pago, el menú tiene nota de crédito,
+      // reparto y reportar un problema, que están para todos los roles.
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _mostrarAcciones(context),
+        tooltip: 'Nuevo',
+        child: const Icon(Icons.add, size: 32),
+      ),
       floatingActionButtonLocation:
           FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: Container(
@@ -256,8 +256,7 @@ class _MainShellState extends State<MainShell> {
             child: Row(
               children: [
                 for (int i = 0; i < tabs.length; i++) ...[
-                  if (i == tabs.length ~/ 2 && tieneFab)
-                    const SizedBox(width: 72),
+                  if (i == tabs.length ~/ 2) const SizedBox(width: 72),
                   _NavItem(
                     icon: tabs[i].icon,
                     activeIcon: tabs[i].activeIcon,
@@ -467,6 +466,45 @@ class _MainShellState extends State<MainShell> {
                       MaterialPageRoute(
                           builder: (_) => GestionUsuariosScreen(
                               usuarioActual: widget.usuario)),
+                    );
+                  },
+                ),
+              ],
+              // Soporte: reportar está disponible para todos los roles;
+              // la bandeja de triage es solo del admin.
+              const Divider(height: 1),
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: AppTheme.info.withOpacity(0.12),
+                  child: const Icon(Icons.support_agent,
+                      color: AppTheme.info),
+                ),
+                title: const Text('Reportar un problema'),
+                subtitle: const Text('Avisar que algo no funciona bien'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const SoporteFormScreen()),
+                  );
+                },
+              ),
+              if (app.esAdmin) ...[
+                const Divider(height: 1),
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: AppTheme.info.withOpacity(0.12),
+                    child: const Icon(Icons.inbox, color: AppTheme.info),
+                  ),
+                  title: const Text('Bandeja de soporte'),
+                  subtitle: const Text('Ver y resolver reclamos'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const BandejaSoporteScreen()),
                     );
                   },
                 ),
