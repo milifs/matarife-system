@@ -12,7 +12,6 @@
 // ============================================================
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/app_provider.dart';
@@ -139,9 +138,7 @@ class _CargaDetalleScreenState extends State<CargaDetalleScreen> {
               controller: ctrl,
               autofocus: true,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-              ],
+              inputFormatters: const [MilesInputFormatter()],
               decoration: const InputDecoration(
                 labelText: 'Kg media res',
                 suffixText: 'kg',
@@ -266,9 +263,7 @@ class _CargaDetalleScreenState extends State<CargaDetalleScreen> {
                 autofocus: esNuevo,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-                ],
+                inputFormatters: const [MilesInputFormatter(decimales: 2)],
                 decoration: const InputDecoration(
                   labelText: 'Monto',
                   prefixText: '\$ ',
@@ -883,8 +878,8 @@ class _Fila extends StatelessWidget {
   }
 }
 
-double _aDouble(String texto) =>
-    double.tryParse(texto.trim().replaceAll(',', '.')) ?? 0;
+// Los campos numéricos usan MilesInputFormatter, así que el texto viene con
+// puntos de miles: parseNumero/textoMiles son los que entienden ese formato.
+double _aDouble(String texto) => parseNumero(texto);
 
-String _sinCeros(double valor) =>
-    valor == valor.roundToDouble() ? valor.toInt().toString() : valor.toString();
+String _sinCeros(double valor) => textoMiles(valor);

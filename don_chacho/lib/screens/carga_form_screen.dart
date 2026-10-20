@@ -182,9 +182,7 @@ class _CargaFormScreenState extends State<CargaFormScreen> {
                   controller: _kgVivoCtrl,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-                  ],
+                  inputFormatters: const [MilesInputFormatter()],
                   decoration: const InputDecoration(
                     labelText: 'Kg vivo',
                     suffixText: 'kg',
@@ -204,9 +202,7 @@ class _CargaFormScreenState extends State<CargaFormScreen> {
                   controller: _desvasteCtrl,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-                  ],
+                  inputFormatters: const [MilesInputFormatter()],
                   decoration: const InputDecoration(
                     labelText: 'Desvaste',
                     suffixText: '%',
@@ -220,9 +216,7 @@ class _CargaFormScreenState extends State<CargaFormScreen> {
                   controller: _precioCtrl,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-                  ],
+                  inputFormatters: const [MilesInputFormatter()],
                   decoration: const InputDecoration(
                     labelText: 'Precio kg vivo',
                     prefixText: '\$ ',
@@ -238,9 +232,7 @@ class _CargaFormScreenState extends State<CargaFormScreen> {
           TextField(
             controller: _kgMediaResCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-            ],
+            inputFormatters: const [MilesInputFormatter()],
             decoration: const InputDecoration(
               labelText: 'Kg media res (después de faenar)',
               helperText: 'Dejalo vacío si todavía no se faenó',
@@ -253,9 +245,7 @@ class _CargaFormScreenState extends State<CargaFormScreen> {
           TextField(
             controller: _rindeAseguradoCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-            ],
+            inputFormatters: const [MilesInputFormatter()],
             decoration: const InputDecoration(
               labelText: 'Rinde asegurado',
               helperText: 'El rinde que prometió el proveedor para esta carga',
@@ -525,9 +515,9 @@ class _Fila extends StatelessWidget {
   }
 }
 
-double _aDouble(String texto) =>
-    double.tryParse(texto.trim().replaceAll(',', '.')) ?? 0;
+// Los campos numéricos usan MilesInputFormatter, así que el texto viene con
+// puntos de miles: parseNumero/textoMiles son los que entienden ese formato.
+double _aDouble(String texto) => parseNumero(texto);
 
-/// 3170.0 -> "3170" ; 5.5 -> "5.5"
-String _sinCerosAlPedo(double v) =>
-    v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+/// 3170.0 -> "3.170" ; 5.5 -> "5,5"
+String _sinCerosAlPedo(double v) => textoMiles(v);

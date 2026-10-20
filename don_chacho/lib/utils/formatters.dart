@@ -2,6 +2,7 @@
 // UTILIDADES DE FORMATO - Moneda ARS y fechas
 // ============================================================
 
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 /// Formatea un número como moneda argentina: $1.234.567
@@ -29,6 +30,125 @@ String formatKg(double kg) {
 String formatPorcentaje(double valor) {
   final formatter = NumberFormat('#,##0.##', 'es_AR');
   return '${formatter.format(valor)}%';
+}
+
+// ============================================================
+// ENTRADA DE NÚMEROS - separador de miles mientras se escribe
+// ============================================================
+
+/// Formatea un número para mostrarlo dentro de un TextField:
+/// 10000000 -> "10.000.000" / 1234.5 -> "1.234,5"
+/// Devuelve "" si el valor es 0 (para no arrancar los campos con un cero).
+String textoMiles(double valor, {bool vacioSiCero = true}) {
+  if (vacioSiCero && valor == 0) return '';
+  final formatter = NumberFormat('#,##0.###', 'es_AR');
+  return formatter.format(valor);
+}
+
+/// Convierte el texto de un campo con separador de miles a double.
+/// Los puntos son miles y se descartan; la coma es el decimal.
+/// "10.000.000" -> 10000000 / "1.234,5" -> 1234.5
+double parseNumero(String texto, [double porDefecto = 0]) {
+  final limpio = texto.replaceAll('.', '').replaceAll(',', '.').trim();
+  if (limpio.isEmpty) return porDefecto;
+  return double.tryParse(limpio) ?? porDefecto;
+}
+
+/// Agrega separadores de miles a medida que se escribe en un TextField.
+///
+/// Uso:
+///   TextField(
+///     keyboardType: TextInputType.number,
+///     inputFormatters: [MilesInputFormatter()],
+///   )
+///
+/// Para leer el valor usar [parseNumero]; para precargarlo, [textoMiles].
+class MilesInputFormatter extends TextInputFormatter {
+  /// Cantidad máxima de decimales permitidos después de la coma.
+  final int decimales;
+
+  const MilesInputFormatter({this.decimales = 3});
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue anterior,
+    TextEditingValue nuevo,
+  ) {
+    // Nos quedamos solo con dígitos y una única coma decimal.
+    // Los puntos se descartan siempre: son los separadores de miles que
+    // este mismo formatter insertó, no los tipeó la cajera.
+    final buffer = StringBuffer();
+    var yaHayComa = false;
+    for (final char in nuevo.text.split('')) {
+      if (char.compareTo('0') >= 0 && char.compareTo('9') <= 0) {
+        buffer.write(char);
+      } else if (char == ',' && !yaHayComa) {
+        yaHayComa = true;
+        buffer.write(',');
+      }
+    }
+    final crudo = buffer.toString();
+
+    if (crudo.isEmpty) {
+      return const TextEditingValue(text: '');
+    }
+
+    // Cuántos caracteres significativos hay antes del cursor, para poder
+    // reubicarlo después de insertar los puntos de miles.
+    final hastaCursor = nuevo.text.substring(0, nuevo.selection.baseOffset.clamp(0, nuevo.text.length));
+    var significativosAntes = 0;
+    var comaVista = false;
+    for (final char in hastaCursor.split('')) {
+      if (char.compareTo('0') >= 0 && char.compareTo('9') <= 0) {
+        significativosAntes++;
+      } else if (char == ',' && !comaVista) {
+        comaVista = true;
+        significativosAntes++;
+      }
+    }
+
+    // Separamos parte entera y decimal.
+    final partes = crudo.split(',');
+    var entera = partes[0];
+    final tieneComa = partes.length > 1;
+    var decimal = tieneComa ? partes[1] : '';
+    if (decimal.length > decimales) {
+      decimal = decimal.substring(0, decimales);
+    }
+
+    // Sacamos ceros a la izquierda ("007" -> "7") pero dejamos el "0" solo
+    // para que se pueda escribir "0,5".
+    entera = entera.replaceFirst(RegExp(r'^0+(?=\d)'), '');
+
+    final enteraFormateada = entera.isEmpty
+        ? ''
+        : NumberFormat('#,##0', 'es_AR').format(int.parse(entera));
+
+    final texto = tieneComa
+        ? '$enteraFormateada,$decimal'
+        : enteraFormateada;
+
+    // Reubicamos el cursor contando los mismos caracteres significativos.
+    var offset = texto.length;
+    var contados = 0;
+    for (var i = 0; i < texto.length; i++) {
+      final char = texto[i];
+      if (char == '.') continue;
+      contados++;
+      if (contados == significativosAntes) {
+        offset = i + 1;
+        break;
+      }
+    }
+    if (significativosAntes == 0) offset = 0;
+
+    return TextEditingValue(
+      text: texto,
+      selection: TextSelection.collapsed(
+        offset: offset.clamp(0, texto.length),
+      ),
+    );
+  }
 }
 
 /// Formatea fecha: 30/03/2026

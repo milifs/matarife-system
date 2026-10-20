@@ -104,7 +104,7 @@ don_chacho/lib/
 │   └── bandeja_soporte_screen.dart    # Bandeja de soporte (v18.36, solo admin): 3 tabs Abiertos / En revisión / Resueltos con contadores. Detalle con foto (link firmado), campo de respuesta y botones de estado
 └── utils/
     ├── app_config.dart                # Config por deploy vía --dart-define (v18.36): version, clienteNombre, soporteWhatsapp
-    ├── formatters.dart                # formatPesos, formatKg, formatPorcentaje, formatFecha, formatFechaHora, formatRangoSemana
+    ├── formatters.dart                # formatPesos, formatKg, formatPorcentaje, formatFecha, formatFechaHora, formatRangoSemana, MilesInputFormatter/parseNumero/textoMiles
     └── theme.dart                     # AppTheme + StatusPill widget + StatusType enum
 ```
 
@@ -155,7 +155,7 @@ don_chacho/lib/
 12. `supabase_migration_notas_credito_debito.sql` — tablas `notas_credito_debito` + `notas_cd_eliminadas` (v18.21)
 13. `supabase_migration_reparto.sql` — tablas `reparto_listas` + `reparto_items` (v18.24, en raíz del repo)
 14. `supabase_migration_soporte.sql` — tabla `soportes` + bucket `soporte-adjuntos` + policies (v18.36, en raíz del repo). Ya corrida el 07/10/2026.
-15. `supabase_migration_proveedores.sql` — tablas `proveedores` + `cargas` + `carga_pagos` + auditoría, y el permiso `gestionar_proveedores` (v19, en raíz del repo). **PENDIENTE de correr en Supabase.**
+15. `supabase_migration_proveedores.sql` — tablas `proveedores` + `cargas` + `carga_pagos` + auditoría, y el permiso `gestionar_proveedores` (v19, en raíz del repo). Ya corrida el 20/10/2026.
 
 ### Tablas Lista de reparto (v18.24)
 - `reparto_listas` (id UUID PK, semana_inicio DATE, dia TEXT CHECK IN ('jueves','viernes'), total_medias_carne INT, total_medias_cerdo INT, notas TEXT, creado_en, **UNIQUE (semana_inicio, dia)**) — RLS off
@@ -408,13 +408,13 @@ Deployada desde la rama `feat/soporte`, **ya mergeada a `master`** (PR #1, merge
 Deployada el 22/09/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`. **v18.31 salió de la rama `feat/reparto-precarga` (deployada a prod pero NO mergeada a `master` todavía; la rama acumula v18.30 + v18.31). La versión previa `feat/reparto-voz` sí está mergeada a `master` (v18.29).**
 
 ### Cambios v19 (19/10/2026) — Módulo Proveedores (EN DESARROLLO, sin deployar)
-1. **`supabase_migration_proveedores.sql`** (raíz del repo, **PENDIENTE de correr**): `proveedores`, `cargas`, `carga_pagos`, `cargas_eliminadas`, `carga_pagos_eliminados`, los índices, el RLS off y el `INSERT` del permiso `gestionar_proveedores` (asignado automáticamente a los roles con `es_admin = TRUE`). Ver "Tablas Proveedores / Cargas (v19)".
+1. **`supabase_migration_proveedores.sql`** (raíz del repo, ya corrida el 20/10/2026): `proveedores`, `cargas`, `carga_pagos`, `cargas_eliminadas`, `carga_pagos_eliminados`, los índices, el RLS off y el `INSERT` del permiso `gestionar_proveedores` (asignado automáticamente a los roles con `es_admin = TRUE`). Ver "Tablas Proveedores / Cargas (v19)".
 2. **`lib/models/models.dart`**: `Proveedor`, `Carga`, `CargaPago`, `CargaEliminada`, `CargaPagoEliminado`. En `Carga` la aritmética está duplicada en Dart (`kgNeto`, `totalAPagar`, `rindeCarga`, `kgEsperados`, `diferenciaRindeKg/Pesos`) para calcular en vivo en el formulario; los valores que devuelve Postgres quedan aparte en `kgNetoServidor` / `totalAPagarServidor` / `rindeCargaServidor`. `toMap()` omite `numero` cuando vale 0 (lo pone la secuencia) y **nunca** manda las columnas generadas.
 3. **`lib/services/database_service.dart`**: CRUD de las cinco tablas. Todas las lecturas completas usan el helper `_paginado`. `insertCarga` hace `.select().single()` para recuperar el número y las columnas generadas. `contarCargasDeProveedor` es lo que impide borrar un proveedor con historia.
 4. **`lib/providers/app_provider.dart`**: `cargarProveedores({forzar})` lazy (3 queries en `Future.wait`), los getters de saldo en cadena, y el ABM (`guardarProveedor`, `eliminarProveedor`, `crearCarga`, `actualizarCarga`, `eliminarCarga`, `guardarPagoCarga`, `eliminarPagoCarga`). Las bajas escriben primero la fila de auditoría con la observación y después borran.
 5. **Pantallas nuevas**: `proveedores_screen.dart`, `gestion_proveedores_screen.dart`, `carga_form_screen.dart`, `carga_detalle_screen.dart` (ver la estructura del proyecto).
 6. **`lib/main.dart`**: tab "Proveedores" (ícono camión) entre Clientes y Consultas, gateada por `tiene('gestionar_proveedores')`.
-7. **`lib/utils/formatters.dart`**: nuevo `formatPorcentaje` (`58%` / `55,49%`).
+7. **`lib/utils/formatters.dart`**: nuevo `formatPorcentaje` (`58%` / `55,49%`) y la **entrada de números con separador de miles**: `MilesInputFormatter` (pone los puntos mientras se escribe: `10.000.000`), `parseNumero` (lee ese texto: los puntos son miles, la coma es el decimal) y `textoMiles` (precarga un controller ya formateado). Todos los campos numéricos del módulo Proveedores lo usan. **Si se agrega un campo numérico ahí, tiene que usar los tres juntos**: con `MilesInputFormatter` puesto, un `double.tryParse` común lee `10.000.000` como `0`. Cubierto por `test/formatters_test.dart`.
 8. **Pendiente**: el **módulo de ganancia del admin** queda para después. Va a necesitar los costos del viaje (achuras, costo de faena, VEP, flete vivo, sueldo del camionero, lavadero, combustible) más la diferencia de rinde que ya calcula este módulo.
 
 ### Cambios v18.36 (07/10/2026) — Módulo de Soporte

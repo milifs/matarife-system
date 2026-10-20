@@ -9,7 +9,6 @@
 // ============================================================
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/app_provider.dart';
@@ -129,11 +128,11 @@ class _GestionProveedoresScreenState extends State<GestionProveedoresScreen> {
     final esNuevo = proveedor == null;
     final nombreCtrl = TextEditingController(text: proveedor?.nombre ?? '');
     final desvasteCtrl = TextEditingController(
-        text: (proveedor?.desvastePorcentaje ?? 5).toString());
+        text: textoMiles(proveedor?.desvastePorcentaje ?? 5));
     final precioCtrl = TextEditingController(
-        text: (proveedor?.precioKgVivo ?? 0).toString());
+        text: textoMiles(proveedor?.precioKgVivo ?? 0));
     final rindeCtrl = TextEditingController(
-        text: (proveedor?.rindeAsegurado ?? 58).toString());
+        text: textoMiles(proveedor?.rindeAsegurado ?? 58));
     var activo = proveedor?.activo ?? true;
 
     final guardado = await showDialog<bool>(
@@ -156,9 +155,7 @@ class _GestionProveedoresScreenState extends State<GestionProveedoresScreen> {
                   controller: desvasteCtrl,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-                  ],
+                  inputFormatters: const [MilesInputFormatter()],
                   decoration: const InputDecoration(
                     labelText: 'Desvaste %',
                     helperText: '5 = se paga el 95% del peso vivo',
@@ -170,9 +167,7 @@ class _GestionProveedoresScreenState extends State<GestionProveedoresScreen> {
                   controller: precioCtrl,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-                  ],
+                  inputFormatters: const [MilesInputFormatter()],
                   decoration: const InputDecoration(
                     labelText: 'Precio por kg vivo',
                     prefixText: '\$ ',
@@ -183,9 +178,7 @@ class _GestionProveedoresScreenState extends State<GestionProveedoresScreen> {
                   controller: rindeCtrl,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-                  ],
+                  inputFormatters: const [MilesInputFormatter()],
                   decoration: const InputDecoration(
                     labelText: 'Rinde asegurado %',
                     helperText: 'El rinde que promete el proveedor',
@@ -277,5 +270,7 @@ class _GestionProveedoresScreenState extends State<GestionProveedoresScreen> {
   }
 }
 
+// Los campos usan MilesInputFormatter: el texto viene con puntos de miles,
+// así que parseNumero es el único que lo interpreta bien.
 double _aDouble(String texto, double porDefecto) =>
-    double.tryParse(texto.trim().replaceAll(',', '.')) ?? porDefecto;
+    parseNumero(texto, porDefecto);
