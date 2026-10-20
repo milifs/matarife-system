@@ -1098,3 +1098,416 @@ class TicketSoporte {
         resueltoPor: map['resuelto_por'],
       );
 }
+
+// ─────────────────────────────────────────────
+// PROVEEDOR (le vende el animal vivo a Joaco)
+// ─────────────────────────────────────────────
+// Nada que ver con los clientes: acá es plata que SALE.
+// Los tres números son el default del proveedor y se copian a la carga,
+// donde quedan editables (el precio del kg vivo cambia seguido).
+class Proveedor {
+  final String id;
+  String nombre;
+  double desvastePorcentaje; // 5 => se paga el 95% del peso vivo
+  double precioKgVivo;
+  double rindeAsegurado; // 58 => el proveedor asegura 58% de rinde
+  bool activo;
+  final DateTime creadoEn;
+
+  Proveedor({
+    String? id,
+    required this.nombre,
+    this.desvastePorcentaje = 5,
+    this.precioKgVivo = 0,
+    this.rindeAsegurado = 58,
+    this.activo = true,
+    DateTime? creadoEn,
+  })  : id = id ?? _uuid.v4(),
+        creadoEn = creadoEn ?? DateTime.now();
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'nombre': nombre,
+        'desvaste_porcentaje': desvastePorcentaje,
+        'precio_kg_vivo': precioKgVivo,
+        'rinde_asegurado': rindeAsegurado,
+        'activo': activo,
+        'creado_en': creadoEn.toIso8601String(),
+      };
+
+  factory Proveedor.fromMap(Map<String, dynamic> map) => Proveedor(
+        id: map['id'],
+        nombre: map['nombre'] ?? '',
+        desvastePorcentaje: (map['desvaste_porcentaje'] ?? 5).toDouble(),
+        precioKgVivo: (map['precio_kg_vivo'] ?? 0).toDouble(),
+        rindeAsegurado: (map['rinde_asegurado'] ?? 58).toDouble(),
+        activo: map['activo'] ?? true,
+        creadoEn: DateTime.tryParse(map['creado_en'] ?? '') ?? DateTime.now(),
+      );
+}
+
+// ─────────────────────────────────────────────
+// CARGA (una compra de animales a un proveedor)
+// ─────────────────────────────────────────────
+// Equivale a una hoja del Excel "Proveedores-Pagos".
+// kg_neto, total_a_pagar y rinde_carga son columnas GENERADAS en Postgres:
+// se leen pero NUNCA se mandan en el insert/update (Postgres las rechaza).
+// Los getters de abajo replican la cuenta para poder mostrarla en vivo
+// mientras se tipea el formulario, antes de que el servidor responda.
+class Carga {
+  final String id;
+  int numero; // lo asigna la secuencia de Postgres => PP-0001
+  String proveedorId;
+  DateTime fecha;
+  int cantidadAnimales;
+  double kgVivo;
+  double desvastePorcentaje;
+  double precioKgVivo;
+  double rindeAsegurado;
+  double? kgMediaRes; // null hasta que se faena
+  String observacion;
+  String? registradoPor;
+  final DateTime creadoEn;
+
+  // Valores calculados que vienen del servidor (pueden ser null si la fila
+  // todavía no volvió de Postgres)
+  final double? kgNetoServidor;
+  final double? totalAPagarServidor;
+  final double? rindeCargaServidor;
+
+  Carga({
+    String? id,
+    this.numero = 0,
+    required this.proveedorId,
+    required this.fecha,
+    this.cantidadAnimales = 0,
+    this.kgVivo = 0,
+    this.desvastePorcentaje = 5,
+    this.precioKgVivo = 0,
+    this.rindeAsegurado = 58,
+    this.kgMediaRes,
+    this.observacion = '',
+    this.registradoPor,
+    DateTime? creadoEn,
+    this.kgNetoServidor,
+    this.totalAPagarServidor,
+    this.rindeCargaServidor,
+  })  : id = id ?? _uuid.v4(),
+        creadoEn = creadoEn ?? DateTime.now();
+
+  String get numeroFormateado => 'PP-${numero.toString().padLeft(4, '0')}';
+
+  /// Kg que se pagan: peso vivo menos el desvaste
+  double get kgNeto => kgVivo * (100 - desvastePorcentaje) / 100;
+
+  /// Lo que hay que pagarle al proveedor por esta carga
+  double get totalAPagar => kgNeto * precioKgVivo;
+
+  /// Rinde real de la carga (%). Null mientras no se cargue el kg media res.
+  double? get rindeCarga {
+    if (kgMediaRes == null || kgNeto == 0) return null;
+    return kgMediaRes! * 100 / kgNeto;
+  }
+
+  /// true cuando ya se faenó y se cargó el resultado
+  bool get tieneFaena => kgMediaRes != null;
+
+  /// Kg que deberían haber salido según el rinde asegurado
+  double get kgEsperados => kgNeto * rindeAsegurado / 100;
+
+  /// Diferencia de rinde en kg (positivo = rindió MENOS de lo asegurado).
+  /// Null mientras no se haya faenado.
+  double? get diferenciaRindeKg {
+    if (kgMediaRes == null) return null;
+    return (kgEsperados - kgMediaRes!).roundToDouble();
+  }
+
+  /// Diferencia de rinde valorizada al precio del kg vivo
+  double? get diferenciaRindePesos {
+    final kg = diferenciaRindeKg;
+    if (kg == null) return null;
+    return kg * precioKgVivo;
+  }
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        // numero lo pone la secuencia: si va en 0 no se manda
+        if (numero > 0) 'numero': numero,
+        'proveedor_id': proveedorId,
+        'fecha': fecha.toIso8601String(),
+        'cantidad_animales': cantidadAnimales,
+        'kg_vivo': kgVivo,
+        'desvaste_porcentaje': desvastePorcentaje,
+        'precio_kg_vivo': precioKgVivo,
+        'rinde_asegurado': rindeAsegurado,
+        'kg_media_res': kgMediaRes,
+        'observacion': observacion,
+        if (registradoPor != null) 'registrado_por': registradoPor,
+        'creado_en': creadoEn.toIso8601String(),
+      };
+
+  factory Carga.fromMap(Map<String, dynamic> map) => Carga(
+        id: map['id'],
+        numero: map['numero'] ?? 0,
+        proveedorId: map['proveedor_id'] ?? '',
+        fecha: DateTime.tryParse(map['fecha'] ?? '') ?? DateTime.now(),
+        cantidadAnimales: map['cantidad_animales'] ?? 0,
+        kgVivo: (map['kg_vivo'] ?? 0).toDouble(),
+        desvastePorcentaje: (map['desvaste_porcentaje'] ?? 5).toDouble(),
+        precioKgVivo: (map['precio_kg_vivo'] ?? 0).toDouble(),
+        rindeAsegurado: (map['rinde_asegurado'] ?? 58).toDouble(),
+        kgMediaRes: map['kg_media_res'] == null
+            ? null
+            : (map['kg_media_res']).toDouble(),
+        observacion: map['observacion'] ?? '',
+        registradoPor: map['registrado_por'],
+        creadoEn: DateTime.tryParse(map['creado_en'] ?? '') ?? DateTime.now(),
+        kgNetoServidor:
+            map['kg_neto'] == null ? null : (map['kg_neto']).toDouble(),
+        totalAPagarServidor: map['total_a_pagar'] == null
+            ? null
+            : (map['total_a_pagar']).toDouble(),
+        rindeCargaServidor: map['rinde_carga'] == null
+            ? null
+            : (map['rinde_carga']).toDouble(),
+      );
+
+  Carga copyWith({
+    DateTime? fecha,
+    String? proveedorId,
+    int? cantidadAnimales,
+    double? kgVivo,
+    double? desvastePorcentaje,
+    double? precioKgVivo,
+    double? rindeAsegurado,
+    double? kgMediaRes,
+    bool limpiarKgMediaRes = false,
+    String? observacion,
+  }) =>
+      Carga(
+        id: id,
+        numero: numero,
+        proveedorId: proveedorId ?? this.proveedorId,
+        fecha: fecha ?? this.fecha,
+        cantidadAnimales: cantidadAnimales ?? this.cantidadAnimales,
+        kgVivo: kgVivo ?? this.kgVivo,
+        desvastePorcentaje: desvastePorcentaje ?? this.desvastePorcentaje,
+        precioKgVivo: precioKgVivo ?? this.precioKgVivo,
+        rindeAsegurado: rindeAsegurado ?? this.rindeAsegurado,
+        kgMediaRes:
+            limpiarKgMediaRes ? null : (kgMediaRes ?? this.kgMediaRes),
+        observacion: observacion ?? this.observacion,
+        registradoPor: registradoPor,
+        creadoEn: creadoEn,
+      );
+}
+
+// ─────────────────────────────────────────────
+// PAGO DE CARGA (plata que sale hacia el proveedor)
+// ─────────────────────────────────────────────
+// A diferencia de los pagos de clientes, acá la transferencia NO tiene
+// descuento del 6,2%: ese descuento es sobre lo que se COBRA, no sobre
+// lo que se paga. Por eso no hay neto_recibido.
+class CargaPago {
+  final String id;
+  String cargaId;
+  DateTime fecha;
+  String medio; // 'efectivo' | 'transferencia' | 'cheque'
+  double monto;
+  String? registradoPor;
+  final DateTime creadoEn;
+
+  CargaPago({
+    String? id,
+    required this.cargaId,
+    required this.fecha,
+    required this.medio,
+    required this.monto,
+    this.registradoPor,
+    DateTime? creadoEn,
+  })  : id = id ?? _uuid.v4(),
+        creadoEn = creadoEn ?? DateTime.now();
+
+  String get medioLabel {
+    switch (medio) {
+      case 'transferencia':
+        return 'Transferencia';
+      case 'cheque':
+        return 'Cheque';
+      default:
+        return 'Efectivo';
+    }
+  }
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'carga_id': cargaId,
+        'fecha': fecha.toIso8601String(),
+        'medio': medio,
+        'monto': monto,
+        if (registradoPor != null) 'registrado_por': registradoPor,
+        'creado_en': creadoEn.toIso8601String(),
+      };
+
+  factory CargaPago.fromMap(Map<String, dynamic> map) => CargaPago(
+        id: map['id'],
+        cargaId: map['carga_id'] ?? '',
+        fecha: DateTime.tryParse(map['fecha'] ?? '') ?? DateTime.now(),
+        medio: map['medio'] ?? 'efectivo',
+        monto: (map['monto'] ?? 0).toDouble(),
+        registradoPor: map['registrado_por'],
+        creadoEn: DateTime.tryParse(map['creado_en'] ?? '') ?? DateTime.now(),
+      );
+}
+
+// ─────────────────────────────────────────────
+// CARGA ELIMINADA (audit log)
+// ─────────────────────────────────────────────
+class CargaEliminada {
+  final String id;
+  final String cargaId;
+  final int numero;
+  final String proveedorId;
+  final String proveedorNombre;
+  final DateTime fecha;
+  final int cantidadAnimales;
+  final double kgVivo;
+  final double? kgMediaRes;
+  final double totalAPagar;
+  final double totalPagado;
+  final List<Map<String, dynamic>> pagos;
+  final String observacion;
+  final DateTime eliminadoEn;
+  final String? eliminadoPor;
+
+  CargaEliminada({
+    String? id,
+    required this.cargaId,
+    required this.numero,
+    required this.proveedorId,
+    required this.proveedorNombre,
+    required this.fecha,
+    required this.cantidadAnimales,
+    required this.kgVivo,
+    this.kgMediaRes,
+    required this.totalAPagar,
+    required this.totalPagado,
+    required this.pagos,
+    required this.observacion,
+    DateTime? eliminadoEn,
+    this.eliminadoPor,
+  })  : id = id ?? _uuid.v4(),
+        eliminadoEn = eliminadoEn ?? DateTime.now();
+
+  String get numeroFormateado => 'PP-${numero.toString().padLeft(4, '0')}';
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'carga_id': cargaId,
+        'numero': numero,
+        'proveedor_id': proveedorId,
+        'proveedor_nombre': proveedorNombre,
+        'fecha': fecha.toIso8601String(),
+        'cantidad_animales': cantidadAnimales,
+        'kg_vivo': kgVivo,
+        'kg_media_res': kgMediaRes,
+        'total_a_pagar': totalAPagar,
+        'total_pagado': totalPagado,
+        'pagos': pagos,
+        'observacion': observacion,
+        if (eliminadoPor != null) 'eliminado_por': eliminadoPor,
+      };
+
+  factory CargaEliminada.fromMap(Map<String, dynamic> map) {
+    final pagosRaw = map['pagos'];
+    final pagos = pagosRaw is List
+        ? pagosRaw
+            .map<Map<String, dynamic>>(
+                (e) => Map<String, dynamic>.from(e as Map))
+            .toList()
+        : <Map<String, dynamic>>[];
+    return CargaEliminada(
+      id: map['id'],
+      cargaId: map['carga_id'] ?? '',
+      numero: map['numero'] ?? 0,
+      proveedorId: map['proveedor_id'] ?? '',
+      proveedorNombre: map['proveedor_nombre'] ?? '',
+      fecha: DateTime.tryParse(map['fecha'] ?? '') ?? DateTime.now(),
+      cantidadAnimales: map['cantidad_animales'] ?? 0,
+      kgVivo: (map['kg_vivo'] ?? 0).toDouble(),
+      kgMediaRes:
+          map['kg_media_res'] == null ? null : (map['kg_media_res']).toDouble(),
+      totalAPagar: (map['total_a_pagar'] ?? 0).toDouble(),
+      totalPagado: (map['total_pagado'] ?? 0).toDouble(),
+      pagos: pagos,
+      observacion: map['observacion'] ?? '',
+      eliminadoEn:
+          DateTime.tryParse(map['eliminado_en'] ?? '') ?? DateTime.now(),
+      eliminadoPor: map['eliminado_por'],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// PAGO DE CARGA ELIMINADO (audit log)
+// ─────────────────────────────────────────────
+class CargaPagoEliminado {
+  final String id;
+  final String pagoId;
+  final String cargaId;
+  final int cargaNumero;
+  final String proveedorNombre;
+  final DateTime fecha;
+  final String medio;
+  final double monto;
+  final String observacion;
+  final DateTime eliminadoEn;
+  final String? eliminadoPor;
+
+  CargaPagoEliminado({
+    String? id,
+    required this.pagoId,
+    required this.cargaId,
+    required this.cargaNumero,
+    required this.proveedorNombre,
+    required this.fecha,
+    required this.medio,
+    required this.monto,
+    required this.observacion,
+    DateTime? eliminadoEn,
+    this.eliminadoPor,
+  })  : id = id ?? _uuid.v4(),
+        eliminadoEn = eliminadoEn ?? DateTime.now();
+
+  String get cargaNumeroFormateado =>
+      'PP-${cargaNumero.toString().padLeft(4, '0')}';
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'pago_id': pagoId,
+        'carga_id': cargaId,
+        'carga_numero': cargaNumero,
+        'proveedor_nombre': proveedorNombre,
+        'fecha': fecha.toIso8601String(),
+        'medio': medio,
+        'monto': monto,
+        'observacion': observacion,
+        if (eliminadoPor != null) 'eliminado_por': eliminadoPor,
+      };
+
+  factory CargaPagoEliminado.fromMap(Map<String, dynamic> map) =>
+      CargaPagoEliminado(
+        id: map['id'],
+        pagoId: map['pago_id'] ?? '',
+        cargaId: map['carga_id'] ?? '',
+        cargaNumero: map['carga_numero'] ?? 0,
+        proveedorNombre: map['proveedor_nombre'] ?? '',
+        fecha: DateTime.tryParse(map['fecha'] ?? '') ?? DateTime.now(),
+        medio: map['medio'] ?? 'efectivo',
+        monto: (map['monto'] ?? 0).toDouble(),
+        observacion: map['observacion'] ?? '',
+        eliminadoEn:
+            DateTime.tryParse(map['eliminado_en'] ?? '') ?? DateTime.now(),
+        eliminadoPor: map['eliminado_por'],
+      );
+}

@@ -15,6 +15,7 @@ import 'screens/home_screen.dart';
 import 'screens/vendedores_screen.dart';
 import 'screens/clientes_screen.dart';
 import 'screens/consultas_screen.dart';
+import 'screens/proveedores_screen.dart';
 import 'screens/remito_form_screen.dart';
 import 'screens/nota_pedido_form_screen.dart';
 import 'screens/pago_form_screen.dart';
@@ -194,6 +195,16 @@ class _MainShellState extends State<MainShell> {
         icon: Icons.store_outlined,
         activeIcon: Icons.store,
         label: 'Clientes',
+      ));
+    }
+
+    // Proveedores: solo si gestionar_proveedores (compra de animales vivos)
+    if (tiene('gestionar_proveedores')) {
+      tabs.add(_TabInfo(
+        screen: const ProveedoresScreen(),
+        icon: Icons.local_shipping_outlined,
+        activeIcon: Icons.local_shipping,
+        label: 'Proveedores',
       ));
     }
 

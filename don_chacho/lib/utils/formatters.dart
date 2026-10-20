@@ -25,6 +25,12 @@ String formatKg(double kg) {
   return '${formatter.format(kg)} kg';
 }
 
+/// Formatea un porcentaje: 58% / 55,49%
+String formatPorcentaje(double valor) {
+  final formatter = NumberFormat('#,##0.##', 'es_AR');
+  return '${formatter.format(valor)}%';
+}
+
 /// Formatea fecha: 30/03/2026
 String formatFecha(DateTime fecha) {
   return DateFormat('dd/MM/yyyy').format(fecha);
