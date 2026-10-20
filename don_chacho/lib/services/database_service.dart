@@ -784,4 +784,158 @@ class DatabaseService {
       'resuelto_por': ticket.resueltoPor,
     }).eq('id', ticket.id);
   }
+
+  // ═══════════════════════════════════════════
+  // PROVEEDORES (compra de animales vivos)
+  // ═══════════════════════════════════════════
+
+  Future<List<Proveedor>> getProveedores() async {
+    final data = await _paginado((from, to) =>
+        _client.from('proveedores').select().order('nombre').range(from, to));
+    return data.map((e) => Proveedor.fromMap(e)).toList();
+  }
+
+  Future<Proveedor> insertProveedor(Proveedor proveedor) async {
+    final data = await _client
+        .from('proveedores')
+        .insert(proveedor.toMap())
+        .select()
+        .single();
+    return Proveedor.fromMap(data);
+  }
+
+  Future<void> updateProveedor(Proveedor proveedor) async {
+    await _client
+        .from('proveedores')
+        .update(proveedor.toMap())
+        .eq('id', proveedor.id);
+  }
+
+  /// Cuántas cargas tiene el proveedor. Se usa para no dejar borrar uno que
+  /// ya tiene historia (se desactiva en vez de borrarse).
+  Future<int> contarCargasDeProveedor(String proveedorId) async {
+    final data = await _client
+        .from('cargas')
+        .select('id')
+        .eq('proveedor_id', proveedorId);
+    return (data as List).length;
+  }
+
+  Future<void> deleteProveedor(String id) async {
+    await _client.from('proveedores').delete().eq('id', id);
+  }
+
+  // ═══════════════════════════════════════════
+  // CARGAS
+  // ═══════════════════════════════════════════
+
+  Future<List<Carga>> getCargas() async {
+    final data = await _paginado((from, to) => _client
+        .from('cargas')
+        .select()
+        .order('fecha', ascending: false)
+        .order('creado_en', ascending: false)
+        .range(from, to));
+    return data.map((e) => Carga.fromMap(e)).toList();
+  }
+
+  /// Inserta la carga. El número lo asigna la secuencia de Postgres y las
+  /// columnas calculadas (kg_neto, total_a_pagar, rinde_carga) vuelven
+  /// resueltas, así que hay que quedarse con la carga devuelta.
+  Future<Carga> insertCarga(Carga carga) async {
+    final data =
+        await _client.from('cargas').insert(carga.toMap()).select().single();
+    return Carga.fromMap(data);
+  }
+
+  /// Actualiza la carga. Ojo: `toMap()` nunca manda las columnas generadas;
+  /// si se mandaran, Postgres rechaza el update entero.
+  Future<Carga> updateCarga(Carga carga) async {
+    final map = Map<String, dynamic>.from(carga.toMap())
+      ..remove('id')
+      ..remove('creado_en');
+    final data = await _client
+        .from('cargas')
+        .update(map)
+        .eq('id', carga.id)
+        .select()
+        .single();
+    return Carga.fromMap(data);
+  }
+
+  /// Borra la carga (los pagos se van en cascada). La fila de auditoría se
+  /// inserta ANTES, desde el provider, para no perder los pagos.
+  Future<void> deleteCarga(String cargaId) async {
+    await _client.from('cargas').delete().eq('id', cargaId);
+  }
+
+  // ═══════════════════════════════════════════
+  // PAGOS A PROVEEDORES
+  // ═══════════════════════════════════════════
+
+  Future<List<CargaPago>> getCargaPagos() async {
+    final data = await _paginado((from, to) => _client
+        .from('carga_pagos')
+        .select()
+        .order('fecha')
+        .order('creado_en')
+        .range(from, to));
+    return data.map((e) => CargaPago.fromMap(e)).toList();
+  }
+
+  Future<CargaPago> insertCargaPago(CargaPago pago) async {
+    final data = await _client
+        .from('carga_pagos')
+        .insert(pago.toMap())
+        .select()
+        .single();
+    return CargaPago.fromMap(data);
+  }
+
+  Future<CargaPago> updateCargaPago(CargaPago pago) async {
+    final map = Map<String, dynamic>.from(pago.toMap())
+      ..remove('id')
+      ..remove('creado_en');
+    final data = await _client
+        .from('carga_pagos')
+        .update(map)
+        .eq('id', pago.id)
+        .select()
+        .single();
+    return CargaPago.fromMap(data);
+  }
+
+  Future<void> deleteCargaPago(String pagoId) async {
+    await _client.from('carga_pagos').delete().eq('id', pagoId);
+  }
+
+  // ═══════════════════════════════════════════
+  // AUDITORÍA DE PROVEEDORES
+  // ═══════════════════════════════════════════
+
+  Future<void> insertCargaEliminada(CargaEliminada ce) async {
+    await _client.from('cargas_eliminadas').insert(ce.toMap());
+  }
+
+  Future<List<CargaEliminada>> getCargasEliminadas() async {
+    final data = await _paginado((from, to) => _client
+        .from('cargas_eliminadas')
+        .select()
+        .order('eliminado_en', ascending: false)
+        .range(from, to));
+    return data.map((e) => CargaEliminada.fromMap(e)).toList();
+  }
+
+  Future<void> insertCargaPagoEliminado(CargaPagoEliminado pe) async {
+    await _client.from('carga_pagos_eliminados').insert(pe.toMap());
+  }
+
+  Future<List<CargaPagoEliminado>> getCargaPagosEliminados() async {
+    final data = await _paginado((from, to) => _client
+        .from('carga_pagos_eliminados')
+        .select()
+        .order('eliminado_en', ascending: false)
+        .range(from, to));
+    return data.map((e) => CargaPagoEliminado.fromMap(e)).toList();
+  }
 }

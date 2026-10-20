@@ -50,9 +50,10 @@ ALTER TABLE rol_permisos DISABLE ROW LEVEL SECURITY;
 ALTER TABLE permisos DISABLE ROW LEVEL SECURITY;
 ```
 
-### 12 Permisos (catálogo fijo en tabla `permisos`)
-`crear_remito`, `usar_ocr`, `confirmar_remito`, `editar_remito`, `eliminar_remito`, `crear_pago`, `editar_pago`, `gestionar_clientes`, `gestionar_vendedores`, `gestionar_costos`, `ver_consultas`, `gestionar_usuarios`
+### 13 Permisos (catálogo fijo en tabla `permisos`)
+`crear_remito`, `usar_ocr`, `confirmar_remito`, `editar_remito`, `eliminar_remito`, `crear_pago`, `editar_pago`, `gestionar_clientes`, `gestionar_vendedores`, `gestionar_costos`, `ver_consultas`, `gestionar_usuarios`, `gestionar_proveedores`
 - **`usar_ocr` quedó obsoleto en v18.17** (el OCR fue eliminado). Sigue en el catálogo pero ya no controla ninguna UI. Se puede borrar del catálogo cuando se quiera.
+- **`gestionar_proveedores` (v19)** habilita la tab Proveedores (compra de animales vivos + pagos al proveedor). Es el permiso de la cajera.
 
 ### Roles
 - Flexibles: el admin puede crear roles personalizados con permisos a la carta
@@ -65,12 +66,12 @@ ALTER TABLE permisos DISABLE ROW LEVEL SECURITY;
 3. Admin ve bandeja → puede **confirmar** (convierte NDP en Remito R-XXXX), **editar** o **rechazar** (con motivo)
 4. Solo remitos `confirmado` cuentan para saldos y ganancias
 
-## ESTRUCTURA DEL PROYECTO (~11.000 líneas, 22 archivos .dart — `ocr_service.dart` eliminado en v18.17)
+## ESTRUCTURA DEL PROYECTO (~12.500 líneas, 26 archivos .dart — `ocr_service.dart` eliminado en v18.17)
 
 ```
 don_chacho/lib/
 ├── main.dart                          # Login + sesión + tabs dinámicas por permisos + menú de acciones del FAB (admin: remito + NDP; secretaria: NDP)
-├── models/models.dart                 # Vendedor, Cliente, Remito, RemitoItem, Pago, PagoMedio, CostoSemanal, NotaPedido, NotaPedidoItem, NotaCreditoDebito, RepartoLista, RepartoItem, Permiso, Rol, Usuario, RemitoEliminado, PagoEliminado
+├── models/models.dart                 # Vendedor, Cliente, Remito, RemitoItem, Pago, PagoMedio, CostoSemanal, NotaPedido, NotaPedidoItem, NotaCreditoDebito, RepartoLista, RepartoItem, Permiso, Rol, Usuario, RemitoEliminado, PagoEliminado, Proveedor, Carga, CargaPago, CargaEliminada, CargaPagoEliminado
 ├── providers/app_provider.dart        # Estado global, FIFO, saldos, permisos, usuarioActual, NDPs
 ├── services/
 │   ├── auth_service.dart              # Login SHA-256, sesión persistente SharedPreferences, CRUD usuarios/roles
@@ -78,6 +79,7 @@ don_chacho/lib/
 │   ├── estado_cuenta_service.dart     # PDF estado de cuenta + reporte vendedor + reporte cliente (movimientos) + PDF nota de pedido + comisión
 │   ├── reparto_service.dart           # PDF de la lista de reparto para el repartidor (tabla CARNE/CERDO, TOTAL MEDIAS, SOBRANTE DEPÓSITO, notas) — v18.24
 │   ├── recibo_service.dart            # PDF recibo de pago con detalle deuda FIFO
+│   ├── carga_pdf_service.dart         # PDF de una carga de proveedor (v19)
 │   └── ruta_cobranza_service.dart     # Ruta de cobranza: extrae coords (incl. DMS), GPS web, resuelve links cortos vía Edge Function resolver-maps, orden vecino-cercano, URL Google Maps multi-parada (v18.14, ampliado v18.16)
 ├── screens/
 │   ├── login_screen.dart              # Usuario + contraseña
@@ -96,10 +98,14 @@ don_chacho/lib/
 │   ├── bandeja_remitos_screen.dart    # 3 tabs: Notas de Pedido (1°) / Remitos pendientes / Rechazados
 │   ├── reparto_screen.dart            # Lista de reparto semanal (Jueves/Viernes): navegación semanal < >, TOTAL MEDIAS manual, clientes de la lista, SOBRANTE auto, notas, PDF. Se precarga con la lista de la semana anterior si la semana está vacía (v18.30). Módulo logístico aparte (sin plata). Accesible desde el FAB (v18.24)
 │   ├── soporte_form_screen.dart       # Reportar un problema (v18.36): módulo del sistema, descripción, switch "no puedo seguir trabajando", foto adjunta. Al guardar muestra un diálogo con botón "Abrir WhatsApp" (v18.37: el launch tiene que salir de un toque, si no el navegador lo bloquea). Lista los últimos 5 reclamos propios con estado y respuesta. Accesible desde el FAB por todos los roles
+│   ├── proveedores_screen.dart        # Tab Proveedores (v19, permiso gestionar_proveedores): resumen "se le debe a proveedores", filtro por proveedor, lista de cargas PP-XXXX con A pagar / Pagado / Falta pagar. Ícono en el AppBar → ABM de proveedores. Carga los datos con lazy load (cargarProveedores)
+│   ├── gestion_proveedores_screen.dart # ABM de proveedores (v19): nombre + tipo novillo/cerdo (v19.1) + desvaste % + precio kg vivo + rinde asegurado % (los tres numéricos son los DEFAULTS que se copian a la carga; el tipo NO) + switch activo. No se puede borrar un proveedor con cargas: hay que desactivarlo
+│   ├── carga_form_screen.dart         # Alta/edición de carga (v19) = bloque Faena del Excel. Al elegir proveedor copia sus defaults (solo en alta). Panel en vivo con kg neto / rinde / TOTAL A PAGAR. Eliminar exige motivo (queda en cargas_eliminadas)
+│   ├── carga_detalle_screen.dart      # Detalle de carga (v19) espejo del Excel: FAENA (con atajo "Cargar faena" para el kg media res) / PAGOS (saldo anterior arrastrado → pagos → SALDO) / DIFERENCIA DE RINDE. Registrar pago en bottom sheet (fecha, medio, monto); tap a un pago lo edita o lo elimina con motivo
 │   └── bandeja_soporte_screen.dart    # Bandeja de soporte (v18.36, solo admin): 3 tabs Abiertos / En revisión / Resueltos con contadores. Detalle con foto (link firmado), campo de respuesta y botones de estado
 └── utils/
     ├── app_config.dart                # Config por deploy vía --dart-define (v18.36): version, clienteNombre, soporteWhatsapp
-    ├── formatters.dart                # formatPesos, formatKg, formatFecha, formatFechaHora, formatRangoSemana
+    ├── formatters.dart                # formatPesos, formatKg, formatPorcentaje, formatFecha, formatFechaHora, formatRangoSemana, MilesInputFormatter/parseNumero/textoMiles
     └── theme.dart                     # AppTheme + StatusPill widget + StatusType enum
 ```
 
@@ -150,6 +156,8 @@ don_chacho/lib/
 12. `supabase_migration_notas_credito_debito.sql` — tablas `notas_credito_debito` + `notas_cd_eliminadas` (v18.21)
 13. `supabase_migration_reparto.sql` — tablas `reparto_listas` + `reparto_items` (v18.24, en raíz del repo)
 14. `supabase_migration_soporte.sql` — tabla `soportes` + bucket `soporte-adjuntos` + policies (v18.36, en raíz del repo). Ya corrida el 07/10/2026.
+15. `supabase_migration_proveedores.sql` — tablas `proveedores` + `cargas` + `carga_pagos` + auditoría, y el permiso `gestionar_proveedores` (v19, en raíz del repo). Ya corrida el 20/10/2026.
+16. `supabase_migration_proveedor_tipo.sql` — columna `tipo` (`novillo` / `cerdo`) en `proveedores` + CHECK + índice (v19.1, en raíz del repo). **Pendiente de correr.**
 
 ### Tablas Lista de reparto (v18.24)
 - `reparto_listas` (id UUID PK, semana_inicio DATE, dia TEXT CHECK IN ('jueves','viernes'), total_medias_carne INT, total_medias_cerdo INT, notas TEXT, creado_en, **UNIQUE (semana_inicio, dia)**) — RLS off
@@ -160,6 +168,32 @@ don_chacho/lib/
 - `soportes` (id UUID PK, **numero INT GENERATED BY DEFAULT AS IDENTITY**, modulo TEXT, descripcion TEXT, bloqueante BOOLEAN, adjunto_path TEXT, estado TEXT CHECK IN ('abierto','en_revision','resuelto'), respuesta TEXT, reportado_por TEXT, rol TEXT, app_version TEXT, plataforma TEXT, creado_en, resuelto_en, resuelto_por) — índices en estado y creado_en, RLS off
 - El número de ticket (`S-0001`) lo asigna la **secuencia de Postgres**, no el cliente. Por eso `TicketSoporte.toMap()` omite `numero` cuando vale 0: a diferencia de remitos/pagos/NCD (que hacen max+1 del lado del cliente y tienen carrera), acá no hay chance de duplicados.
 - Bucket **privado** `soporte-adjuntos` (10 MB, mime images incl. heic/heif). En la tabla se guarda el **path**, nunca la URL: los links se firman en el momento (90 días) para que un link reenviado por WhatsApp caduque solo, mientras la bandeja siempre puede firmar uno nuevo. Las policies apuntan al rol **`anon`** porque la app se conecta con la publishable key.
+
+### Tablas Proveedores / Cargas (v19)
+- `proveedores` (id UUID PK, nombre TEXT, **tipo TEXT CHECK IN ('novillo','cerdo') DEFAULT 'novillo'** (v19.1), desvaste_porcentaje, precio_kg_vivo, rinde_asegurado, activo BOOLEAN, creado_en) — sin CUIT, sin teléfono, sin observaciones (decisión del cliente). Los tres valores numéricos son **defaults**, no la verdad histórica.
+- `cargas` (id UUID PK, **numero INT GENERATED BY DEFAULT AS IDENTITY** → `PP-0001`, proveedor_id FK, fecha DATE, cantidad_animales INT, kg_vivo, desvaste_porcentaje, precio_kg_vivo, rinde_asegurado, kg_media_res NUMERIC **nullable**, observacion, registrado_por, creado_en) + 3 columnas **GENERATED ALWAYS AS ... STORED**: `kg_neto`, `total_a_pagar`, `rinde_carga`. Índices en proveedor_id y fecha DESC, RLS off.
+- `carga_pagos` (id UUID PK, carga_id FK CASCADE, fecha DATE, medio TEXT CHECK IN ('efectivo','transferencia','cheque'), monto, registrado_por, creado_en) — index en carga_id, RLS off.
+- `cargas_eliminadas` / `carga_pagos_eliminados` — auditoría con `observacion` **obligatoria** (la cajera tiene que escribir el motivo). `cargas_eliminadas` guarda además los pagos que se van en cascada, en una columna JSONB.
+- **Una carga = una compra de animales vivos a un proveedor** (lo que en el Excel `Proveedores-Pagos.xlsx` era una hoja entera). Plata que SALE. **No tiene nada que ver con el circuito de clientes** (remitos / NDP / pagos): ahí la plata ENTRA.
+- Los valores de desvaste / precio / rinde se **copian del proveedor al crear la carga y después quedan congelados y editables ahí**. Así, cuando sube el precio del kg vivo, las cargas viejas no se recalculan.
+- **El `tipo` (novillo / cerdo) es la excepción: NO se copia a la carga**, se lee siempre del proveedor. La especie no cambia semana a semana, así que si se cargó mal, corregir el proveedor tiene que arreglar también las cargas viejas. Un proveedor que venda las dos cosas se carga **dos veces**. Se elige con un `SegmentedButton` en el ABM (default novillo) y se ve como pill en la lista y al lado del nombre en el dropdown del formulario de carga. El vocabulario es el mismo de `CostoSemanal.costoPorTipo` (`Proveedor.tipoLabel` → `'Novillo'`/`'Cerdo'`), así el módulo de ganancia va a poder separar **costo/kg novillo de costo/kg cerdo** agrupando las cargas por este campo. `Proveedor.fromMap` tolera que la columna no exista (cae en novillo) para que la app ande antes de correr la migración. Cubierto por `test/proveedor_test.dart`.
+- Acá la transferencia **no** tiene el descuento del 6,2%: ese descuento es sobre lo que se COBRA, no sobre lo que se paga. Por eso `carga_pagos` no tiene `neto_recibido`.
+- **Columnas generadas**: una columna generada de Postgres no puede referenciar otra columna generada, así que la expresión del kg neto está repetida en las tres. `rinde_carga` divide con `NULLIF(..., 0)`. `Carga.toMap()` nunca manda esas tres columnas (Postgres rechaza la escritura).
+
+### Saldo arrastrado del proveedor (v19)
+- El **SALDO A FAVOR nunca se guarda**: se recalcula en cadena, por proveedor, en orden cronológico.
+  `saldo de la carga = saldo de la carga anterior del mismo proveedor + pagos de esta carga − total a pagar`
+- Negativo = se le debe al proveedor (el caso normal). Positivo = saldo a favor de Joaco. Arrastra con su signo, esté saldada o no la carga anterior.
+- Al no persistirlo, corregir una carga vieja o agregar un pago atrasado **reacomoda solas todas las cargas siguientes** de ese proveedor. Está en `app_provider`: `saldoAnteriorDeCarga` / `saldoDeCarga` / `saldoProveedor` / `deudaTotalProveedores`.
+- `cargarProveedores({forzar})` es **lazy**: no va en `cargarDatos()`, para no hacerle más lento el login a los roles que no entran al módulo.
+
+### Rinde y diferencia de rinde (v19)
+- `kg_neto = kg_vivo × (100 − desvaste) / 100` → es lo que efectivamente se paga.
+- `total_a_pagar = kg_neto × precio_kg_vivo`.
+- `rinde_carga = kg_media_res × 100 / kg_neto`. **El kg de media res lo carga la cajera después de la faena**: hasta entonces queda NULL y la carga muestra "Falta faena", pero el total a pagar ya está definido.
+- Diferencia de rinde contra el `rinde_asegurado` del proveedor: `kg esperados = kg_neto × rinde_asegurado / 100`, `diferencia kg = esperados − obtenidos`, valorizada al precio del kg vivo. Positivo = rindió **menos** de lo prometido. Se ve en el detalle de la carga (la cajera también la ve) y va a alimentar el módulo de ganancia.
+- **PDF de la carga** (`carga_pdf_service.dart`, botón en el AppBar del detalle): espejo de la pantalla, FAENA + PAGOS + observación. **El bloque DIFERENCIA DE RINDE solo se imprime si el proveedor rindió de MENOS que el asegurado** (`debeImprimirRinde`), que es cuando hay algo para reclamar; si rindió igual o de más, no va. Ojo con el signo: `diferenciaRindeKg` es **positivo** justamente cuando rindió de menos. Dos trampas de `dart_pdf` que ya están resueltas y conviene no reintroducir: (1) las tarjetas van en `pw.Inseparable` para que no se parta un título de su contenido; (2) como las `Inseparable` no se parten, **una tarjeta más alta que la hoja hace explotar el armado**, por eso la lista de pagos se corta a mano de a 18 por tarjeta. El `pw.Divider` de dart_pdf mide **16 de alto por defecto** (no 1 como en Flutter). Todo cubierto por `test/carga_pdf_test.dart`.
+- **Los kilos del bloque de rinde van sin decimales** (`redondearKg` en `models.dart`): los gramos no se discuten con el proveedor y así los tres números cierran a la vista (esperados − obtenidos = diferencia). El criterio es el de la planilla: **de 0,6 para arriba sube, de 0,5 para abajo baja** — NO es el `.round()` de Dart, que también sube el 0,5. `Carga.kgEsperados` ya viene redondeado; si algún cálculo necesita el detalle fino está `kgEsperadosExacto`. Cubierto por `test/formatters_test.dart`.
 
 ### MedioPago enum en Dart
 `efectivo`, `transferencia`, `cheque`
@@ -244,6 +278,12 @@ Pantallas que lo implementan: `remito_form_screen.dart`, `pago_form_screen.dart`
 
 ### Costos por semana
 - Lista semanas cargadas, editor modal, alerta al editar semana vieja
+
+### Proveedores — compra de animales vivos (v19)
+- **Circuito aparte del de clientes**: acá la plata SALE (se le compra el animal vivo al proveedor). Remitos, NDP, notas C/D y pagos son el otro circuito, el de los clientes de Joaco.
+- Flujo de la cajera: elige el proveedor (se copian desvaste / precio / rinde como defaults editables) → carga animales y kg vivo → queda el **TOTAL A PAGAR** → registra los pagos que Joaco le va haciendo → cuando se faena, completa el **kg de media res** y recién ahí sale el rinde y la diferencia contra el rinde asegurado.
+- Puede haber **varias cargas por semana y varios proveedores**. El saldo se arrastra por proveedor, no global.
+- Editar y eliminar están habilitados (es la cajera, se equivoca y tiene que poder corregir), pero **toda baja pide motivo** y queda en la tabla de auditoría.
 
 ### Gestión Usuarios y Roles
 - CRUD usuarios + roles con permisos checkboxes, protecciones anti-lockout
@@ -341,6 +381,7 @@ vercel --prod
 | v18.14 (01/07) | **Ruta de cobranza (1ª versión)**: embebida en Consultas → Directorio, combo box (Clientes que deben / Solo remitos vencidos) + botón "Armar". Nuevo `ruta_cobranza_service.dart` (GPS, extracción de coords, orden por cercanía, URL Google Maps). Reemplazada por la tab "Ruta" en v18.15. |
 | v18.15 (01/07) | **Ruta de cobranza movida a tab propia "Ruta"** en Consultas (9 tabs). Filtros: cliente (búsqueda), vendedor (dropdown), "Con saldo pendiente" y "Solo vencidos" (FilterChips). Lista con checkboxes para **seleccionar clientes** (los sin ubicación quedan deshabilitados) + "Todos/Ninguno". Botón "Armar recorrido (N)" que calcula la ruta con los elegidos (GPS + orden por cercanía) y abre el panel de paradas → Google Maps. Se quitó el bloque de ruta del Directorio. |
 | v18.16 (02/07) | **Fix ubicaciones de la ruta + editar ubicación desde Directorio**: (1) `_parseCoords` reconoce ahora el formato **DMS** (`24°59'04.1"S`). (2) Nueva **Edge Function `resolver-maps`** (runtime nuevo, `withSupabase` con auth `["publishable","secret"]`) que resuelve del lado del servidor los **links cortos** `maps.app.goo.gl` (el navegador no puede por CORS): sigue el redirect y devuelve `lat/lng`, o si el link es un "compartir lugar" sin coords, devuelve la **dirección/nombre** (`q=…`). `RutaCobranzaService.construirParadas()` llama la función en lote para los clientes sin coords locales. `ParadaRuta` gana `direccionResuelta` y usa ese texto como punto ruteable. (3) En **Directorio**, botón de editar ubicación por tarjeta → bottom sheet para cargar/corregir Dirección + Link Maps (guarda con `editarCliente`). |
+| v19 (19/10) | **Módulo Proveedores (compra de animales vivos)** — reemplaza el Excel `Proveedores-Pagos.xlsx`. Tab propia para la cajera (permiso `gestionar_proveedores`). Una **carga** (`PP-0001`, numeración por secuencia de Postgres) es una compra de animales a un proveedor: animales, kg vivo, desvaste %, precio kg vivo, rinde asegurado %, y el **kg de media res que se completa después de la faena** (hasta entonces "Falta faena", pero el total a pagar ya está definido). Abajo de cada carga van los pagos a ese proveedor (efectivo / transferencia / cheque, sin más datos). El **SALDO A FAVOR se arrastra solo en cadena por proveedor** y nunca se guarda: corregir una carga vieja reacomoda todas las siguientes. Bloque de **diferencia de rinde** (esperado vs. obtenido, valorizado) visible también para la cajera. ABM de proveedores (los tres valores numéricos son defaults que se copian a la carga y ahí quedan congelados). Editar y eliminar habilitados; **eliminar exige motivo** y queda en `cargas_eliminadas` / `carga_pagos_eliminados`. **Nada que ver con el circuito de clientes** (remitos/NDP/pagos): acá la plata sale. Migración `supabase_migration_proveedores.sql`. **Arranca de cero: no se importa historia.** |
 | v18.37 (07/10) | **Fix: el aviso de WhatsApp del reclamo no se abría**. El ticket se guardaba bien (quedaba `abierto` en la bandeja) pero WhatsApp no abría nunca. Dos causas: (1) `launchUrl` se llamaba después de 2-3 `await` de red (subir foto → insert → firmar link), y en web el navegador solo permite abrir una ventana nueva **durante el gesto del usuario** — pasado eso la bloquea en silencio; (2) el gate `canLaunchUrl` da falsos negativos en Flutter web y abortaba el launch sin avisar. Fix: `avisarPorWhatsapp` se partió en `uriWhatsapp(ticket)` (async, arma el link firmado y el mensaje) + `abrirWhatsapp(uri)` (solo `launchUrl`, sin `canLaunchUrl`). Al guardar, el formulario muestra un diálogo "Reclamo S-000X registrado" con botón **"Abrir WhatsApp"**: el launch sale de ese toque, que es lo que web exige. Si igual falla, snackbar avisando que el reclamo quedó registrado. |
 | v18.36 (07/10) | **Módulo de Soporte**: Joaco reporta desde la app lo que no funciona en vez de contarlo suelto por chat. "Reportar un problema" en el menú del FAB (todos los roles): módulo del sistema, descripción, switch "no puedo seguir trabajando" y foto opcional de la pantalla. El ticket se guarda en Supabase (`soportes`, numeración `S-0001` por secuencia de Postgres) y recién después se abre WhatsApp con el reclamo ya escrito — si no llega a mandarlo, el reclamo igual quedó. La foto va a un bucket privado y viaja como link firmado. **"Bandeja de soporte"** (solo admin) con 3 tabs para triage, responder y marcar resuelto; la respuesta la ve el usuario en "Tus reclamos". Nuevo `utils/app_config.dart` con `--dart-define` (`SOPORTE_WHATSAPP`, `CLIENTE_NOMBRE`) para que el módulo sirva en cualquier instalación. Vuelve la dependencia `image_picker`. El FAB dejó de estar gateado por `crear_remito`/`crear_pago` (si no, un rol restringido no podía reportar nada). Migración `supabase_migration_soporte.sql`. |
 | v18.31 (22/09) | **Botón "Guardar + Enviar" en Notas de Crédito/Débito**: al registrar una NC/ND, además del botón "Registrar nota de crédito/débito" hay ahora un `OutlinedButton` "Guardar + Enviar" (ícono share) que guarda la nota y **abre la hoja de compartir con el comprobante PDF** (`EstadoCuentaService.generarComprobanteNcd` → `Printing.sharePdf`), para mandárselo al cliente por WhatsApp al momento. Mismo patrón que "Guardar + Recibo" de los pagos. Nuevo método `_guardarYEnviar` en `nota_cd_form_screen.dart` (pasa el saldo ya recalculado post-nota). Sin cambios de BD ni migraciones. Rama `feat/reparto-precarga`. |
@@ -370,6 +411,17 @@ Deployada desde la rama `feat/soporte`, **ya mergeada a `master`** (PR #1, merge
 ### v18.31 — deployada el 22/09/2026
 
 Deployada el 22/09/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`. **v18.31 salió de la rama `feat/reparto-precarga` (deployada a prod pero NO mergeada a `master` todavía; la rama acumula v18.30 + v18.31). La versión previa `feat/reparto-voz` sí está mergeada a `master` (v18.29).**
+
+### Cambios v19 (19/10/2026) — Módulo Proveedores (EN DESARROLLO, sin deployar)
+1. **`supabase_migration_proveedores.sql`** (raíz del repo, ya corrida el 20/10/2026): `proveedores`, `cargas`, `carga_pagos`, `cargas_eliminadas`, `carga_pagos_eliminados`, los índices, el RLS off y el `INSERT` del permiso `gestionar_proveedores` (asignado automáticamente a los roles con `es_admin = TRUE`). Ver "Tablas Proveedores / Cargas (v19)".
+2. **`lib/models/models.dart`**: `Proveedor`, `Carga`, `CargaPago`, `CargaEliminada`, `CargaPagoEliminado`. En `Carga` la aritmética está duplicada en Dart (`kgNeto`, `totalAPagar`, `rindeCarga`, `kgEsperados`, `diferenciaRindeKg/Pesos`) para calcular en vivo en el formulario; los valores que devuelve Postgres quedan aparte en `kgNetoServidor` / `totalAPagarServidor` / `rindeCargaServidor`. `toMap()` omite `numero` cuando vale 0 (lo pone la secuencia) y **nunca** manda las columnas generadas.
+3. **`lib/services/database_service.dart`**: CRUD de las cinco tablas. Todas las lecturas completas usan el helper `_paginado`. `insertCarga` hace `.select().single()` para recuperar el número y las columnas generadas. `contarCargasDeProveedor` es lo que impide borrar un proveedor con historia.
+4. **`lib/providers/app_provider.dart`**: `cargarProveedores({forzar})` lazy (3 queries en `Future.wait`), los getters de saldo en cadena, y el ABM (`guardarProveedor`, `eliminarProveedor`, `crearCarga`, `actualizarCarga`, `eliminarCarga`, `guardarPagoCarga`, `eliminarPagoCarga`). Las bajas escriben primero la fila de auditoría con la observación y después borran.
+5. **Pantallas nuevas**: `proveedores_screen.dart`, `gestion_proveedores_screen.dart`, `carga_form_screen.dart`, `carga_detalle_screen.dart` (ver la estructura del proyecto).
+6. **`lib/main.dart`**: tab "Proveedores" (ícono camión) entre Clientes y Consultas, gateada por `tiene('gestionar_proveedores')`.
+7. **`lib/utils/formatters.dart`**: nuevo `formatPorcentaje` (`58%` / `55,49%`) y la **entrada de números con separador de miles**: `MilesInputFormatter` (pone los puntos mientras se escribe: `10.000.000`), `parseNumero` (lee ese texto: los puntos son miles, la coma es el decimal) y `textoMiles` (precarga un controller ya formateado). Todos los campos numéricos del módulo Proveedores lo usan. **Si se agrega un campo numérico ahí, tiene que usar los tres juntos**: con `MilesInputFormatter` puesto, un `double.tryParse` común lee `10.000.000` como `0`. Cubierto por `test/formatters_test.dart`.
+8. **v19.1 — tipo de animal del proveedor (novillo / cerdo)**: nueva migración `supabase_migration_proveedor_tipo.sql` (**pendiente de correr**) con la columna `tipo` + CHECK + índice. En `Proveedor`: constantes `tipoNovillo`/`tipoCerdo`, campo `tipo`, getters `esCerdo` y `tipoLabel`. Se elige en el ABM con un `SegmentedButton` ("¿Qué vende?", default Novillo) y se muestra como pill en la lista y pegado al nombre en el dropdown de `carga_form_screen`. **Vive en el proveedor, no se congela en la carga** (ver la sección de tablas). Existe para que el módulo de ganancia separe costo/kg novillo de costo/kg cerdo.
+9. **Pendiente**: el **módulo de ganancia del admin** queda para después. Va a necesitar los costos del viaje (achuras, costo de faena, VEP, flete vivo, sueldo del camionero, lavadero, combustible) más la diferencia de rinde que ya calcula este módulo.
 
 ### Cambios v18.36 (07/10/2026) — Módulo de Soporte
 1. **`supabase_migration_soporte.sql`** (raíz del repo, ya corrida): tabla `soportes` + bucket privado `soporte-adjuntos` + policies de insert/select para el rol `anon`. Ver "Tabla Soporte (v18.36)".

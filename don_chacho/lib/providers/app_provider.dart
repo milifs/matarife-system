@@ -514,6 +514,278 @@ class AppProvider extends ChangeNotifier {
   // COSTO SEMANAL
   // ═══════════════════════════════════════════
 
+  // ═══════════════════════════════════════════
+  // PROVEEDORES Y CARGAS (compra de animales vivos)
+  // ═══════════════════════════════════════════
+  // Se cargan bajo demanda al entrar al módulo (igual que los costos
+  // semanales) y no en cargarDatos(), para no demorar el login de la
+  // secretaria y el cobrador, que no tienen acceso a este módulo.
+
+  List<Proveedor> _proveedores = [];
+  List<Carga> _cargas = [];
+  List<CargaPago> _cargaPagos = [];
+  bool _proveedoresCargados = false;
+
+  List<Proveedor> get proveedores => _proveedores;
+  List<Proveedor> get proveedoresActivos =>
+      _proveedores.where((p) => p.activo).toList();
+  List<Carga> get cargas => _cargas;
+  bool get proveedoresCargados => _proveedoresCargados;
+
+  Proveedor? proveedorPorId(String id) {
+    try {
+      return _proveedores.firstWhere((p) => p.id == id);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String nombreProveedor(String id) =>
+      proveedorPorId(id)?.nombre ?? 'Proveedor eliminado';
+
+  Carga? cargaPorId(String id) {
+    try {
+      return _cargas.firstWhere((c) => c.id == id);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> cargarProveedores({bool forzar = false}) async {
+    if (_proveedoresCargados && !forzar) return;
+    try {
+      final results = await Future.wait([
+        _db.getProveedores(),
+        _db.getCargas(),
+        _db.getCargaPagos(),
+      ]);
+      _proveedores = results[0] as List<Proveedor>;
+      _cargas = results[1] as List<Carga>;
+      _cargaPagos = results[2] as List<CargaPago>;
+      _proveedoresCargados = true;
+      notifyListeners();
+    } catch (e) {
+      _error = 'Error al cargar proveedores: $e';
+      notifyListeners();
+    }
+  }
+
+  /// Pagos de una carga, del más viejo al más nuevo (como el Excel)
+  List<CargaPago> pagosDeCarga(String cargaId) {
+    final lista = _cargaPagos.where((p) => p.cargaId == cargaId).toList();
+    lista.sort((a, b) {
+      final porFecha = a.fecha.compareTo(b.fecha);
+      return porFecha != 0 ? porFecha : a.creadoEn.compareTo(b.creadoEn);
+    });
+    return lista;
+  }
+
+  double totalPagadoCarga(String cargaId) =>
+      pagosDeCarga(cargaId).fold<double>(0, (s, p) => s + p.monto);
+
+  /// Cargas de un proveedor en orden cronológico (de la más vieja a la más
+  /// nueva). Es el orden en que se encadena el saldo.
+  List<Carga> cargasDeProveedor(String proveedorId) {
+    final lista =
+        _cargas.where((c) => c.proveedorId == proveedorId).toList();
+    lista.sort((a, b) {
+      final porFecha = a.fecha.compareTo(b.fecha);
+      return porFecha != 0 ? porFecha : a.creadoEn.compareTo(b.creadoEn);
+    });
+    return lista;
+  }
+
+  /// Saldo que viene arrastrado de la carga ANTERIOR del mismo proveedor.
+  /// Negativo = se le debe al proveedor; positivo = saldo a favor de Joaco.
+  ///
+  /// No se guarda en la base a propósito: se recalcula en cadena cada vez.
+  /// Así, si se corrige una carga vieja o se agrega un pago atrasado, todas
+  /// las cargas siguientes de ese proveedor se reacomodan solas.
+  double saldoAnteriorDeCarga(Carga carga) {
+    final lista = cargasDeProveedor(carga.proveedorId);
+    var saldo = 0.0;
+    for (final c in lista) {
+      if (c.id == carga.id) break;
+      saldo += totalPagadoCarga(c.id) - c.totalAPagar;
+    }
+    return saldo;
+  }
+
+  /// Saldo con el que cierra la carga = arrastre + pagos - total a pagar
+  double saldoDeCarga(Carga carga) =>
+      saldoAnteriorDeCarga(carga) + totalPagadoCarga(carga.id) - carga.totalAPagar;
+
+  /// Saldo actual del proveedor (el de su última carga)
+  double saldoProveedor(String proveedorId) {
+    final lista = cargasDeProveedor(proveedorId);
+    if (lista.isEmpty) return 0;
+    return saldoDeCarga(lista.last);
+  }
+
+  /// Total que se le debe hoy a todos los proveedores (en positivo)
+  double get deudaTotalProveedores {
+    var total = 0.0;
+    for (final p in _proveedores) {
+      final saldo = saldoProveedor(p.id);
+      if (saldo < 0) total += -saldo;
+    }
+    return total;
+  }
+
+  // ── ABM de proveedores ──
+
+  Future<bool> guardarProveedor(Proveedor proveedor, {bool esNuevo = false}) async {
+    try {
+      if (esNuevo) {
+        final creado = await _db.insertProveedor(proveedor);
+        _proveedores.add(creado);
+      } else {
+        await _db.updateProveedor(proveedor);
+        final i = _proveedores.indexWhere((p) => p.id == proveedor.id);
+        if (i >= 0) _proveedores[i] = proveedor;
+      }
+      _proveedores.sort((a, b) => a.nombre.compareTo(b.nombre));
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Error al guardar proveedor: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Borra el proveedor solo si no tiene cargas. Si tiene historia hay que
+  /// desactivarlo, para no dejar cargas huérfanas sin nombre.
+  Future<String?> eliminarProveedor(String id) async {
+    try {
+      final cargas = await _db.contarCargasDeProveedor(id);
+      if (cargas > 0) {
+        return 'El proveedor tiene $cargas carga(s) registradas. '
+            'Desactivalo en vez de borrarlo.';
+      }
+      await _db.deleteProveedor(id);
+      _proveedores.removeWhere((p) => p.id == id);
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return 'Error al eliminar proveedor: $e';
+    }
+  }
+
+  // ── ABM de cargas ──
+
+  Future<Carga?> crearCarga(Carga carga) async {
+    try {
+      final creada = await _db.insertCarga(carga);
+      _cargas.insert(0, creada);
+      notifyListeners();
+      return creada;
+    } catch (e) {
+      _error = 'Error al crear la carga: $e';
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<Carga?> actualizarCarga(Carga carga) async {
+    try {
+      final actualizada = await _db.updateCarga(carga);
+      final i = _cargas.indexWhere((c) => c.id == carga.id);
+      if (i >= 0) _cargas[i] = actualizada;
+      notifyListeners();
+      return actualizada;
+    } catch (e) {
+      _error = 'Error al actualizar la carga: $e';
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Elimina la carga y sus pagos. Antes de borrar deja la fila de auditoría
+  /// con la observación y una copia de los pagos que se van en cascada.
+  Future<bool> eliminarCarga(Carga carga, String observacion) async {
+    try {
+      final pagos = pagosDeCarga(carga.id);
+      await _db.insertCargaEliminada(CargaEliminada(
+        cargaId: carga.id,
+        numero: carga.numero,
+        proveedorId: carga.proveedorId,
+        proveedorNombre: nombreProveedor(carga.proveedorId),
+        fecha: carga.fecha,
+        cantidadAnimales: carga.cantidadAnimales,
+        kgVivo: carga.kgVivo,
+        kgMediaRes: carga.kgMediaRes,
+        totalAPagar: carga.totalAPagar,
+        totalPagado: totalPagadoCarga(carga.id),
+        pagos: pagos
+            .map((p) => {
+                  'fecha': p.fecha.toIso8601String(),
+                  'medio': p.medio,
+                  'monto': p.monto,
+                })
+            .toList(),
+        observacion: observacion,
+        eliminadoPor: _usuarioActual?.nombreCompleto,
+      ));
+      await _db.deleteCarga(carga.id);
+      _cargas.removeWhere((c) => c.id == carga.id);
+      _cargaPagos.removeWhere((p) => p.cargaId == carga.id);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Error al eliminar la carga: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // ── Pagos a proveedores ──
+
+  Future<bool> guardarPagoCarga(CargaPago pago, {bool esNuevo = false}) async {
+    try {
+      if (esNuevo) {
+        final creado = await _db.insertCargaPago(pago);
+        _cargaPagos.add(creado);
+      } else {
+        final actualizado = await _db.updateCargaPago(pago);
+        final i = _cargaPagos.indexWhere((p) => p.id == pago.id);
+        if (i >= 0) _cargaPagos[i] = actualizado;
+      }
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Error al guardar el pago: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> eliminarPagoCarga(CargaPago pago, String observacion) async {
+    try {
+      final carga = cargaPorId(pago.cargaId);
+      await _db.insertCargaPagoEliminado(CargaPagoEliminado(
+        pagoId: pago.id,
+        cargaId: pago.cargaId,
+        cargaNumero: carga?.numero ?? 0,
+        proveedorNombre:
+            carga == null ? '' : nombreProveedor(carga.proveedorId),
+        fecha: pago.fecha,
+        medio: pago.medio,
+        monto: pago.monto,
+        observacion: observacion,
+        eliminadoPor: _usuarioActual?.nombreCompleto,
+      ));
+      await _db.deleteCargaPago(pago.id);
+      _cargaPagos.removeWhere((p) => p.id == pago.id);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Error al eliminar el pago: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
   List<CostoSemanal> _costosSemanales = [];
   List<CostoSemanal> get costosSemanales => _costosSemanales;
 
