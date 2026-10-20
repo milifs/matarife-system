@@ -1118,8 +1118,22 @@ class TicketSoporte {
 // Los tres números son el default del proveedor y se copian a la carga,
 // donde quedan editables (el precio del kg vivo cambia seguido).
 class Proveedor {
+  /// Los dos tipos de animal que se compran. En minúscula, igual que
+  /// `CargaPago.medio`; para mostrar en pantalla está [tipoLabel].
+  static const tipoNovillo = 'novillo';
+  static const tipoCerdo = 'cerdo';
+
   final String id;
   String nombre;
+
+  /// Qué vende: [tipoNovillo] o [tipoCerdo].
+  ///
+  /// Vive en el proveedor y NO se congela en cada carga (a diferencia de
+  /// desvaste/precio/rinde) porque la especie no cambia semana a semana: si
+  /// se cargó mal, corregir el proveedor tiene que arreglar las cargas viejas
+  /// también. Un proveedor que venda las dos cosas se carga dos veces.
+  String tipo;
+
   double desvastePorcentaje; // 5 => se paga el 95% del peso vivo
   double precioKgVivo;
   double rindeAsegurado; // 58 => el proveedor asegura 58% de rinde
@@ -1129,6 +1143,7 @@ class Proveedor {
   Proveedor({
     String? id,
     required this.nombre,
+    this.tipo = tipoNovillo,
     this.desvastePorcentaje = 5,
     this.precioKgVivo = 0,
     this.rindeAsegurado = 58,
@@ -1137,9 +1152,16 @@ class Proveedor {
   })  : id = id ?? _uuid.v4(),
         creadoEn = creadoEn ?? DateTime.now();
 
+  bool get esCerdo => tipo == tipoCerdo;
+
+  /// 'Novillo' / 'Cerdo' — el mismo vocabulario que usa `CostoSemanal`
+  /// para separar costo por kg de novillo y de cerdo.
+  String get tipoLabel => esCerdo ? 'Cerdo' : 'Novillo';
+
   Map<String, dynamic> toMap() => {
         'id': id,
         'nombre': nombre,
+        'tipo': tipo,
         'desvaste_porcentaje': desvastePorcentaje,
         'precio_kg_vivo': precioKgVivo,
         'rinde_asegurado': rindeAsegurado,
@@ -1150,6 +1172,12 @@ class Proveedor {
   factory Proveedor.fromMap(Map<String, dynamic> map) => Proveedor(
         id: map['id'],
         nombre: map['nombre'] ?? '',
+        // Si la migración todavía no corrió, la columna no viene: novillo.
+        // Cualquier otro valor también cae en novillo en vez de romper la
+        // pantalla; el CHECK de la BD ya limita los dos válidos.
+        tipo: '${map['tipo']}'.toLowerCase().contains('cerdo')
+            ? tipoCerdo
+            : tipoNovillo,
         desvastePorcentaje: (map['desvaste_porcentaje'] ?? 5).toDouble(),
         precioKgVivo: (map['precio_kg_vivo'] ?? 0).toDouble(),
         rindeAsegurado: (map['rinde_asegurado'] ?? 58).toDouble(),

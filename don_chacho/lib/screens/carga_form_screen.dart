@@ -135,7 +135,9 @@ class _CargaFormScreenState extends State<CargaFormScreen> {
             items: proveedores
                 .map((p) => DropdownMenuItem(
                       value: p.id,
-                      child: Text(p.nombre),
+                      // El tipo al lado del nombre: dos proveedores pueden
+                      // llamarse parecido y uno vender cerdo.
+                      child: Text('${p.nombre} · ${p.tipoLabel}'),
                     ))
                 .toList(),
             onChanged: (v) {

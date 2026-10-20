@@ -6,6 +6,10 @@
 // DEFAULT del proveedor: se copian a la carga nueva y ahí quedan editables,
 // porque el precio cambia seguido y no queremos que al actualizarlo se
 // recalculen las cargas viejas.
+//
+// El tipo (novillo / cerdo) es distinto: NO se copia a la carga, se lee
+// siempre del proveedor. La especie no cambia semana a semana, así que si
+// se cargó mal, corregirla acá tiene que arreglar las cargas viejas también.
 // ============================================================
 
 import 'package:flutter/material.dart';
@@ -65,11 +69,17 @@ class _GestionProveedoresScreenState extends State<GestionProveedoresScreen> {
                           ),
                         ),
                       ),
-                      if (!p.activo)
+                      StatusPill(
+                        text: p.tipoLabel,
+                        type: StatusType.info,
+                      ),
+                      if (!p.activo) ...[
+                        const SizedBox(width: 6),
                         const StatusPill(
                           text: 'Inactivo',
                           type: StatusType.info,
                         ),
+                      ],
                     ],
                   ),
                   subtitle: Padding(
@@ -134,6 +144,7 @@ class _GestionProveedoresScreenState extends State<GestionProveedoresScreen> {
     final rindeCtrl = TextEditingController(
         text: textoMiles(proveedor?.rindeAsegurado ?? 58));
     var activo = proveedor?.activo ?? true;
+    var tipo = proveedor?.tipo ?? Proveedor.tipoNovillo;
 
     final guardado = await showDialog<bool>(
       context: context,
@@ -149,6 +160,39 @@ class _GestionProveedoresScreenState extends State<GestionProveedoresScreen> {
                   autofocus: esNuevo,
                   textCapitalization: TextCapitalization.characters,
                   decoration: const InputDecoration(labelText: 'Nombre'),
+                ),
+                const SizedBox(height: 16),
+                // Qué animal vende. El módulo de ganancia agrupa por esto para
+                // separar costo/kg novillo de costo/kg cerdo. Un proveedor que
+                // venda las dos cosas se carga dos veces.
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '¿Qué vende?',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(
+                        value: Proveedor.tipoNovillo,
+                        label: Text('Novillo'),
+                      ),
+                      ButtonSegment(
+                        value: Proveedor.tipoCerdo,
+                        label: Text('Cerdo'),
+                      ),
+                    ],
+                    selected: {tipo},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (s) => setLocal(() => tipo = s.first),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -224,6 +268,7 @@ class _GestionProveedoresScreenState extends State<GestionProveedoresScreen> {
     final nuevo = Proveedor(
       id: proveedor?.id,
       nombre: nombreCtrl.text.trim(),
+      tipo: tipo,
       desvastePorcentaje: _aDouble(desvasteCtrl.text, 5),
       precioKgVivo: _aDouble(precioCtrl.text, 0),
       rindeAsegurado: _aDouble(rindeCtrl.text, 58),
