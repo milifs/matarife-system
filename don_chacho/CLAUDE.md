@@ -188,7 +188,8 @@ don_chacho/lib/
 - `kg_neto = kg_vivo × (100 − desvaste) / 100` → es lo que efectivamente se paga.
 - `total_a_pagar = kg_neto × precio_kg_vivo`.
 - `rinde_carga = kg_media_res × 100 / kg_neto`. **El kg de media res lo carga la cajera después de la faena**: hasta entonces queda NULL y la carga muestra "Falta faena", pero el total a pagar ya está definido.
-- Diferencia de rinde contra el `rinde_asegurado` del proveedor: `kg esperados = kg_neto × rinde_asegurado / 100`, `diferencia kg = round(esperados − obtenidos)`, valorizada al precio del kg vivo. Positivo = rindió **menos** de lo prometido. Se ve en el detalle de la carga (la cajera también la ve) y va a alimentar el módulo de ganancia.
+- Diferencia de rinde contra el `rinde_asegurado` del proveedor: `kg esperados = kg_neto × rinde_asegurado / 100`, `diferencia kg = esperados − obtenidos`, valorizada al precio del kg vivo. Positivo = rindió **menos** de lo prometido. Se ve en el detalle de la carga (la cajera también la ve) y va a alimentar el módulo de ganancia.
+- **Los kilos del bloque de rinde van sin decimales** (`redondearKg` en `models.dart`): los gramos no se discuten con el proveedor y así los tres números cierran a la vista (esperados − obtenidos = diferencia). El criterio es el de la planilla: **de 0,6 para arriba sube, de 0,5 para abajo baja** — NO es el `.round()` de Dart, que también sube el 0,5. `Carga.kgEsperados` ya viene redondeado; si algún cálculo necesita el detalle fino está `kgEsperadosExacto`. Cubierto por `test/formatters_test.dart`.
 
 ### MedioPago enum en Dart
 `efectivo`, `transferencia`, `cheque`

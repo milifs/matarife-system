@@ -9,6 +9,18 @@ import 'package:uuid/uuid.dart';
 
 const _uuid = Uuid();
 
+/// Redondeo de kilos con el criterio de la planilla: de 0,6 para arriba sube,
+/// de 0,5 para abajo baja. Ojo que NO es el `.round()` de Dart, que también
+/// sube el 0,5 (5403,5 -> 5404). Acá 5403,5 da 5403 y 5403,657 da 5404.
+/// En negativos se aplica sobre el valor absoluto, así -28,5 da -28.
+double redondearKg(double valor) {
+  final signo = valor.isNegative ? -1 : 1;
+  final absoluto = valor.abs();
+  final entero = absoluto.floor();
+  final resto = absoluto - entero;
+  return (signo * (resto > 0.5 ? entero + 1 : entero)).toDouble();
+}
+
 // ─────────────────────────────────────────────
 // VENDEDOR (comisionista independiente)
 // ─────────────────────────────────────────────
@@ -1212,14 +1224,20 @@ class Carga {
   /// true cuando ya se faenó y se cargó el resultado
   bool get tieneFaena => kgMediaRes != null;
 
-  /// Kg que deberían haber salido según el rinde asegurado
-  double get kgEsperados => kgNeto * rindeAsegurado / 100;
+  /// Kg que deberían haber salido según el rinde asegurado.
+  /// Va redondeado a kilos enteros (ver [redondearKg]): los gramos no se
+  /// discuten con el proveedor y así los tres números del bloque de rinde
+  /// cierran a la vista (esperados - obtenidos = diferencia).
+  double get kgEsperados => redondearKg(kgEsperadosExacto);
+
+  /// El valor sin redondear, por si algún cálculo necesita el detalle fino.
+  double get kgEsperadosExacto => kgNeto * rindeAsegurado / 100;
 
   /// Diferencia de rinde en kg (positivo = rindió MENOS de lo asegurado).
   /// Null mientras no se haya faenado.
   double? get diferenciaRindeKg {
     if (kgMediaRes == null) return null;
-    return (kgEsperados - kgMediaRes!).roundToDouble();
+    return redondearKg(kgEsperados - kgMediaRes!);
   }
 
   /// Diferencia de rinde valorizada al precio del kg vivo

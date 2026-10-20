@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:don_chacho_matarife/models/models.dart';
 import 'package:don_chacho_matarife/utils/formatters.dart';
 
 TextEditingValue tecleo(String texto, {int? cursor}) => TextEditingValue(
@@ -66,5 +67,46 @@ void main() {
     expect(textoMiles(1234.5), '1.234,5');
     expect(textoMiles(0), '');
     expect(parseNumero(textoMiles(72050773)), 72050773);
+  });
+
+  group('redondearKg - de 0,6 para arriba sube; de 0,5 para abajo baja', () {
+    test('sube arriba de 0,5', () {
+      expect(redondearKg(5403.657), 5404);
+      expect(redondearKg(5403.6), 5404);
+      expect(redondearKg(28.51), 29);
+    });
+
+    test('baja en 0,5 y abajo', () {
+      expect(redondearKg(5403.5), 5403);
+      expect(redondearKg(5403.4), 5403);
+      expect(redondearKg(28.5), 28);
+    });
+
+    test('enteros quedan igual', () {
+      expect(redondearKg(5375), 5375);
+      expect(redondearKg(0), 0);
+    });
+
+    test('negativos redondean por valor absoluto', () {
+      expect(redondearKg(-28.657), -29);
+      expect(redondearKg(-28.5), -28);
+    });
+  });
+
+  test('el bloque de rinde cierra: esperados - obtenidos = diferencia', () {
+    // 9.316 kg netos al 58% = 5.403,28 -> 5.403 esperados
+    final carga = Carga(
+      fecha: DateTime(2026, 10, 20),
+      proveedorId: 'p1',
+      cantidadAnimales: 35,
+      kgVivo: 9806.32,
+      desvastePorcentaje: 5,
+      precioKgVivo: 5400,
+      rindeAsegurado: 58,
+      kgMediaRes: 5375,
+    );
+    expect(carga.kgEsperados, carga.kgEsperados.roundToDouble());
+    expect(carga.diferenciaRindeKg, carga.kgEsperados - 5375);
+    expect(carga.diferenciaRindePesos, carga.diferenciaRindeKg! * 5400);
   });
 }
