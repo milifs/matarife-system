@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/app_provider.dart';
+import '../services/carga_pdf_service.dart';
 import '../utils/formatters.dart';
 import '../utils/theme.dart';
 import 'carga_form_screen.dart';
@@ -29,6 +30,8 @@ class CargaDetalleScreen extends StatefulWidget {
 }
 
 class _CargaDetalleScreenState extends State<CargaDetalleScreen> {
+  bool _generandoPdf = false;
+
   @override
   Widget build(BuildContext context) {
     return Consumer<AppProvider>(
@@ -57,6 +60,26 @@ class _CargaDetalleScreenState extends State<CargaDetalleScreen> {
           appBar: AppBar(
             title: Text(carga.numeroFormateado),
             actions: [
+              IconButton(
+                tooltip: 'Exportar a PDF',
+                icon: _generandoPdf
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.picture_as_pdf_outlined),
+                onPressed: _generandoPdf
+                    ? null
+                    : () => _exportarPdf(
+                          carga: carga,
+                          nombreProveedor: app.nombreProveedor(carga.proveedorId),
+                          pagos: pagos,
+                          saldoAnterior: saldoAnterior,
+                          pagado: pagado,
+                          saldoFinal: saldoFinal,
+                        ),
+              ),
               IconButton(
                 tooltip: 'Editar carga',
                 icon: const Icon(Icons.edit_outlined),
@@ -98,6 +121,37 @@ class _CargaDetalleScreenState extends State<CargaDetalleScreen> {
         );
       },
     );
+  }
+
+  // ── Exportar la carga a PDF ──
+  // El bloque de diferencia de rinde solo sale impreso si el proveedor
+  // rindió de menos; esa decisión vive en CargaPdfService.
+  Future<void> _exportarPdf({
+    required Carga carga,
+    required String nombreProveedor,
+    required List<CargaPago> pagos,
+    required double saldoAnterior,
+    required double pagado,
+    required double saldoFinal,
+  }) async {
+    setState(() => _generandoPdf = true);
+    try {
+      await CargaPdfService.generarYCompartir(
+        carga: carga,
+        nombreProveedor: nombreProveedor,
+        pagos: pagos,
+        saldoAnterior: saldoAnterior,
+        pagado: pagado,
+        saldoFinal: saldoFinal,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo generar el PDF: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _generandoPdf = false);
+    }
   }
 
   // ── Editar la carga (abre el formulario completo) ──

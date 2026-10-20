@@ -79,6 +79,7 @@ don_chacho/lib/
 │   ├── estado_cuenta_service.dart     # PDF estado de cuenta + reporte vendedor + reporte cliente (movimientos) + PDF nota de pedido + comisión
 │   ├── reparto_service.dart           # PDF de la lista de reparto para el repartidor (tabla CARNE/CERDO, TOTAL MEDIAS, SOBRANTE DEPÓSITO, notas) — v18.24
 │   ├── recibo_service.dart            # PDF recibo de pago con detalle deuda FIFO
+│   ├── carga_pdf_service.dart         # PDF de una carga de proveedor (v19)
 │   └── ruta_cobranza_service.dart     # Ruta de cobranza: extrae coords (incl. DMS), GPS web, resuelve links cortos vía Edge Function resolver-maps, orden vecino-cercano, URL Google Maps multi-parada (v18.14, ampliado v18.16)
 ├── screens/
 │   ├── login_screen.dart              # Usuario + contraseña
@@ -189,6 +190,7 @@ don_chacho/lib/
 - `total_a_pagar = kg_neto × precio_kg_vivo`.
 - `rinde_carga = kg_media_res × 100 / kg_neto`. **El kg de media res lo carga la cajera después de la faena**: hasta entonces queda NULL y la carga muestra "Falta faena", pero el total a pagar ya está definido.
 - Diferencia de rinde contra el `rinde_asegurado` del proveedor: `kg esperados = kg_neto × rinde_asegurado / 100`, `diferencia kg = esperados − obtenidos`, valorizada al precio del kg vivo. Positivo = rindió **menos** de lo prometido. Se ve en el detalle de la carga (la cajera también la ve) y va a alimentar el módulo de ganancia.
+- **PDF de la carga** (`carga_pdf_service.dart`, botón en el AppBar del detalle): espejo de la pantalla, FAENA + PAGOS + observación. **El bloque DIFERENCIA DE RINDE solo se imprime si el proveedor rindió de MENOS que el asegurado** (`debeImprimirRinde`), que es cuando hay algo para reclamar; si rindió igual o de más, no va. Ojo con el signo: `diferenciaRindeKg` es **positivo** justamente cuando rindió de menos. Dos trampas de `dart_pdf` que ya están resueltas y conviene no reintroducir: (1) las tarjetas van en `pw.Inseparable` para que no se parta un título de su contenido; (2) como las `Inseparable` no se parten, **una tarjeta más alta que la hoja hace explotar el armado**, por eso la lista de pagos se corta a mano de a 18 por tarjeta. El `pw.Divider` de dart_pdf mide **16 de alto por defecto** (no 1 como en Flutter). Todo cubierto por `test/carga_pdf_test.dart`.
 - **Los kilos del bloque de rinde van sin decimales** (`redondearKg` en `models.dart`): los gramos no se discuten con el proveedor y así los tres números cierran a la vista (esperados − obtenidos = diferencia). El criterio es el de la planilla: **de 0,6 para arriba sube, de 0,5 para abajo baja** — NO es el `.round()` de Dart, que también sube el 0,5. `Carga.kgEsperados` ya viene redondeado; si algún cálculo necesita el detalle fino está `kgEsperadosExacto`. Cubierto por `test/formatters_test.dart`.
 
 ### MedioPago enum en Dart
