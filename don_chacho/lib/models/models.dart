@@ -1557,3 +1557,110 @@ class CargaPagoEliminado {
         eliminadoPor: map['eliminado_por'],
       );
 }
+
+// ─────────────────────────────────────────────
+// CIERRE DE JORNADA DEL COBRADOR (v19.2)
+// ─────────────────────────────────────────────
+// Lo que un cobrador cobró en un día: cuánta plata y a qué clientes.
+//
+// DOS DECISIONES QUE CONVIENE NO TOCAR SIN PENSARLAS:
+//
+// 1. El día es el de `pago.fecha` (la fecha de cobro que eligió el cobrador),
+//    NO el de `creado_en`. Es la misma fecha con la que trabajan el resto de
+//    los reportes, y es la que el cobrador declara como día de cobranza. El
+//    `creado_en` se muestra igual, como hora de carga de cada pago, porque es
+//    lo que ordena la jornada y lo que delata un pago cargado al otro día.
+//
+// 2. Los montos son BRUTOS (`montoTotal`), no netos. La pregunta que contesta
+//    el cierre es "cuánta plata cobró y a quién", y lo que el cobrador tiene
+//    que rendir es la plata que recibió. El descuento interno del 6,2% de las
+//    transferencias es un tema de ganancia, no de rendición, y ya está en el
+//    tab de Ganancias.
+//
+// El número operativo del cierre es `efectivo`: es la plata que el cobrador
+// trae encima y tiene que entregar. Lo que entró por transferencia o cheque
+// no pasa por sus manos.
+
+/// Un cobro de la jornada: el pago con el cliente y los medios ya resueltos.
+class CobroJornada {
+  final Pago pago;
+  final String clienteNombre;
+  final String? vendedorNombre;
+  final List<PagoMedio> medios;
+
+  const CobroJornada({
+    required this.pago,
+    required this.clienteNombre,
+    this.vendedorNombre,
+    this.medios = const [],
+  });
+
+  double get monto => pago.montoTotal;
+
+  /// Hora de carga del pago (HH:MM), que es el orden real de la jornada.
+  String get hora {
+    final h = pago.creadoEn.hour.toString().padLeft(2, '0');
+    final m = pago.creadoEn.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  /// "Efectivo" / "Efectivo + Transferencia". Vacío si no se cargaron medios.
+  String get mediosLabel => medios.map((m) => m.medioLabel).join(' + ');
+
+  double porMedio(MedioPago medio) => medios
+      .where((m) => m.medio == medio)
+      .fold<double>(0, (s, m) => s + m.monto);
+
+  /// El pago se cargó un día distinto al que dice cobrar.
+  bool get cargadoOtroDia {
+    final f = pago.fecha;
+    final c = pago.creadoEn;
+    return f.year != c.year || f.month != c.month || f.day != c.day;
+  }
+}
+
+/// Resumen de la jornada de un cobrador en un día.
+class ResumenJornada {
+  final String cobrador;
+  final DateTime dia;
+
+  /// Cobros del día, en orden de carga (el recorrido tal como pasó).
+  final List<CobroJornada> cobros;
+
+  ResumenJornada({
+    required this.cobrador,
+    required DateTime dia,
+    required List<CobroJornada> cobros,
+  })  : dia = DateTime(dia.year, dia.month, dia.day),
+        cobros = List.unmodifiable(
+          [...cobros]..sort((a, b) => a.pago.creadoEn.compareTo(b.pago.creadoEn)),
+        );
+
+  /// Total cobrado en el día (bruto).
+  double get total => cobros.fold<double>(0, (s, c) => s + c.monto);
+
+  /// Plata en mano que el cobrador tiene que rendir.
+  double get efectivo => _porMedio(MedioPago.efectivo);
+  double get transferencia => _porMedio(MedioPago.transferencia);
+  double get cheque => _porMedio(MedioPago.cheque);
+
+  double _porMedio(MedioPago medio) =>
+      cobros.fold<double>(0, (s, c) => s + c.porMedio(medio));
+
+  /// Lo repartido por medio puede no llegar al total si algún pago quedó sin
+  /// medios cargados. Se expone para no inventar que el desglose cierra.
+  double get sinDesglosar {
+    final desglosado = efectivo + transferencia + cheque;
+    final resto = total - desglosado;
+    return resto.abs() < 0.01 ? 0 : resto;
+  }
+
+  bool get desgloseCompleto => sinDesglosar == 0;
+
+  int get cantidadPagos => cobros.length;
+
+  int get cantidadClientes =>
+      cobros.map((c) => c.pago.clienteId).toSet().length;
+
+  bool get vacia => cobros.isEmpty;
+}

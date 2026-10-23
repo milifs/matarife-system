@@ -277,6 +277,35 @@ class DatabaseService {
     return data.map((e) => PagoMedio.fromMap(e)).toList();
   }
 
+  /// Medios de varios pagos de una sola vez, agrupados por `pagoId`.
+  ///
+  /// Evita el N+1 de llamar [getPagoMedios] por pago (el cierre de jornada
+  /// necesita los medios de todos los pagos del día juntos). Los ids se
+  /// mandan en tandas para no armar una URL interminable.
+  Future<Map<String, List<PagoMedio>>> getMediosDePagos(
+      List<String> pagoIds) async {
+    final porPago = <String, List<PagoMedio>>{};
+    if (pagoIds.isEmpty) return porPago;
+
+    const tanda = 100;
+    final ids = pagoIds.toSet().toList();
+    for (var i = 0; i < ids.length; i += tanda) {
+      final lote = ids.sublist(
+          i, i + tanda > ids.length ? ids.length : i + tanda);
+      final data = await _paginado((from, to) => _client
+          .from('pago_medios')
+          .select()
+          .inFilter('pago_id', lote)
+          .order('id')
+          .range(from, to));
+      for (final e in data) {
+        final medio = PagoMedio.fromMap(e);
+        porPago.putIfAbsent(medio.pagoId, () => []).add(medio);
+      }
+    }
+    return porPago;
+  }
+
   Future<Pago> updatePago(Pago pago, List<PagoMedio> medios) async {
     // Recalcular totales
     pago.montoTotal = medios.fold(0, (sum, m) => sum + m.monto);
