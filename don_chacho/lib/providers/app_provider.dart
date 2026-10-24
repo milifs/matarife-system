@@ -1142,6 +1142,78 @@ class AppProvider extends ChangeNotifier {
     return _db.getPagoMedios(pagoId);
   }
 
+  // ═══════════════════════════════════════════
+  // CIERRE DE JORNADA DEL COBRADOR (v19.2)
+  // ═══════════════════════════════════════════
+
+  /// Quiénes registraron pagos alguna vez, A→Z.
+  ///
+  /// Sale de los pagos, no de la tabla de usuarios: la lista es "quién cobró",
+  /// así que incluye a los que ya no están activos y deja afuera a los que
+  /// nunca cobraron. `registrado_por` guarda el nombre completo, de modo que
+  /// si se le cambia el nombre a un usuario los pagos viejos quedan con el
+  /// nombre viejo — por eso el filtro es por nombre y no por id.
+  List<String> get cobradores {
+    final nombres = _pagos
+        .map((p) => (p.registradoPor ?? '').trim())
+        .where((n) => n.isNotEmpty)
+        .toSet()
+        .toList();
+    nombres.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return nombres;
+  }
+
+  /// Los días en los que [cobrador] registró pagos, del más nuevo al más viejo.
+  List<DateTime> diasConCobros(String cobrador) {
+    final dias = _pagosDe(cobrador)
+        .map((p) => DateTime(p.fecha.year, p.fecha.month, p.fecha.day))
+        .toSet()
+        .toList();
+    dias.sort((a, b) => b.compareTo(a));
+    return dias;
+  }
+
+  /// Resumen de lo que [cobrador] cobró el día [dia], con los medios de pago
+  /// de todos los pagos traídos en una sola query.
+  ///
+  /// El día es el de `pago.fecha` (ver la nota en [ResumenJornada]).
+  Future<ResumenJornada> resumenJornada({
+    required String cobrador,
+    required DateTime dia,
+  }) async {
+    final delDia = _pagosDe(cobrador)
+        .where((p) =>
+            p.fecha.year == dia.year &&
+            p.fecha.month == dia.month &&
+            p.fecha.day == dia.day)
+        .toList();
+
+    final medios =
+        await _db.getMediosDePagos(delDia.map((p) => p.id).toList());
+
+    return ResumenJornada(
+      cobrador: cobrador,
+      dia: dia,
+      cobros: delDia.map((p) {
+        final cliente = clientePorId(p.clienteId);
+        return CobroJornada(
+          pago: p,
+          clienteNombre: cliente?.nombreRazonSocial ?? 'Cliente eliminado',
+          vendedorNombre: cliente != null
+              ? vendedorPorId(cliente.vendedorId)?.nombreCompleto
+              : null,
+          medios: medios[p.id] ?? const [],
+        );
+      }).toList(),
+    );
+  }
+
+  Iterable<Pago> _pagosDe(String cobrador) {
+    final buscado = cobrador.trim().toLowerCase();
+    return _pagos.where(
+        (p) => (p.registradoPor ?? '').trim().toLowerCase() == buscado);
+  }
+
   void limpiarError() {
     _error = null;
     notifyListeners();
