@@ -12,6 +12,7 @@ import '../utils/theme.dart';
 import '../services/recibo_service.dart';
 import '../services/estado_cuenta_service.dart';
 import '../services/ruta_cobranza_service.dart';
+import '../services/cierre_jornada_service.dart';
 import 'pago_form_screen.dart';
 import 'remito_form_screen.dart';
 import 'nota_pedido_form_screen.dart';
@@ -34,43 +35,43 @@ class ConsultasScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final app = context.watch<AppProvider>();
+
+    // Ganancias y Cobranzas son tabs del dueño: la primera muestra el costo
+    // por kg y la ganancia del negocio, la segunda lo que cobró cada cobrador.
+    // Mismo criterio que el dashboard, donde los bloques de costo y ganancia
+    // ya son solo para el admin. Los demás tabs los ve cualquiera que tenga
+    // el permiso `ver_consultas`.
+    final tabs = <({String titulo, Widget vista})>[
+      (titulo: 'Vencidos', vista: const _VencidosTab()),
+      if (app.esAdmin) (titulo: 'Ganancias', vista: const _GananciasTab()),
+      (titulo: 'Saldos', vista: const _SaldosTab()),
+      (titulo: 'Historial', vista: const _HistorialTab()),
+      if (app.esAdmin) (titulo: 'Cobranzas', vista: const _CobranzasTab()),
+      (titulo: 'Directorio', vista: const _DirectorioTab()),
+      (titulo: 'Ruta', vista: const _RutaTab()),
+      (titulo: 'Comisiones', vista: const _ComisionesTab()),
+      (titulo: 'Eliminados', vista: const _EliminadosTab()),
+      (titulo: 'Reporte', vista: const _ReporteTab()),
+    ];
+
     return DefaultTabController(
-      length: 9,
+      length: tabs.length,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Consultas'),
-          bottom: const TabBar(
+          bottom: TabBar(
             labelColor: AppTheme.primary,
             unselectedLabelColor: AppTheme.textHint,
             indicatorColor: AppTheme.primary,
             isScrollable: true,
-            labelStyle:
-                TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-            tabs: [
-              Tab(text: 'Vencidos'),
-              Tab(text: 'Ganancias'),
-              Tab(text: 'Saldos'),
-              Tab(text: 'Historial'),
-              Tab(text: 'Directorio'),
-              Tab(text: 'Ruta'),
-              Tab(text: 'Comisiones'),
-              Tab(text: 'Eliminados'),
-              Tab(text: 'Reporte'),
-            ],
+            labelStyle: const TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w500),
+            tabs: [for (final t in tabs) Tab(text: t.titulo)],
           ),
         ),
-        body: const TabBarView(
-          children: [
-            _VencidosTab(),
-            _GananciasTab(),
-            _SaldosTab(),
-            _HistorialTab(),
-            _DirectorioTab(),
-            _RutaTab(),
-            _ComisionesTab(),
-            _EliminadosTab(),
-            _ReporteTab(),
-          ],
+        body: TabBarView(
+          children: [for (final t in tabs) t.vista],
         ),
       ),
     );
@@ -1981,6 +1982,426 @@ class _StatColumn extends StatelessWidget {
               color: color ?? AppTheme.textPrimary,
             )),
       ],
+    );
+  }
+}
+
+// ═══════════════════════════════════════════
+// TAB: COBRANZAS (cierre de jornada del cobrador)
+// ═══════════════════════════════════════════
+// A quién le cobró un cobrador en un día y cuánta plata trajo. Tab de admin
+// (ver la lista de tabs en ConsultasScreen).
+//
+// La fecha que se filtra es la de cobro (`pago.fecha`), no la de carga. Si un
+// pago se cargó otro día, la fila lo avisa.
+class _CobranzasTab extends StatefulWidget {
+  const _CobranzasTab();
+
+  @override
+  State<_CobranzasTab> createState() => _CobranzasTabState();
+}
+
+class _CobranzasTabState extends State<_CobranzasTab> {
+  String? _cobrador;
+  DateTime _dia = DateTime.now();
+
+  ResumenJornada? _jornada;
+  bool _cargando = false;
+
+  /// Cada carga se numera para descartar la respuesta de un filtro que el
+  /// usuario ya cambió (los medios se traen de la BD y pueden llegar tarde).
+  int _pedido = 0;
+
+  static DateTime _hoy() {
+    final h = DateTime.now();
+    return DateTime(h.year, h.month, h.day);
+  }
+
+  Future<void> _cargar(AppProvider app) async {
+    final cobrador = _cobrador;
+    if (cobrador == null) {
+      setState(() => _jornada = null);
+      return;
+    }
+
+    final pedido = ++_pedido;
+    setState(() => _cargando = true);
+
+    final jornada = await app.resumenJornada(cobrador: cobrador, dia: _dia);
+
+    if (!mounted || pedido != _pedido) return;
+    setState(() {
+      _jornada = jornada;
+      _cargando = false;
+    });
+  }
+
+  void _elegirCobrador(AppProvider app, String? valor) {
+    setState(() => _cobrador = valor);
+    _cargar(app);
+  }
+
+  void _elegirDia(AppProvider app, DateTime dia) {
+    setState(() => _dia = dia);
+    _cargar(app);
+  }
+
+  Future<void> _exportarPdf() async {
+    final jornada = _jornada;
+    if (jornada == null || jornada.vacia) return;
+    await CierreJornadaService.generarYCompartir(jornada);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AppProvider>(
+      builder: (context, app, _) {
+        final cobradores = app.cobradores;
+
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            // ── Filtros ──
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: _cobrador,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Cobrador',
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                      ),
+                      hint: const Text('Seleccioná quién cobró',
+                          style: TextStyle(fontSize: 13)),
+                      items: cobradores
+                          .map((c) => DropdownMenuItem(
+                                value: c,
+                                child: Text(c,
+                                    style: const TextStyle(fontSize: 13)),
+                              ))
+                          .toList(),
+                      onChanged: (val) => _elegirCobrador(app, val),
+                    ),
+                    const SizedBox(height: 12),
+                    _DateField(
+                      label: 'Día de cobranza',
+                      value: _dia,
+                      onChanged: (d) => _elegirDia(app, d),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        _AtajoChip(
+                          label: 'Hoy',
+                          onTap: () => _elegirDia(app, _hoy()),
+                        ),
+                        const SizedBox(width: 8),
+                        _AtajoChip(
+                          label: 'Ayer',
+                          onTap: () => _elegirDia(app,
+                              _hoy().subtract(const Duration(days: 1))),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            if (_cobrador == null)
+              _AvisoCobranzas(
+                icono: Icons.person_search,
+                texto: cobradores.isEmpty
+                    ? 'Todavía no hay pagos registrados por nadie.'
+                    : 'Elegí un cobrador y un día para ver a quién le cobró.',
+              )
+            else if (_cargando)
+              const Padding(
+                padding: EdgeInsets.only(top: 40),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_jornada == null)
+              const SizedBox.shrink()
+            else if (_jornada!.vacia)
+              _sinCobros(app)
+            else ...[
+              _resumen(_jornada!),
+              const SizedBox(height: 12),
+              _botonPdf(),
+              const SizedBox(height: 16),
+              _listado(context, app, _jornada!),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  /// Día sin cobros. Avisa cuál fue el último día que sí tuvo, porque lo más
+  /// común es haber elegido una fecha en la que el cobrador no salió.
+  Widget _sinCobros(AppProvider app) {
+    final dias = app.diasConCobros(_cobrador!);
+    final ultimo = dias.isEmpty ? null : dias.first;
+
+    return _AvisoCobranzas(
+      icono: Icons.event_busy,
+      texto: '$_cobrador no registró cobros el ${formatFecha(_dia)}.',
+      detalle: ultimo == null
+          ? 'No tiene ningún cobro registrado.'
+          : 'Último día con cobros: ${formatFecha(ultimo)}.',
+      accion: ultimo == null
+          ? null
+          : _AtajoChip(
+              label: 'Ver ese día',
+              onTap: () => _elegirDia(app, ultimo),
+            ),
+    );
+  }
+
+  Widget _resumen(ResumenJornada j) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'TOTAL COBRADO',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textHint,
+                letterSpacing: 1,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              formatPesos(j.total),
+              style: const TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF2E7D32),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${j.cantidadPagos} ${j.cantidadPagos == 1 ? "cobro" : "cobros"}'
+              ' · ${j.cantidadClientes} '
+              '${j.cantidadClientes == 1 ? "cliente" : "clientes"}',
+              style: const TextStyle(fontSize: 12, color: AppTheme.textHint),
+            ),
+            const Divider(height: 20),
+            _filaMedio('Efectivo', j.efectivo),
+            _filaMedio('Transferencia', j.transferencia),
+            _filaMedio('Cheque', j.cheque),
+            if (!j.desgloseCompleto)
+              _filaMedio('Sin medio cargado', j.sinDesglosar, gris: true),
+            const Divider(height: 20),
+            // Lo único que el cobrador trae encima: lo que pasó por su mano.
+            // Transferencias y cheques no se le rinden a nadie.
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFBE9E7),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Efectivo a rendir',
+                    style: TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    formatPesos(j.efectivo),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _filaMedio(String etiqueta, double monto, {bool gris = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            etiqueta,
+            style: TextStyle(
+              fontSize: 13,
+              color: gris ? AppTheme.textHint : null,
+            ),
+          ),
+          Text(
+            formatPesos(monto),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: gris ? AppTheme.textHint : null,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _botonPdf() {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: _exportarPdf,
+        icon: const Icon(Icons.picture_as_pdf, size: 18),
+        label: const Text('Exportar PDF'),
+      ),
+    );
+  }
+
+  Widget _listado(
+      BuildContext context, AppProvider app, ResumenJornada j) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'A QUIÉN LE COBRÓ',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.textHint,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 8),
+        for (final cobro in j.cobros) _tarjetaCobro(context, app, cobro),
+      ],
+    );
+  }
+
+  Widget _tarjetaCobro(
+      BuildContext context, AppProvider app, CobroJornada cobro) {
+    final subtitulo = [
+      cobro.pago.numeroFormateado,
+      if (cobro.mediosLabel.isNotEmpty) cobro.mediosLabel,
+      if (cobro.vendedorNombre != null) cobro.vendedorNombre!,
+    ].join(' · ');
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        leading: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              cobro.hora,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: AppTheme.textHint,
+              ),
+            ),
+          ],
+        ),
+        title: Text(
+          cobro.clienteNombre,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(subtitulo, style: const TextStyle(fontSize: 11)),
+            if (cobro.cargadoOtroDia)
+              Text(
+                'Cargado el ${formatFecha(cobro.pago.creadoEn)}',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.primary,
+                ),
+              ),
+          ],
+        ),
+        trailing: Text(
+          formatPesos(cobro.monto),
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF2E7D32),
+          ),
+        ),
+        // El form de pago en modo edición es solo lectura (v18.9) y se
+        // autogatea: el botón de eliminar aparece solo con `editar_pago`.
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PagoFormScreen(pagoInicial: cobro.pago),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Cartel para los estados vacíos del tab de cobranzas.
+class _AvisoCobranzas extends StatelessWidget {
+  final IconData icono;
+  final String texto;
+  final String? detalle;
+  final Widget? accion;
+
+  const _AvisoCobranzas({
+    required this.icono,
+    required this.texto,
+    this.detalle,
+    this.accion,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 40),
+      child: Column(
+        children: [
+          Icon(icono, size: 48, color: AppTheme.textHint),
+          const SizedBox(height: 12),
+          Text(
+            texto,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 14),
+          ),
+          if (detalle != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              detalle!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: AppTheme.textHint),
+            ),
+          ],
+          if (accion != null) ...[
+            const SizedBox(height: 14),
+            accion!,
+          ],
+        ],
+      ),
     );
   }
 }
