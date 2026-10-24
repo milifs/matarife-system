@@ -9,7 +9,7 @@
 class AppConfig {
   /// Versión de la app. Se adjunta a cada ticket de soporte para saber
   /// contra qué build se reportó el problema.
-  static const String version = 'v18.37';
+  static const String version = 'v19.1';
 
   /// Nombre del cliente dueño de este deploy. Va en el mensaje de soporte
   /// para distinguir de qué instalación viene el reclamo.
