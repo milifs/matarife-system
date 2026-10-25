@@ -37,11 +37,17 @@ class ConsultasScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final app = context.watch<AppProvider>();
 
-    // Ganancias y Cobranzas son tabs del dueño: la primera muestra el costo
-    // por kg y la ganancia del negocio, la segunda lo que cobró cada cobrador.
-    // Mismo criterio que el dashboard, donde los bloques de costo y ganancia
-    // ya son solo para el admin. Los demás tabs los ve cualquiera que tenga
-    // el permiso `ver_consultas`.
+    // Cuatro tabs son del dueño: Ganancias (costo por kg y ganancia del
+    // negocio), Cobranzas (lo que cobró cada cobrador), Comisiones (la venta
+    // por vendedor y su liquidación) y Reporte (el estado de cuenta completo
+    // de un cliente). Mismo criterio que el dashboard, donde los bloques de
+    // costo y ganancia ya son solo para el admin.
+    //
+    // SALDOS QUEDA A LA VISTA DE TODOS a propósito: es lo que mira el cobrador
+    // para armarse el recorrido. Vencidos solo no alcanza, porque no muestra
+    // al cliente que debe pero todavía está en plazo. Si alguna vez hay que
+    // esconderle la deuda de la cartera a un rol, el camino es un permiso
+    // nuevo, no mandar Saldos a este gate.
     final tabs = <({String titulo, Widget vista})>[
       (titulo: 'Vencidos', vista: const _VencidosTab()),
       if (app.esAdmin) (titulo: 'Ganancias', vista: const _GananciasTab()),
@@ -50,9 +56,9 @@ class ConsultasScreen extends StatelessWidget {
       if (app.esAdmin) (titulo: 'Cobranzas', vista: const _CobranzasTab()),
       (titulo: 'Directorio', vista: const _DirectorioTab()),
       (titulo: 'Ruta', vista: const _RutaTab()),
-      (titulo: 'Comisiones', vista: const _ComisionesTab()),
+      if (app.esAdmin) (titulo: 'Comisiones', vista: const _ComisionesTab()),
       (titulo: 'Eliminados', vista: const _EliminadosTab()),
-      (titulo: 'Reporte', vista: const _ReporteTab()),
+      if (app.esAdmin) (titulo: 'Reporte', vista: const _ReporteTab()),
     ];
 
     return DefaultTabController(
