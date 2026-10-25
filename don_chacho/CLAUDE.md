@@ -240,9 +240,13 @@ don_chacho/lib/
 4. **Nota de pedido** (estado_cuenta_service.dart): detalle kg individuales por media
 5. **Reporte cliente** (estado_cuenta_service.dart `generarReporteCliente`, v18.13): replica la tabla del tab Reporte — movimientos unificados (remitos/pagos) con Fecha/ID/Monto ±/Estado/Saldo acumulado, leyenda de colores y saldo pendiente. Se dispara con el botón "Exportar PDF" del tab Reporte
 
-### Consultas (10 tabs para el admin, 8 para el resto — consultas_screen.dart)
+### Consultas (10 tabs para el admin, 6 para el resto — consultas_screen.dart)
 
-**Los tabs se arman por rol (v19.2)**, no son una lista fija: `Ganancias` y `Cobranzas` solo las ve el admin (`app.esAdmin`), el resto cualquiera con `ver_consultas`. Si se agrega un tab que muestre costo, ganancia o cobranzas, va adentro del mismo gate.
+**Los tabs se arman por rol (v19.2)**, no son una lista fija. Solo el admin (`app.esAdmin`) ve los cuatro del dueño: **Ganancias** (costo por kg y ganancia), **Cobranzas** (lo que cobró cada cobrador), **Comisiones** (venta por vendedor y liquidación) y **Reporte** (estado de cuenta completo de un cliente).
+
+Los demás roles con `ver_consultas` ven los operativos: **Vencidos**, **Saldos**, **Historial**, **Directorio**, **Ruta** y **Eliminados**.
+
+**`Saldos` está a la vista de todos a propósito**: es lo que mira el cobrador para armarse el recorrido, y Vencidos solo no alcanza porque no muestra al cliente que debe pero todavía está en plazo. Si alguna vez hay que esconderle la deuda de la cartera a un rol, el camino es un permiso nuevo, no mandar Saldos a este gate.
 Orden: Vencidos · Ganancias · Saldos · Historial · Directorio · Ruta · Comisiones · Eliminados · Reporte
 - **Vencidos** (1° tab): lista todos los remitos vencidos de todos los clientes (FIFO real). Tarjeta resumen con count + deuda total. Ordenados por días vencido desc. Tap abre remito si tiene `editar_remito`. Filtro por vendedor + link Google Maps en cada tarjeta.
 - **Ganancias**: rango fechas + atajos, ganancia por tipo carne con costos históricos, ranking vendedor/cliente. Descuenta la comisión de transferencias (6.2%) de la ganancia semanal.
