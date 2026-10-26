@@ -2,6 +2,8 @@
 // MAIN - Punto de entrada con Login y Permisos
 // ============================================================
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +12,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'models/models.dart';
 import 'providers/app_provider.dart';
 import 'services/auth_service.dart';
+import 'services/version_service.dart';
 import 'utils/theme.dart';
 import 'screens/home_screen.dart';
 import 'screens/vendedores_screen.dart';
@@ -159,8 +162,109 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
+class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   int _currentIndex = 0;
+
+  // ── Aviso de versión nueva (v19.4) ──
+  // La app vive como PWA en el iPhone y se queda abierta días. Sin esto, el
+  // usuario sigue con el bundle viejo hasta que se le ocurre recargar.
+  bool _hayVersionNueva = false;
+
+  /// El usuario tocó "Ahora no". Se respeta hasta que vuelva a la app: no
+  /// tiene sentido insistirle mientras está cargando un remito, pero tampoco
+  /// dejarlo con la versión vieja para siempre.
+  bool _avisoOculto = false;
+
+  Timer? _timerVersion;
+
+  /// Cada cuánto se vuelve a preguntar mientras la app está abierta. Es un
+  /// GET a un JSON de dos campos, no pesa.
+  static const _cadaCuanto = Duration(minutes: 30);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _chequearVersion();
+    _timerVersion = Timer.periodic(_cadaCuanto, (_) => _chequearVersion());
+  }
+
+  @override
+  void dispose() {
+    _timerVersion?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Volver a la app es el momento más probable de que haya salido un deploy
+    // desde la última vez. También es cuando molesta menos avisar.
+    if (state == AppLifecycleState.resumed) {
+      _avisoOculto = false;
+      _chequearVersion();
+    }
+  }
+
+  Future<void> _chequearVersion() async {
+    final hay = await VersionService.hayQueActualizar();
+    if (!mounted || hay == _hayVersionNueva) return;
+    setState(() => _hayVersionNueva = hay);
+  }
+
+  /// Barra de "hay versión nueva". Va arriba de todo y empuja el contenido
+  /// hacia abajo en vez de taparlo, así no se come ningún botón.
+  ///
+  /// Es un aviso, no una imposición: recargar tira lo que el usuario tenga a
+  /// medio cargar, así que la decisión de cuándo hacerlo es suya.
+  Widget _barraVersionNueva() {
+    return Material(
+      color: AppTheme.primary,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+          child: Row(
+            children: [
+              const Icon(Icons.system_update_alt,
+                  color: Colors.white, size: 20),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Hay una versión nueva disponible',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => VersionService.actualizar(),
+                style: TextButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: AppTheme.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: const Text(
+                  'Actualizar',
+                  style: TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.bold),
+                ),
+              ),
+              IconButton(
+                onPressed: () => setState(() => _avisoOculto = true),
+                icon: const Icon(Icons.close, color: Colors.white, size: 18),
+                tooltip: 'Ahora no',
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -226,9 +330,16 @@ class _MainShellState extends State<MainShell> {
     return Scaffold(
       body: Stack(
         children: [
-          IndexedStack(
-            index: _currentIndex,
-            children: tabs.map((t) => t.screen).toList(),
+          Column(
+            children: [
+              if (_hayVersionNueva && !_avisoOculto) _barraVersionNueva(),
+              Expanded(
+                child: IndexedStack(
+                  index: _currentIndex,
+                  children: tabs.map((t) => t.screen).toList(),
+                ),
+              ),
+            ],
           ),
           // Botón flotante del asistente de reparto (robot), siempre visible.
           Positioned(

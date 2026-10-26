@@ -354,6 +354,25 @@ cd build/web
 vercel --prod
 ```
 
+### Aviso de versión nueva (v19.4)
+
+La app avisa sola cuando el bundle que tiene el usuario quedó viejo: barra roja arriba de todo con **"Hay una versión nueva disponible"** + botón **Actualizar** + una X para posponer.
+
+**Por qué hace falta.** Los headers ya estaban bien: `web/vercel.json` sirve `index.html`, `flutter_bootstrap.js` y `main.dart.js` con `no-cache`, así que una recarga SIEMPRE trae lo nuevo. El problema es que nadie recarga — la app vive como PWA en el iPhone y queda abierta días entre deploys. **No es un problema de service worker**: con `--pwa-strategy=none` el `flutter_service_worker.js` que sale pesa 0 bytes y `index.html` no registra ninguno.
+
+**Cómo funciona.**
+- `build_web.sh` escribe `build/web/app_version.json` **después** de compilar (antes se perdería, porque `flutter build web` limpia `build/web`). El valor sale del mismo `AppConfig.version` que viaja compilado adentro del bundle, leído con un grep de `app_config.dart`, así los dos números no pueden discrepar. Si no lo puede leer, **falla el build a propósito**.
+- `lib/services/version_service.dart` (web-only, usa `dart:html`) pide ese archivo con `Uri.base.resolve` + un `?t=<millis>` de cache-busting. Sin el `?t=` el navegador contesta el chequeo con su propia copia vieja y no se entera nunca: es el error clásico de este mecanismo.
+- `lib/utils/version_check.dart` tiene la decisión pura (`hayVersionNueva`), sin nada de web, para poder testearla. Cubierto por `test/version_check_test.dart`.
+- `_MainShellState` chequea al entrar, cada 30 minutos, y **cada vez que la app vuelve del fondo** (`AppLifecycleState.resumed`), que es el momento más probable de que haya salido un deploy.
+- **Actualizar** desregistra service workers y borra `caches` antes de recargar. Hoy no hay ninguno, pero los builds anteriores a v18.10 (mayo 2026) se hacían con `flutter build web` pelado, que sí registraba uno; un dispositivo de esa época puede tenerlo todavía, y ahí recargar solo no alcanza.
+
+**La comparación es por igualdad, no por "mayor que"**: alcanza con que los strings difieran. Eso cubre también el rollback, donde la versión publicada es menor y el usuario igual tiene que recargar.
+
+**Ante la duda no se avisa**: sin internet, 404 o JSON roto devuelven null y la barra no aparece. Recargar le tira al usuario lo que tenga a medio cargar, así que un aviso de más es peor que uno de menos.
+
+> **IMPORTANTE**: buildear siempre con `build_web.sh` (o `build_web.bat`). Con un `flutter build web` pelado no se genera `app_version.json` y el aviso deja de funcionar — sin romper nada, pero sin avisar nunca.
+
 ### Archivos PWA (web/index.html y web/manifest.json)
 - `index.html` tiene splash screen inline (logo + spinner CSS rojo #C62828 + fade-out 300ms). Se oculta con evento `flutter-first-frame`, fallback 8s.
 - `index.html` tiene meta tags iOS PWA: `apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style`, `apple-mobile-web-app-title`, viewport con `viewport-fit=cover`
