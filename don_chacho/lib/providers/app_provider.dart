@@ -5,6 +5,8 @@
 // Centraliza la carga de datos y notifica a la UI.
 // ============================================================
 
+import 'dart:collection';
+
 import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
@@ -51,7 +53,19 @@ class AppProvider extends ChangeNotifier {
 
   // ── Getters ──
   List<Vendedor> get vendedores => _vendedores;
-  List<Cliente> get clientes => _clientes;
+  /// Los clientes, SIEMPRE en orden alfabético (ver [_ordenarClientes]).
+  ///
+  /// Va envuelto en una vista de solo lectura a propósito. Desde que el orden
+  /// de `_clientes` es la fuente de verdad de todos los listados, un
+  /// `app.clientes.sort(...)` o un `removeWhere` desde una pantalla rompería
+  /// el orden de toda la app en silencio. Así revienta en el acto, con un
+  /// error que apunta al culpable.
+  ///
+  /// Es una VISTA, no una copia: cuesta O(1) aunque se lea en cada build, y
+  /// sigue reflejando los cambios del provider, igual que antes. Con
+  /// `List.unmodifiable` sería una copia nueva en cada llamada y un selector
+  /// ya abierto se quedaría con una foto vieja.
+  List<Cliente> get clientes => UnmodifiableListView(_clientes);
   List<Remito> get remitos => _remitos;
   List<Pago> get pagos => _pagos;
   List<NotaPedido> get notasPedido => _notasPedido;
