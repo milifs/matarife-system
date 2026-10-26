@@ -169,9 +169,7 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
             ),
             if (_mostrarSugerencias) Builder(builder: (_) {
               final q = normalizarBusqueda(_busquedaCtrl.text);
-              final sugerencias = (app.clientes.toList()
-                    ..sort((a, b) => a.nombreRazonSocial
-                        .compareTo(b.nombreRazonSocial)))
+              final sugerencias = app.clientes
                   .where((c) =>
                       normalizarBusqueda(c.nombreRazonSocial).contains(q))
                   .toList();

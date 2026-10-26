@@ -75,13 +75,11 @@ class _ClientesScreenState extends State<ClientesScreen> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: Builder(builder: (context) {
-                  var lista = (_filtroVendedorId != null
-                          ? app.clientes
-                              .where((c) => c.vendedorId == _filtroVendedorId)
-                              .toList()
-                          : app.clientes.toList())
-                    ..sort((a, b) =>
-                        a.nombreRazonSocial.compareTo(b.nombreRazonSocial));
+                  var lista = _filtroVendedorId != null
+                      ? app.clientes
+                          .where((c) => c.vendedorId == _filtroVendedorId)
+                          .toList()
+                      : app.clientes.toList();
                   if (_busqueda.isNotEmpty) {
                     final q = normalizarBusqueda(_busqueda);
                     lista = lista

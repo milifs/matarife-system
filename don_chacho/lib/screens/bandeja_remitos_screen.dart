@@ -377,9 +377,7 @@ class _BandejaRemitosScreenState extends State<BandejaRemitosScreen>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          var clientes = app.clientes.toList()
-            ..sort((a, b) =>
-                a.nombreRazonSocial.compareTo(b.nombreRazonSocial));
+          var clientes = app.clientes.toList();
           if (busqueda.isNotEmpty) {
             final q = normalizarBusqueda(busqueda);
             clientes = clientes

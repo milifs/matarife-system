@@ -93,6 +93,37 @@ void main() {
     });
   });
 
+  group('compararNombres — orden de los listados de clientes', () {
+    List<String> ordenados(List<String> nombres) =>
+        [...nombres]..sort(compararNombres);
+
+    test('ordena A→Z sin que las minúsculas caigan al final', () {
+      expect(
+        ordenados(['zaraza', 'Carniceria Sur', 'anibal', 'Blanco']),
+        ['anibal', 'Blanco', 'Carniceria Sur', 'zaraza'],
+      );
+    });
+
+    test('los acentos no mandan el nombre al fondo de la lista', () {
+      expect(
+        ordenados(['Beto', 'Ángel', 'Alberto']),
+        ['Alberto', 'Ángel', 'Beto'],
+      );
+    });
+
+    test('la ñ se ordena como una n, igual que en la búsqueda', () {
+      // Mismo criterio que normalizarBusqueda: "Ñandú" se lee "nandu", así
+      // que cae entre las N y no al final de la lista.
+      expect(ordenados(['Zulema', 'Ñandú', 'Nilda', 'Ocampo']),
+          ['Ñandú', 'Nilda', 'Ocampo', 'Zulema']);
+    });
+
+    test('dos nombres que solo difieren en acento quedan en orden estable', () {
+      expect(compararNombres('Angel', 'Angel'), 0);
+      expect(compararNombres('Angel', 'Ángel'), isNot(0));
+    });
+  });
+
   test('el bloque de rinde cierra: esperados - obtenidos = diferencia', () {
     // 9.316 kg netos al 58% = 5.403,28 -> 5.403 esperados
     final carga = Carga(

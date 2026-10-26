@@ -1260,9 +1260,7 @@ class _HistorialTabState extends State<_HistorialTab> {
                     var baseClientes = _filtroVendedorId != null
                         ? app.clientesDeVendedor(_filtroVendedorId!)
                         : app.clientes.toList();
-                    final sugerencias = (baseClientes.toList()
-                          ..sort((a, b) => a.nombreRazonSocial
-                              .compareTo(b.nombreRazonSocial)))
+                    final sugerencias = baseClientes
                         .where((c) => normalizarBusqueda(c.nombreRazonSocial)
                             .contains(q))
                         .toList();
@@ -2437,10 +2435,7 @@ class _DirectorioTabState extends State<_DirectorioTab> {
   Widget build(BuildContext context) {
     return Consumer<AppProvider>(
       builder: (context, app, _) {
-        final clientes = app.clientes.toList()
-          ..sort((a, b) => a.nombreRazonSocial
-              .toLowerCase()
-              .compareTo(b.nombreRazonSocial.toLowerCase()));
+        final clientes = app.clientes.toList();
 
         var clientesFiltrados = _filtroVendedorId != null
             ? clientes.where((c) => c.vendedorId == _filtroVendedorId).toList()
@@ -4113,10 +4108,7 @@ class _ReporteTabState extends State<_ReporteTab> {
     return Consumer<AppProvider>(
       builder: (context, app, _) {
         // Selector de cliente
-        final clientesOrdenados = [...app.clientes]
-          ..sort((a, b) => a.nombreRazonSocial
-              .toLowerCase()
-              .compareTo(b.nombreRazonSocial.toLowerCase()));
+        final clientesOrdenados = [...app.clientes];
         final clientesFiltrados = _busqueda.isEmpty
             ? clientesOrdenados
             : clientesOrdenados

@@ -147,9 +147,8 @@ class RepartoService {
                   lista.totalMediasCerdo,
                   bold: true, bg: celeste),
               // Filas de clientes (orden alfabético por nombre)
-              for (final it in ([...lista.items]..sort((a, b) => nombre(a.clienteId)
-                  .toLowerCase()
-                  .compareTo(nombre(b.clienteId).toLowerCase()))))
+              for (final it in ([...lista.items]..sort((a, b) =>
+                  compararNombres(nombre(a.clienteId), nombre(b.clienteId)))))
                 fila(nombre(it.clienteId), it.sucursal, it.mediasCarne,
                     it.mediasCerdo),
               // SOBRANTE DEPOSITO

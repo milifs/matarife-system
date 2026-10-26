@@ -181,18 +181,13 @@ class _RepartoScreenState extends State<RepartoScreen> {
     final app = context.read<AppProvider>();
     // Se permite agregar el mismo cliente más de una vez (una fila por
     // sucursal), así que no se excluyen los ya agregados.
-    final disponibles = app.clientes.toList()
-      ..sort((a, b) =>
-          a.nombreRazonSocial.toLowerCase().compareTo(
-              b.nombreRazonSocial.toLowerCase()));
-
     final elegido = await showModalBottomSheet<Cliente>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => _SelectorCliente(clientes: disponibles),
+      builder: (ctx) => _SelectorCliente(clientes: app.clientes),
     );
 
     if (elegido == null) return;
@@ -356,7 +351,7 @@ class _RepartoScreenState extends State<RepartoScreen> {
     final filasOrdenadas = [..._filas]..sort((a, b) {
       final na = app.clientePorId(a.clienteId)?.nombreRazonSocial ?? '';
       final nb = app.clientePorId(b.clienteId)?.nombreRazonSocial ?? '';
-      return na.toLowerCase().compareTo(nb.toLowerCase());
+      return compararNombres(na, nb);
     });
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),

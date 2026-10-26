@@ -209,6 +209,16 @@ String normalizarBusqueda(String texto) {
   return resultado;
 }
 
+/// Compara dos nombres para ordenar A→Z como los lee una persona:
+/// sin distinguir mayúsculas ni acentos ("ángel" va con "Angel", no al final).
+///
+/// Es el criterio único de orden de los listados de clientes. Si empatan
+/// normalizados, desempata con el texto crudo para que el orden sea estable.
+int compararNombres(String a, String b) {
+  final cmp = normalizarBusqueda(a).compareTo(normalizarBusqueda(b));
+  return cmp != 0 ? cmp : a.compareTo(b);
+}
+
 /// Calcula días de vencimiento de un cliente
 /// Retorna positivo si está vencido, negativo si aún tiene plazo
 int diasVencimiento(DateTime fechaRemito, int plazoDias) {

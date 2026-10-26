@@ -237,17 +237,13 @@ class _AsistenteRepartoSheetState extends State<_AsistenteRepartoSheet> {
 
   Future<void> _elegirCliente(_Resolucion r) async {
     final app = context.read<AppProvider>();
-    final ordenados = app.clientes.toList()
-      ..sort((a, b) => a.nombreRazonSocial
-          .toLowerCase()
-          .compareTo(b.nombreRazonSocial.toLowerCase()));
     final elegido = await showModalBottomSheet<Cliente>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _SelectorCliente(clientes: ordenados),
+      builder: (_) => _SelectorCliente(clientes: app.clientes),
     );
     if (elegido != null && mounted) {
       setState(() => r.clienteId = elegido.id);
@@ -719,8 +715,7 @@ class _VistaLista extends StatelessWidget {
     final diaLabel = dia.isEmpty ? '' : '${dia[0].toUpperCase()}${dia.substring(1)}';
     final items = [...lista.items]
       ..sort((a, b) =>
-          nombre(a.clienteId).toLowerCase().compareTo(
-              nombre(b.clienteId).toLowerCase()));
+          compararNombres(nombre(a.clienteId), nombre(b.clienteId)));
 
     return Padding(
       padding: EdgeInsets.only(
