@@ -484,15 +484,30 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v19.6) — SIN DEPLOYAR
+## ESTADO ACTUAL (v19.6) — EN PRODUCCIÓN
 
-Agrega los **kg por media** a los movimientos de depósito. `AppConfig.version` ya dice `v19.6`.
+Deployada el 26/10/2026 desde `master`. La rama `feat/deposito-kg` se mergeó por **PR #10** (merge commit `c24ba25`). Deploy `web-4e6wf9hnd`, alias `web-six-indol-svg13avcfl.vercel.app` apuntando ahí.
 
-**ORDEN OBLIGATORIO**: correr `supabase_migration_deposito_kg.sql` **antes** de deployar. Desde v19.6 el `toMap()` manda siempre `kgs_por_media`, así que con la columna sin crear **toda alta de movimiento falla**. La migración es un `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, idempotente y sin riesgo.
+Verificado contra producción: **mismo sha256** que el build (`739a166f…`), `app_version.json` y el bundle dicen los dos `v19.6`, el código de los kg está arriba y `app_version.json` se sirve `no-cache, no-store, must-revalidate`.
 
-Después: build (`flutter clean` + `flutter pub get` + `./build_web.sh`) y deploy (`vercel --prod --yes` desde `build/web`, después `vercel alias set <deploy> web-six-indol-svg13avcfl.vercel.app`).
+Trae los **kg por media** en los movimientos de depósito. La migración `supabase_migration_deposito_kg.sql` **ya se corrió** (26/10/2026): la columna responde en las dos tablas.
 
-### v19.5 — deployada el 26/10/2026
+**Sigue faltando el paso manual de v19.5**: fijar el **arranque** del depósito (fecha + las medias contadas a mano en la cámara). Hasta que no esté, la pantalla muestra "Falta el arranque" y no calcula nada.
+
+### Buildear sin pisar trabajo sin commitear (v19.6)
+En este deploy el working tree tenía 13 archivos modificados sin commitear, de otro trabajo en curso (el helper `compararNombres` para ordenar clientes A→Z). Para no tocarlos, el build salió de un **worktree aparte** en el commit de merge:
+
+```bash
+git worktree add --detach /tmp/deploy c24ba25
+cd /tmp/deploy/don_chacho && flutter pub get && ./build_web.sh
+# El build nuevo NO tiene el vínculo a Vercel: hay que copiarlo
+cp -R <repo>/don_chacho/build/web/.vercel /tmp/deploy/don_chacho/build/web/.vercel
+cd /tmp/deploy/don_chacho/build/web && vercel --prod --yes
+```
+
+**El `cp` del `.vercel` no es opcional**: sin él, `vercel --prod --yes` en un directorio sin vincular crea un **proyecto nuevo** en vez de deployar al de siempre.
+
+### v19.5 — deployada el 26/10/2026 (reemplazada por v19.6 el mismo día)
 
 Deployada el 26/10/2026 desde `master`. La rama `feat/deposito` se mergeó por **PR #9** (merge commit `7cddec7`). Deploy `web-h9kscw2ik`, alias `web-six-indol-svg13avcfl.vercel.app` apuntando ahí.
 
