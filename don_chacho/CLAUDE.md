@@ -417,6 +417,9 @@ La app avisa sola cuando el bundle que tiene el usuario quedó viejo: barra roja
 
 > **IMPORTANTE**: buildear siempre con `build_web.sh` (o `build_web.bat`). Con un `flutter build web` pelado no se genera `app_version.json` y el aviso deja de funcionar — sin romper nada, pero sin avisar nunca.
 
+### `web/_headers` es basura heredada (hallazgo del deploy de v19.5)
+`web/_headers` usa el formato de **Netlify / Cloudflare Pages**, que Vercel **no lee**. Hoy no hace nada, pero **contradice a `web/vercel.json`**: marca `main.dart.js` como `public, max-age=31536000, immutable` (un año), justo lo contrario del `no-cache` que sirve de verdad `vercel.json`. Si algún día se cambia de hosting, o alguien lo lee buscando la config de cache, manda a la pared. La verdad está en `web/vercel.json`. Conviene borrarlo.
+
 ### Archivos PWA (web/index.html y web/manifest.json)
 - `index.html` tiene splash screen inline (logo + spinner CSS rojo #C62828 + fade-out 300ms). Se oculta con evento `flutter-first-frame`, fallback 8s.
 - `index.html` tiene meta tags iOS PWA: `apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style`, `apple-mobile-web-app-title`, viewport con `viewport-fit=cover`
@@ -473,16 +476,17 @@ La app avisa sola cuando el bundle que tiene el usuario quedó viejo: barra roja
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v19.5) — SIN DEPLOYAR
+## ESTADO ACTUAL (v19.5) — EN PRODUCCIÓN
 
-Módulo **Depósito** terminado en local, **todavía sin buildear ni deployar** y con la **migración sin correr**. `AppConfig.version` ya dice `v19.5`.
+Deployada el 26/10/2026 desde `master`. La rama `feat/deposito` se mergeó por **PR #9** (merge commit `7cddec7`). Deploy `web-h9kscw2ik`, alias `web-six-indol-svg13avcfl.vercel.app` apuntando ahí.
 
-Pasos que faltan, en este orden:
-1. Correr `supabase_migration_deposito.sql` en Supabase → SQL Editor (crea las tablas y el permiso `gestionar_deposito`).
-2. Entrar a Depósito con el admin y fijar el **arranque**: fecha de hoy + las medias contadas en la cámara. Sin eso la pantalla no calcula nada (lo dice en pantalla).
-3. Build (`flutter clean` + `flutter pub get` + `./build_web.sh`) y deploy (`vercel --prod --yes` desde `build/web`, después `vercel alias set <deploy> web-six-indol-svg13avcfl.vercel.app`).
+Verificado contra producción: **mismo sha256** que el build local (`71fc7e8e…`), `app_version.json` y el bundle dicen los dos `v19.5` (coinciden, así que no hay aviso falso), `app_version.json` se sirve `no-cache, no-store, must-revalidate` y `main.dart.js` `no-cache`. La app carga sin errores de consola.
 
-### v19.4 — deployada el 26/10/2026
+Trae el **módulo Depósito** (ver más arriba). La migración `supabase_migration_deposito.sql` **ya se corrió** (26/10/2026): las tres tablas responden y el permiso `gestionar_deposito` quedó en los roles **Administrador** y **Secretaria**, no en Cobrador.
+
+**FALTA UN PASO MANUAL**: entrar a Depósito con el admin y fijar el **arranque** (fecha + las medias contadas a mano en la cámara). Hasta que eso no esté, la pantalla no calcula nada y muestra el cartel "Falta el arranque". No lo puede poner el desarrollador: es la cuenta física de la cámara.
+
+### v19.4 — deployada el 26/10/2026 (reemplazada por v19.5 el mismo día)
 
 Deployada el 26/10/2026 desde `master`. La rama `feat/aviso-version` se mergeó por **PR #8** (merge commit `f1f685c`), más el commit `6ee9365` del bump. Deploy `web-jzix7znrz`, alias `web-six-indol-svg13avcfl.vercel.app` apuntando ahí. Verificado: mismo sha256 que el build local, el bundle dice `v19.4`, `app_version.json` dice `v19.4` (coinciden, así que no hay aviso falso) y se sirve `no-cache, no-store, must-revalidate`. **Sin migración.**
 
