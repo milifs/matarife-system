@@ -26,6 +26,23 @@ String formatKg(double kg) {
   return '${formatter.format(kg)} kg';
 }
 
+/// Formatea una cantidad de medias reses: 10 / 10,5 / 3,33
+///
+/// Los cortes valen un tercio de media, así que el stock del depósito casi
+/// siempre tiene decimales. Se muestran dos como máximo: la precisión fina
+/// queda en el cálculo (que usa la fracción exacta) y acá importa que el
+/// número se lea de un vistazo.
+String formatMedias(double medias) {
+  final formatter = NumberFormat('#,##0.##', 'es_AR');
+  return formatter.format(medias);
+}
+
+/// Como [formatMedias] pero con la palabra: "1 media" / "8 medias"
+String formatMediasConUnidad(double medias) {
+  final texto = formatMedias(medias);
+  return '$texto ${(medias - 1).abs() < 0.001 ? 'media' : 'medias'}';
+}
+
 /// Formatea un porcentaje: 58% / 55,49%
 String formatPorcentaje(double valor) {
   final formatter = NumberFormat('#,##0.##', 'es_AR');

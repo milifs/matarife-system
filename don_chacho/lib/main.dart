@@ -24,6 +24,7 @@ import 'screens/nota_pedido_form_screen.dart';
 import 'screens/pago_form_screen.dart';
 import 'screens/nota_cd_form_screen.dart';
 import 'screens/reparto_screen.dart';
+import 'screens/deposito_screen.dart';
 import 'screens/asistente_reparto_sheet.dart';
 import 'screens/login_screen.dart';
 import 'screens/gestion_usuarios_screen.dart';
@@ -523,6 +524,30 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
                   );
                 },
               ),
+              // Depósito: stock de medias reses. Mismo permiso que la cajera
+              // usa para proveedores, porque es la misma persona: carga la
+              // compra y es la que saca la carne de la cámara.
+              if (tiene('gestionar_deposito')) ...[
+                const Divider(height: 1),
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: AppTheme.primary.withOpacity(0.1),
+                    child: const Icon(Icons.inventory_2,
+                        color: AppTheme.primary),
+                  ),
+                  title: const Text('Depósito'),
+                  subtitle: const Text(
+                      'Stock de medias: entradas, salidas y recuento'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const DepositoScreen()),
+                    );
+                  },
+                ),
+              ],
               if (tiene('confirmar_remito')) ...[
                 const Divider(height: 1),
                 ListTile(

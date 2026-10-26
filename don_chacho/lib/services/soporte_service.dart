@@ -41,6 +41,8 @@ class SoporteService {
     'Vendedores',
     'Lista de reparto',
     'Asistente de reparto',
+    'Proveedores',
+    'Depósito',
     'Consultas / Reportes',
     'Costos de la semana',
     'Usuarios y roles',

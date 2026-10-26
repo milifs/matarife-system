@@ -967,4 +967,105 @@ class DatabaseService {
         .range(from, to));
     return data.map((e) => CargaPagoEliminado.fromMap(e)).toList();
   }
+
+  // ═══════════════════════════════════════════
+  // DEPÓSITO (v19.5)
+  // ═══════════════════════════════════════════
+
+  /// La única fila de configuración. Null mientras el admin no fije la fecha
+  /// de arranque y las medias iniciales. También devuelve null si la migración
+  /// todavía no corrió, para que la pantalla pueda pedir que se corra en vez
+  /// de tirar una excepción.
+  Future<DepositoConfig?> getDepositoConfig() async {
+    try {
+      final data =
+          await _client.from('deposito_config').select().maybeSingle();
+      if (data == null) return null;
+      return DepositoConfig.fromMap(data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Guarda la configuración. El upsert va por `unica`, la columna UNIQUE que
+  /// garantiza que no pueda haber dos arranques distintos conviviendo.
+  Future<DepositoConfig> guardarDepositoConfig(DepositoConfig config) async {
+    final data = await _client
+        .from('deposito_config')
+        .upsert(config.toMap(), onConflict: 'unica')
+        .select()
+        .single();
+    return DepositoConfig.fromMap(data);
+  }
+
+  /// Todos los movimientos, del más nuevo al más viejo.
+  ///
+  /// Se ordena por `creado_en` y no por `fecha` porque el FIFO que cierra las
+  /// salidas pendientes mira en qué orden se cargaron las cosas en el sistema,
+  /// no la fecha que se tipeó. Devuelve lista vacía si la tabla no existe.
+  Future<List<DepositoMovimiento>> getDepositoMovimientos() async {
+    try {
+      final data = await _paginado((from, to) => _client
+          .from('deposito_movimientos')
+          .select()
+          .order('creado_en', ascending: false)
+          .order('id')
+          .range(from, to));
+      return data.map((e) => DepositoMovimiento.fromMap(e)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// `.select().single()` para recuperar el número que asignó la secuencia.
+  Future<DepositoMovimiento> insertDepositoMovimiento(
+      DepositoMovimiento mov) async {
+    final data = await _client
+        .from('deposito_movimientos')
+        .insert(mov.toMap())
+        .select()
+        .single();
+    return DepositoMovimiento.fromMap(data);
+  }
+
+  Future<DepositoMovimiento> updateDepositoMovimiento(
+      DepositoMovimiento mov) async {
+    final map = mov.toMap()
+      ..remove('id')
+      ..remove('numero')
+      ..remove('creado_en');
+    final data = await _client
+        .from('deposito_movimientos')
+        .update(map)
+        .eq('id', mov.id)
+        .select()
+        .single();
+    return DepositoMovimiento.fromMap(data);
+  }
+
+  Future<void> deleteDepositoMovimiento(String movimientoId) async {
+    await _client
+        .from('deposito_movimientos')
+        .delete()
+        .eq('id', movimientoId);
+  }
+
+  Future<void> insertDepositoMovimientoEliminado(
+      DepositoMovimientoEliminado me) async {
+    await _client
+        .from('deposito_movimientos_eliminados')
+        .insert(me.toMap());
+  }
+
+  Future<List<DepositoMovimientoEliminado>>
+      getDepositoMovimientosEliminados() async {
+    final data = await _paginado((from, to) => _client
+        .from('deposito_movimientos_eliminados')
+        .select()
+        .order('eliminado_en', ascending: false)
+        .range(from, to));
+    return data
+        .map((e) => DepositoMovimientoEliminado.fromMap(e))
+        .toList();
+  }
 }
