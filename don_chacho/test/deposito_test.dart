@@ -342,6 +342,149 @@ void main() {
     });
   });
 
+  group('kg por media (v19.6)', () {
+    // Los kilos son INFORMATIVOS: la ecuación cierra por medias. Y son
+    // OPCIONALES, porque un campo obligatorio que frena a la cajera sin
+    // balanza a mano reabre el agujero que el módulo vino a tapar.
+
+    test('el total es la suma de los kg cargados', () {
+      final mov = DepositoMovimiento(
+        clase: DepositoMovimiento.claseSalida,
+        medias: 2,
+        kgsPorMedia: [118.5, 121],
+      );
+      expect(mov.totalKg, closeTo(239.5, 1e-9));
+      expect(mov.tieneKg, isTrue);
+      expect(mov.mediasSinPesar, 0);
+    });
+
+    test('un movimiento sin pesar no rompe nada', () {
+      final mov = DepositoMovimiento(
+        clase: DepositoMovimiento.claseSalida,
+        medias: 2,
+      );
+      expect(mov.kgsPorMedia, isEmpty);
+      expect(mov.totalKg, 0);
+      expect(mov.tieneKg, isFalse);
+      expect(mov.mediasSinPesar, 2);
+    });
+
+    test('avisa cuántas medias quedaron sin pesar', () {
+      final mov = DepositoMovimiento(
+        clase: DepositoMovimiento.claseRecuento,
+        medias: 5,
+        kgsPorMedia: [120, 118],
+      );
+      expect(mov.mediasSinPesar, 3);
+    });
+
+    test('con un corte, la media fraccionada cuenta como una a pesar', () {
+      final mov = DepositoMovimiento(
+        clase: DepositoMovimiento.claseSalida,
+        medias: 1 / 3,
+      );
+      expect(mov.mediasSinPesar, 1);
+    });
+
+    test('pesar de más no da negativo', () {
+      final mov = DepositoMovimiento(
+        clase: DepositoMovimiento.claseEntrada,
+        medias: 1,
+        kgsPorMedia: [120, 118],
+      );
+      expect(mov.mediasSinPesar, 0);
+    });
+
+    test('los kg viajan al toMap como lista', () {
+      final mov = DepositoMovimiento(
+        clase: DepositoMovimiento.claseEntrada,
+        medias: 2,
+        kgsPorMedia: [100, 110],
+      );
+      expect(mov.toMap()['kgs_por_media'], [100, 110]);
+    });
+
+    test('fromMap tolera que la columna no exista todavía', () {
+      // La columna se agregó en v19.6, con el módulo ya en producción.
+      final mov = DepositoMovimiento.fromMap({
+        'id': 'm1',
+        'clase': 'salida',
+        'medias': 2,
+      });
+      expect(mov.kgsPorMedia, isEmpty);
+      expect(mov.totalKg, 0);
+    });
+
+    test('fromMap descarta basura en vez de romper la pantalla', () {
+      final mov = DepositoMovimiento.fromMap({
+        'id': 'm1',
+        'clase': 'salida',
+        'medias': 3,
+        'kgs_por_media': [120, 'ochenta', null, 95],
+      });
+      expect(mov.kgsPorMedia, [120, 95]);
+      expect(mov.totalKg, 215);
+    });
+
+    test('la baja se lleva los kg para poder reconstruir el movimiento', () {
+      final mov = DepositoMovimiento(
+        numero: 3,
+        clase: DepositoMovimiento.claseSalida,
+        medias: 2,
+        kgsPorMedia: [118, 121],
+      );
+      final baja = DepositoMovimientoEliminado.desde(
+        mov,
+        observacion: 'cargada dos veces',
+      );
+      expect(baja.kgsPorMedia, [118, 121]);
+      expect(baja.toMap()['kgs_por_media'], [118, 121]);
+    });
+
+    test('los kg NO entran en la ecuación: el veredicto es por medias', () {
+      // Mismo stock, un recuento con kg y otro sin: el veredicto no cambia.
+      const conKg = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        inicial: 10,
+        recuento: 8,
+        teoricoAlRecuento: 8,
+        kgRecuento: 952,
+      );
+      const sinKg = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        inicial: 10,
+        recuento: 8,
+        teoricoAlRecuento: 8,
+      );
+      expect(conKg.cierra, isTrue);
+      expect(sinKg.cierra, isTrue);
+      expect(conKg.teorico, sinKg.teorico);
+    });
+
+    test('el stock suma los kg de las salidas sin remito', () {
+      final salidas = [
+        DepositoMovimiento(
+          clase: DepositoMovimiento.claseSalida,
+          medias: 1,
+          kgsPorMedia: [118],
+        ),
+        DepositoMovimiento(
+          clase: DepositoMovimiento.claseSalida,
+          medias: 1,
+          kgsPorMedia: [122],
+        ),
+      ];
+      final stock = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        inicial: 10,
+        salidasPendientes: 2,
+        pendientes: salidas,
+      );
+      expect(stock.kgPendientes, 240);
+      expect(stock.teorico, 8);
+    });
+  });
+
   group('DepositoConfig', () {
     test('devuelve el inicial de cada stock por separado', () {
       final config = DepositoConfig(mediasNovillo: 12, mediasCerdo: 3);

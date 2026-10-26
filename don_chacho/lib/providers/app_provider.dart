@@ -1432,6 +1432,7 @@ class AppProvider extends ChangeNotifier {
       salidasDefinitivas: hoy.salidasDefinitivas,
       recuento: recuento?.medias,
       fechaRecuento: recuento?.fecha,
+      kgRecuento: recuento?.totalKg ?? 0,
       teoricoAlRecuento: teoricoAlRecuento,
       pendientes: hoy.pendientes,
     );

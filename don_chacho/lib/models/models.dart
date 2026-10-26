@@ -1731,6 +1731,18 @@ const int mediasPorAnimal = 2;
 /// este margen, una diferencia de 0,0000000001 media encendería la alerta.
 const double toleranciaMedias = 0.02;
 
+/// Lee la columna JSONB `kgs_por_media`. Tolera que no venga (se agregó en
+/// v19.6, con el módulo ya en producción) y que traiga basura: en los dos
+/// casos devuelve lista vacía en vez de romper la pantalla.
+List<double> _leerKgs(dynamic valor) {
+  if (valor is! List) return [];
+  final kgs = <double>[];
+  for (final e in valor) {
+    if (e is num) kgs.add(e.toDouble());
+  }
+  return kgs;
+}
+
 /// Configuración del arranque del depósito: una sola fila.
 ///
 /// El sistema tiene remitos de hace meses pero cargas de proveedores recién
@@ -1806,6 +1818,20 @@ class DepositoMovimiento {
   String tipo; // Proveedor.tipoNovillo / tipoCerdo
   String clase;
   double medias;
+
+  /// Un kilo por cada media, igual que `NotaPedidoItem.kgsPorMedia`: un array
+  /// y no un total, porque dos medias pueden diferenciarse en 40 kg y lo que
+  /// importa es saber cuál salió y cuál entró.
+  ///
+  /// **Son opcionales y pueden venir incompletos.** Si el campo frenara el
+  /// registro cuando la cajera no tiene la balanza a mano, no registraría la
+  /// salida — que es justo el agujero que este módulo vino a tapar. Por eso
+  /// nada valida que la lista tenga tantos valores como [medias].
+  ///
+  /// **Son informativos**: la ecuación del depósito cierra por MEDIAS. Los
+  /// kilos se muestran, pero no disparan la alerta de faltantes.
+  List<double> kgsPorMedia;
+
   bool esperaRemito;
   DateTime fecha;
   String observacion;
@@ -1818,14 +1844,29 @@ class DepositoMovimiento {
     this.tipo = Proveedor.tipoNovillo,
     required this.clase,
     this.medias = 0,
+    List<double>? kgsPorMedia,
     this.esperaRemito = true,
     DateTime? fecha,
     this.observacion = '',
     this.registradoPor,
     DateTime? creadoEn,
   })  : id = id ?? _uuid.v4(),
+        kgsPorMedia = kgsPorMedia ?? [],
         fecha = fecha ?? DateTime.now(),
         creadoEn = creadoEn ?? DateTime.now();
+
+  /// La suma de los kilos cargados. No se guarda en la base: se deriva, como
+  /// todo lo demás de este módulo.
+  double get totalKg => kgsPorMedia.fold<double>(0, (t, kg) => t + kg);
+
+  bool get tieneKg => kgsPorMedia.isNotEmpty;
+
+  /// Cuántas medias quedaron sin pesar. Sirve para avisar que el dato está a
+  /// medias, sin bloquear nada.
+  int get mediasSinPesar {
+    final faltan = medias.ceil() - kgsPorMedia.length;
+    return faltan > 0 ? faltan : 0;
+  }
 
   bool get esEntrada => clase == claseEntrada;
   bool get esSalida => clase == claseSalida;
@@ -1857,6 +1898,7 @@ class DepositoMovimiento {
         'tipo': tipo,
         'clase': clase,
         'medias': medias,
+        'kgs_por_media': kgsPorMedia,
         'espera_remito': esperaRemito,
         'fecha': fecha.toIso8601String(),
         'observacion': observacion,
@@ -1873,6 +1915,7 @@ class DepositoMovimiento {
             : Proveedor.tipoNovillo,
         clase: map['clase'] ?? claseEntrada,
         medias: (map['medias'] ?? 0).toDouble(),
+        kgsPorMedia: _leerKgs(map['kgs_por_media']),
         esperaRemito: map['espera_remito'] ?? true,
         fecha: DateTime.tryParse(map['fecha'] ?? ''),
         observacion: map['observacion'] ?? '',
@@ -1891,6 +1934,7 @@ class DepositoMovimientoEliminado {
   final String tipo;
   final String clase;
   final double medias;
+  final List<double> kgsPorMedia;
   final bool esperaRemito;
   final DateTime fecha;
   final String observacionOriginal;
@@ -1905,6 +1949,7 @@ class DepositoMovimientoEliminado {
     this.tipo = Proveedor.tipoNovillo,
     this.clase = DepositoMovimiento.claseEntrada,
     this.medias = 0,
+    List<double>? kgsPorMedia,
     this.esperaRemito = true,
     DateTime? fecha,
     this.observacionOriginal = '',
@@ -1912,6 +1957,7 @@ class DepositoMovimientoEliminado {
     DateTime? eliminadoEn,
     this.eliminadoPor,
   })  : id = id ?? _uuid.v4(),
+        kgsPorMedia = kgsPorMedia ?? const [],
         fecha = fecha ?? DateTime.now(),
         eliminadoEn = eliminadoEn ?? DateTime.now();
 
@@ -1927,6 +1973,7 @@ class DepositoMovimientoEliminado {
         tipo: mov.tipo,
         clase: mov.clase,
         medias: mov.medias,
+        kgsPorMedia: mov.kgsPorMedia,
         esperaRemito: mov.esperaRemito,
         fecha: mov.fecha,
         observacionOriginal: mov.observacion,
@@ -1941,6 +1988,7 @@ class DepositoMovimientoEliminado {
         'tipo': tipo,
         'clase': clase,
         'medias': medias,
+        'kgs_por_media': kgsPorMedia,
         'espera_remito': esperaRemito,
         'fecha': fecha.toIso8601String(),
         'observacion_original': observacionOriginal,
@@ -1957,6 +2005,7 @@ class DepositoMovimientoEliminado {
         tipo: map['tipo'] ?? Proveedor.tipoNovillo,
         clase: map['clase'] ?? DepositoMovimiento.claseEntrada,
         medias: (map['medias'] ?? 0).toDouble(),
+        kgsPorMedia: _leerKgs(map['kgs_por_media']),
         esperaRemito: map['espera_remito'] ?? true,
         fecha: DateTime.tryParse(map['fecha'] ?? ''),
         observacionOriginal: map['observacion_original'] ?? '',
@@ -2001,6 +2050,11 @@ class StockDeposito {
   final double? recuento;
   final DateTime? fechaRecuento;
 
+  /// Los kilos de ese recuento, si se pesaron. Es el único kg "de stock" que
+  /// se puede mostrar honestamente: los kilos NO se reconcilian como las
+  /// medias, así que no hay un kg teórico que valga la pena mostrar.
+  final double kgRecuento;
+
   /// El stock teórico que correspondía EN EL MOMENTO del recuento.
   ///
   /// La comparación se hace contra este valor y no contra [teorico], porque si
@@ -2022,6 +2076,7 @@ class StockDeposito {
     this.salidasDefinitivas = 0,
     this.recuento,
     this.fechaRecuento,
+    this.kgRecuento = 0,
     this.teoricoAlRecuento,
     this.pendientes = const [],
   });
@@ -2064,4 +2119,8 @@ class StockDeposito {
   double get sobrantes => sobran ? -diferencia! : 0;
 
   bool get hayPendientes => pendientes.isNotEmpty;
+
+  /// Los kilos que salieron del depósito y todavía no tienen remito.
+  double get kgPendientes =>
+      pendientes.fold<double>(0, (t, m) => t + m.totalKg);
 }
