@@ -5,9 +5,12 @@
 // Centraliza la carga de datos y notifica a la UI.
 // ============================================================
 
+import 'dart:collection';
+
 import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
+import '../utils/formatters.dart';
 
 class AppProvider extends ChangeNotifier {
   final DatabaseService _db = DatabaseService();
@@ -50,7 +53,19 @@ class AppProvider extends ChangeNotifier {
 
   // ── Getters ──
   List<Vendedor> get vendedores => _vendedores;
-  List<Cliente> get clientes => _clientes;
+  /// Los clientes, SIEMPRE en orden alfabético (ver [_ordenarClientes]).
+  ///
+  /// Va envuelto en una vista de solo lectura a propósito. Desde que el orden
+  /// de `_clientes` es la fuente de verdad de todos los listados, un
+  /// `app.clientes.sort(...)` o un `removeWhere` desde una pantalla rompería
+  /// el orden de toda la app en silencio. Así revienta en el acto, con un
+  /// error que apunta al culpable.
+  ///
+  /// Es una VISTA, no una copia: cuesta O(1) aunque se lea en cada build, y
+  /// sigue reflejando los cambios del provider, igual que antes. Con
+  /// `List.unmodifiable` sería una copia nueva en cada llamada y un selector
+  /// ya abierto se quedaría con una foto vieja.
+  List<Cliente> get clientes => UnmodifiableListView(_clientes);
   List<Remito> get remitos => _remitos;
   List<Pago> get pagos => _pagos;
   List<NotaPedido> get notasPedido => _notasPedido;
@@ -74,9 +89,19 @@ class AppProvider extends ChangeNotifier {
   double get saldoTotal =>
       _saldosClientes.values.fold(0, (sum, s) => sum + s);
 
-  /// Clientes de un vendedor
+  /// Clientes de un vendedor (hereda el orden alfabético de [_clientes])
   List<Cliente> clientesDeVendedor(String vendedorId) =>
       _clientes.where((c) => c.vendedorId == vendedorId).toList();
+
+  /// Deja [_clientes] en orden alfabético.
+  ///
+  /// Es el único lugar donde se ordena: todas las pantallas leen de acá
+  /// (`clientes`, `clientesDeVendedor`) y filtrar no altera el orden, así
+  /// que cada listado sale A→Z sin tener que volver a ordenarlo.
+  void _ordenarClientes() {
+    _clientes.sort(
+        (a, b) => compararNombres(a.nombreRazonSocial, b.nombreRazonSocial));
+  }
 
   /// Vendedor por ID
   Vendedor? vendedorPorId(String id) {
@@ -122,6 +147,7 @@ class AppProvider extends ChangeNotifier {
       ]);
       _vendedores = results[0] as List<Vendedor>;
       _clientes = results[1] as List<Cliente>;
+      _ordenarClientes();
       _remitos = results[2] as List<Remito>;
       _pagos = results[3] as List<Pago>;
       _pagosEliminados = results[4] as List<PagoEliminado>;
@@ -243,6 +269,7 @@ class AppProvider extends ChangeNotifier {
     try {
       final nuevo = await _db.insertCliente(cliente);
       _clientes.add(nuevo);
+      _ordenarClientes();
       _saldosClientes[nuevo.id] = 0;
       notifyListeners();
     } catch (e) {
@@ -256,6 +283,7 @@ class AppProvider extends ChangeNotifier {
       await _db.updateCliente(cliente);
       final idx = _clientes.indexWhere((c) => c.id == cliente.id);
       if (idx != -1) _clientes[idx] = cliente;
+      _ordenarClientes();
       notifyListeners();
     } catch (e) {
       _error = 'Error al editar cliente: $e';

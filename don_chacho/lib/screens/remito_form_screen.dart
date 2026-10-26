@@ -96,10 +96,8 @@ class _RemitoFormScreenState extends State<RemitoFormScreen> {
           ),
           const SizedBox(height: 8),
           Builder(builder: (context) {
-            // Ordenar A→Z
-            var clientesOrdenados = app.clientes.toList()
-              ..sort((a, b) => a.nombreRazonSocial
-                  .compareTo(b.nombreRazonSocial));
+            // Ya vienen A→Z del provider
+            var clientesOrdenados = app.clientes.toList();
             // Filtrar por búsqueda
             if (_busquedaCliente.isNotEmpty) {
               final query = normalizarBusqueda(_busquedaCliente);

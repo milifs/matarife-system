@@ -258,9 +258,7 @@ class _NotaPedidoFormScreenState extends State<NotaPedidoFormScreen> {
             ),
             const SizedBox(height: 8),
             Builder(builder: (context) {
-              var ordenados = app.clientes.toList()
-                ..sort((a, b) =>
-                    a.nombreRazonSocial.compareTo(b.nombreRazonSocial));
+              var ordenados = app.clientes.toList();
               if (_busquedaCliente.isNotEmpty) {
                 final q = normalizarBusqueda(_busquedaCliente);
                 ordenados = ordenados
