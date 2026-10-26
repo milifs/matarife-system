@@ -1664,3 +1664,404 @@ class ResumenJornada {
 
   bool get vacia => cobros.isEmpty;
 }
+
+// ─────────────────────────────────────────────
+// DEPÓSITO (v19.5) — stock de medias reses
+// ─────────────────────────────────────────────
+// Existe porque desde la cámara sacaron dos medias para un cliente, la cajera
+// se olvidó de cargar el remito y nadie podía decir dónde estaban: plata
+// perdida. El módulo cierra la ecuación entre lo comprado, lo distribuido a
+// clientes y lo guardado en depósito.
+//
+// Nada del stock se persiste: se deriva de cargas + remitos + movimientos,
+// igual que el saldo arrastrado del proveedor. Así, cargar un remito atrasado
+// o corregir uno viejo reacomoda todo solo.
+
+/// Un tercio de media res. Se escribe como fracción exacta y NO como 0,33
+/// para que pierna + octavo + plancha de asado den exactamente una media:
+/// con 0,33 tres cortes darían 0,99 y aparecerían diferencias fantasma.
+const _tercio = 1 / 3;
+
+/// Cuántas medias reses vale UNA unidad de cada tipo de carne del catálogo
+/// de remitos (el campo del formulario se llama "Medias", pero cuando el tipo
+/// es un corte esa unidad es el corte, no una media entera).
+///
+/// La media de novillo se divide en TRES partes: pierna, octavo y plancha de
+/// asado. El "1/4 delantero" son dos de esos tercios (octavo + plancha).
+const Map<String, double> equivalenciasMedia = {
+  'Novillo': 1,
+  'Cerdo': 1,
+  'Pierna mocha': _tercio,
+  'Pierna pistola': _tercio,
+  'Plancha de asado': _tercio,
+  'Octavo': _tercio,
+  '1/4 delantero': 2 / 3,
+};
+
+/// La equivalencia de [tipoCarne], tolerante a mayúsculas y espacios.
+///
+/// Un tipo que no está en el catálogo cuenta como UNA media: es lo que dice
+/// el campo del formulario y es el criterio conservador (de más, no de menos).
+/// En la práctica no se usa: el stock arranca de cero en la fecha de
+/// configuración y desde v18.17 los tipos salen de un dropdown fijo.
+double equivalenciaEnMedias(String tipoCarne) {
+  final buscado = tipoCarne.trim().toLowerCase();
+  for (final entrada in equivalenciasMedia.entries) {
+    if (entrada.key.toLowerCase() == buscado) return entrada.value;
+  }
+  return 1;
+}
+
+/// A qué stock le pega un tipo de carne: [Proveedor.tipoNovillo] o
+/// [Proveedor.tipoCerdo]. Solo "Cerdo" es cerdo; todo el resto (novillo y sus
+/// cinco cortes) computa como novillo. Es la misma regla que `_normalizarTipo`
+/// en app_provider y `costoPorTipo` en [CostoSemanal].
+String stockDeTipoCarne(String tipoCarne) =>
+    tipoCarne.trim().toLowerCase().contains('cerdo')
+        ? Proveedor.tipoCerdo
+        : Proveedor.tipoNovillo;
+
+/// Cuántas medias reses sale de un animal en pie: una res se parte al medio.
+const int mediasPorAnimal = 2;
+
+/// Margen con el que se considera que los números "dan redondos".
+///
+/// Hace falta por los tercios: en coma flotante 1/3 + 1/3 + 1/3 no da
+/// exactamente 1, y la BD guarda los movimientos con cuatro decimales. Sin
+/// este margen, una diferencia de 0,0000000001 media encendería la alerta.
+const double toleranciaMedias = 0.02;
+
+/// Configuración del arranque del depósito: una sola fila.
+///
+/// El sistema tiene remitos de hace meses pero cargas de proveedores recién
+/// desde el 20/10/2026, así que contar "desde siempre" daría cualquier cosa.
+/// Por eso el depósito arranca de cero en una fecha elegida: se cuenta a mano
+/// lo que hay en la cámara ese día y de ahí en adelante manda la ecuación.
+class DepositoConfig {
+  final String id;
+  DateTime fechaInicio;
+  double mediasNovillo;
+  double mediasCerdo;
+  String? registradoPor;
+  DateTime actualizadoEn;
+
+  DepositoConfig({
+    String? id,
+    DateTime? fechaInicio,
+    this.mediasNovillo = 0,
+    this.mediasCerdo = 0,
+    this.registradoPor,
+    DateTime? actualizadoEn,
+  })  : id = id ?? _uuid.v4(),
+        fechaInicio = fechaInicio ?? DateTime.now(),
+        actualizadoEn = actualizadoEn ?? DateTime.now();
+
+  /// Las medias que había en la cámara el día del arranque, por tipo.
+  double inicialDe(String tipo) =>
+      tipo == Proveedor.tipoCerdo ? mediasCerdo : mediasNovillo;
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        // Va explícito para poder hacer upsert sobre la columna UNIQUE que
+        // garantiza que exista una sola fila de configuración.
+        'unica': true,
+        'fecha_inicio': fechaInicio.toIso8601String(),
+        'medias_novillo': mediasNovillo,
+        'medias_cerdo': mediasCerdo,
+        'registrado_por': registradoPor,
+        'actualizado_en': actualizadoEn.toIso8601String(),
+      };
+
+  factory DepositoConfig.fromMap(Map<String, dynamic> map) => DepositoConfig(
+        id: map['id'],
+        fechaInicio: DateTime.tryParse(map['fecha_inicio'] ?? ''),
+        mediasNovillo: (map['medias_novillo'] ?? 0).toDouble(),
+        mediasCerdo: (map['medias_cerdo'] ?? 0).toDouble(),
+        registradoPor: map['registrado_por'],
+        actualizadoEn: DateTime.tryParse(map['actualizado_en'] ?? ''),
+      );
+}
+
+/// Un movimiento de depósito cargado a mano. Las tres clases son cosas
+/// distintas, no variantes de lo mismo — ver [claseEntrada], [claseSalida] y
+/// [claseRecuento]. `medias` va siempre en positivo: el signo lo pone la clase.
+class DepositoMovimiento {
+  /// Medias que entran al depósito SIN venir de una carga: una devolución de
+  /// un cliente o un ajuste a favor. La compra al proveedor NO necesita una
+  /// entrada, ya suma sola por la ecuación.
+  static const claseEntrada = 'entrada';
+
+  /// Medias que salieron de la cámara. Es el botón que aprieta la cajera
+  /// cuando saca carne y todavía no cargó el remito: con [esperaRemito] en
+  /// true la salida queda pendiente y se cierra sola cuando aparece un remito
+  /// de ese tipo. En false es definitiva (merma, consumo propio, rotura).
+  static const claseSalida = 'salida';
+
+  /// No mueve nada: es la foto de lo que se contó físicamente en la cámara,
+  /// para comparar contra el stock teórico de ese momento.
+  static const claseRecuento = 'recuento';
+
+  final String id;
+  int numero; // lo asigna la secuencia de Postgres => D-0001
+  String tipo; // Proveedor.tipoNovillo / tipoCerdo
+  String clase;
+  double medias;
+  bool esperaRemito;
+  DateTime fecha;
+  String observacion;
+  String? registradoPor;
+  final DateTime creadoEn;
+
+  DepositoMovimiento({
+    String? id,
+    this.numero = 0,
+    this.tipo = Proveedor.tipoNovillo,
+    required this.clase,
+    this.medias = 0,
+    this.esperaRemito = true,
+    DateTime? fecha,
+    this.observacion = '',
+    this.registradoPor,
+    DateTime? creadoEn,
+  })  : id = id ?? _uuid.v4(),
+        fecha = fecha ?? DateTime.now(),
+        creadoEn = creadoEn ?? DateTime.now();
+
+  bool get esEntrada => clase == claseEntrada;
+  bool get esSalida => clase == claseSalida;
+  bool get esRecuento => clase == claseRecuento;
+
+  /// Una salida que todavía espera su remito. Es lo que la pantalla muestra
+  /// como "medias que salieron sin registrar".
+  bool get esSalidaPendienteDeRemito => esSalida && esperaRemito;
+
+  /// Una salida que nunca va a tener remito: merma, consumo propio o rotura.
+  /// Descuenta del stock para siempre.
+  bool get esSalidaDefinitiva => esSalida && !esperaRemito;
+
+  String get numeroFormateado => 'D-${numero.toString().padLeft(4, '0')}';
+
+  String get tipoLabel =>
+      tipo == Proveedor.tipoCerdo ? 'Cerdo' : 'Novillo';
+
+  String get claseLabel => switch (clase) {
+        claseEntrada => 'Entrada',
+        claseSalida => 'Salida',
+        _ => 'Recuento',
+      };
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        // numero lo pone la secuencia: si va en 0 no se manda
+        if (numero > 0) 'numero': numero,
+        'tipo': tipo,
+        'clase': clase,
+        'medias': medias,
+        'espera_remito': esperaRemito,
+        'fecha': fecha.toIso8601String(),
+        'observacion': observacion,
+        'registrado_por': registradoPor,
+        'creado_en': creadoEn.toIso8601String(),
+      };
+
+  factory DepositoMovimiento.fromMap(Map<String, dynamic> map) =>
+      DepositoMovimiento(
+        id: map['id'],
+        numero: map['numero'] ?? 0,
+        tipo: '${map['tipo']}'.toLowerCase().contains('cerdo')
+            ? Proveedor.tipoCerdo
+            : Proveedor.tipoNovillo,
+        clase: map['clase'] ?? claseEntrada,
+        medias: (map['medias'] ?? 0).toDouble(),
+        esperaRemito: map['espera_remito'] ?? true,
+        fecha: DateTime.tryParse(map['fecha'] ?? ''),
+        observacion: map['observacion'] ?? '',
+        registradoPor: map['registrado_por'],
+        creadoEn: DateTime.tryParse(map['creado_en'] ?? ''),
+      );
+}
+
+/// Auditoría de un movimiento borrado. `observacion` es obligatoria: un
+/// movimiento borrado sin motivo sería justamente el agujero que este módulo
+/// vino a tapar.
+class DepositoMovimientoEliminado {
+  final String id;
+  final String movimientoId;
+  final int movimientoNumero;
+  final String tipo;
+  final String clase;
+  final double medias;
+  final bool esperaRemito;
+  final DateTime fecha;
+  final String observacionOriginal;
+  final String observacion;
+  final DateTime eliminadoEn;
+  final String? eliminadoPor;
+
+  DepositoMovimientoEliminado({
+    String? id,
+    required this.movimientoId,
+    this.movimientoNumero = 0,
+    this.tipo = Proveedor.tipoNovillo,
+    this.clase = DepositoMovimiento.claseEntrada,
+    this.medias = 0,
+    this.esperaRemito = true,
+    DateTime? fecha,
+    this.observacionOriginal = '',
+    required this.observacion,
+    DateTime? eliminadoEn,
+    this.eliminadoPor,
+  })  : id = id ?? _uuid.v4(),
+        fecha = fecha ?? DateTime.now(),
+        eliminadoEn = eliminadoEn ?? DateTime.now();
+
+  /// Arma la fila de auditoría a partir del movimiento que se va a borrar.
+  factory DepositoMovimientoEliminado.desde(
+    DepositoMovimiento mov, {
+    required String observacion,
+    String? eliminadoPor,
+  }) =>
+      DepositoMovimientoEliminado(
+        movimientoId: mov.id,
+        movimientoNumero: mov.numero,
+        tipo: mov.tipo,
+        clase: mov.clase,
+        medias: mov.medias,
+        esperaRemito: mov.esperaRemito,
+        fecha: mov.fecha,
+        observacionOriginal: mov.observacion,
+        observacion: observacion,
+        eliminadoPor: eliminadoPor,
+      );
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'movimiento_id': movimientoId,
+        'movimiento_numero': movimientoNumero,
+        'tipo': tipo,
+        'clase': clase,
+        'medias': medias,
+        'espera_remito': esperaRemito,
+        'fecha': fecha.toIso8601String(),
+        'observacion_original': observacionOriginal,
+        'observacion': observacion,
+        'eliminado_en': eliminadoEn.toIso8601String(),
+        'eliminado_por': eliminadoPor,
+      };
+
+  factory DepositoMovimientoEliminado.fromMap(Map<String, dynamic> map) =>
+      DepositoMovimientoEliminado(
+        id: map['id'],
+        movimientoId: map['movimiento_id'] ?? '',
+        movimientoNumero: map['movimiento_numero'] ?? 0,
+        tipo: map['tipo'] ?? Proveedor.tipoNovillo,
+        clase: map['clase'] ?? DepositoMovimiento.claseEntrada,
+        medias: (map['medias'] ?? 0).toDouble(),
+        esperaRemito: map['espera_remito'] ?? true,
+        fecha: DateTime.tryParse(map['fecha'] ?? ''),
+        observacionOriginal: map['observacion_original'] ?? '',
+        observacion: map['observacion'] ?? '',
+        eliminadoEn: DateTime.tryParse(map['eliminado_en'] ?? ''),
+        eliminadoPor: map['eliminado_por'],
+      );
+}
+
+/// El resultado de la ecuación del depósito para UN tipo (novillo o cerdo).
+///
+/// Es un valor calculado al vuelo por `AppProvider.stockDeposito`: no hay
+/// tabla que lo guarde. Los componentes están expuestos uno por uno porque la
+/// pantalla los muestra desglosados — si Joaco no puede ver de dónde sale cada
+/// número, no le va a creer a la alerta.
+class StockDeposito {
+  final String tipo;
+
+  // ── Componentes a HOY ──
+  /// Lo que había en la cámara el día del arranque (ver [DepositoConfig]).
+  final double inicial;
+
+  /// Medias que entraron por compras a proveedores: animales × 2.
+  final double compradas;
+
+  /// Entradas manuales: devoluciones de clientes y ajustes a favor.
+  final double entradas;
+
+  /// Medias que salieron a clientes con remito CONFIRMADO, ya convertidas por
+  /// la tabla de equivalencias (un remito de 3 piernas descuenta 1 media).
+  final double remitidas;
+
+  /// Salidas que todavía esperan su remito: la carne ya no está en la cámara
+  /// pero nadie la facturó. Es exactamente el agujero que motivó el módulo.
+  final double salidasPendientes;
+
+  /// Salidas que nunca van a tener remito: merma, consumo propio, rotura.
+  final double salidasDefinitivas;
+
+  // ── El recuento físico y su comparación ──
+  /// Lo último que se contó a mano en la cámara. Null si nunca se contó.
+  final double? recuento;
+  final DateTime? fechaRecuento;
+
+  /// El stock teórico que correspondía EN EL MOMENTO del recuento.
+  ///
+  /// La comparación se hace contra este valor y no contra [teorico], porque si
+  /// no cualquier compra posterior al último recuento aparecería como un
+  /// faltante gigante: se cuenta 10 el viernes, el lunes entra una carga de
+  /// 200 y el sistema gritaría "faltan 200 medias".
+  final double? teoricoAlRecuento;
+
+  /// Las salidas todavía sin remito, para poder listarlas y avisar cuál es.
+  final List<DepositoMovimiento> pendientes;
+
+  const StockDeposito({
+    required this.tipo,
+    this.inicial = 0,
+    this.compradas = 0,
+    this.entradas = 0,
+    this.remitidas = 0,
+    this.salidasPendientes = 0,
+    this.salidasDefinitivas = 0,
+    this.recuento,
+    this.fechaRecuento,
+    this.teoricoAlRecuento,
+    this.pendientes = const [],
+  });
+
+  String get tipoLabel =>
+      tipo == Proveedor.tipoCerdo ? 'Cerdo' : 'Novillo';
+
+  /// Las medias que deberían estar físicamente en la cámara ahora mismo.
+  double get teorico =>
+      inicial +
+      compradas +
+      entradas -
+      remitidas -
+      salidasPendientes -
+      salidasDefinitivas;
+
+  /// Total comprado + lo que ya había + devoluciones: el lado de las entradas.
+  /// Es el "disponible para vender" del que habla el circuito: una compra
+  /// nueva se suma a las medias que ya estaban en depósito sin vender.
+  double get totalDisponible => inicial + compradas + entradas;
+
+  bool get tieneRecuento => recuento != null && teoricoAlRecuento != null;
+
+  /// Positivo = faltan medias en la cámara (salieron sin registrar).
+  /// Negativo = hay medias de más que el sistema no conoce.
+  /// Null = todavía no se contó nada, no hay con qué comparar.
+  double? get diferencia =>
+      tieneRecuento ? teoricoAlRecuento! - recuento! : null;
+
+  /// true cuando los números dan redondos (dentro de [toleranciaMedias]).
+  bool get cierra => tieneRecuento && diferencia!.abs() <= toleranciaMedias;
+
+  bool get faltan => (diferencia ?? 0) > toleranciaMedias;
+  bool get sobran => (diferencia ?? 0) < -toleranciaMedias;
+
+  /// Cuántas medias faltan (0 si no faltan). Es el número de la alerta.
+  double get faltantes => faltan ? diferencia! : 0;
+
+  /// Cuántas medias hay de más (0 si no sobran).
+  double get sobrantes => sobran ? -diferencia! : 0;
+
+  bool get hayPendientes => pendientes.isNotEmpty;
+}
