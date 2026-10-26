@@ -417,14 +417,16 @@ La app avisa sola cuando el bundle que tiene el usuario quedó viejo: barra roja
 
 > **IMPORTANTE**: buildear siempre con `build_web.sh` (o `build_web.bat`). Con un `flutter build web` pelado no se genera `app_version.json` y el aviso deja de funcionar — sin romper nada, pero sin avisar nunca.
 
-### `web/_headers` es basura heredada (hallazgo del deploy de v19.5)
-`web/_headers` usa el formato de **Netlify / Cloudflare Pages**, que Vercel **no lee**. Hoy no hace nada, pero **contradice a `web/vercel.json`**: marca `main.dart.js` como `public, max-age=31536000, immutable` (un año), justo lo contrario del `no-cache` que sirve de verdad `vercel.json`. Si algún día se cambia de hosting, o alguien lo lee buscando la config de cache, manda a la pared. La verdad está en `web/vercel.json`. Conviene borrarlo.
+### La config de cache vive SOLO en `web/vercel.json`
+Existía también un `web/_headers` (formato Netlify / Cloudflare Pages, que **Vercel no lee**) heredado de v18.10, cuando el plan era deployar a Cloudflare. No hacía nada, pero **contradecía a `vercel.json`**: marcaba `main.dart.js` como `immutable` por un año, justo lo contrario del `no-cache` que se sirve de verdad. Se **borró en v19.5** para que haya una sola fuente de verdad.
+
+Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copiando los valores de `vercel.json`, no los del archivo viejo: ese `immutable` de un año sobre `main.dart.js`, que no lleva hash en el nombre, haría que un deploy nuevo no le llegue nunca a los usuarios ya cacheados.
 
 ### Archivos PWA (web/index.html y web/manifest.json)
 - `index.html` tiene splash screen inline (logo + spinner CSS rojo #C62828 + fade-out 300ms). Se oculta con evento `flutter-first-frame`, fallback 8s.
 - `index.html` tiene meta tags iOS PWA: `apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style`, `apple-mobile-web-app-title`, viewport con `viewport-fit=cover`
 - `manifest.json`: display standalone, theme_color #C62828, orientation portrait-primary
-- `web/_headers`: cache headers para Cloudflare Pages (no-cache en index.html/service worker, immutable en assets)
+- `web/vercel.json`: los cache headers que se aplican de verdad (ver la sección de más arriba). **Es el único archivo de cache del proyecto.**
 - Estos archivos se pisan con `flutter create .` → hay que volver a copiarlos después
 
 ### Problemas comunes

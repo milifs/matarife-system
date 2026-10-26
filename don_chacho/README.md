@@ -119,4 +119,6 @@ En vez de `flutter build web` plano, usar los scripts incluidos:
 2. Crear un nuevo proyecto:
    - **Opción A (recomendada)**: conectar el repositorio Git y configurar el build command como `flutter build web --release --tree-shake-icons --pwa-strategy=none` con output directory `build/web`
    - **Opción B**: subir manualmente la carpeta `build/web` como "Direct Upload"
-3. El archivo `web/_headers` ya está incluido en `build/web` después del build y Cloudflare lo aplica automáticamente para controlar el caché de cada tipo de archivo
+3. Los cache headers están en `web/vercel.json`, que **Cloudflare no lee** (usa formato Vercel). Para deployar a Cloudflare hay que traducirlos a un `web/_headers`, copiando los valores de `vercel.json`.
+
+> **Nota**: hoy el proyecto **se deploya a Vercel**, no a Cloudflare. Esta sección quedó de la planificación original; el procedimiento real está en `CLAUDE.md` → "PROCEDIMIENTO DE ACTUALIZACIÓN / DEPLOY".
