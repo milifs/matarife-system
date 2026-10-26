@@ -27,6 +27,35 @@ import '../utils/formatters.dart';
 import '../utils/theme.dart';
 import 'remito_form_screen.dart';
 
+/// Tope de campos de kg que se generan. Un recuento de toda la cámara puede
+/// ser grande y está bien, pero sin tope un error de tipeo ("1000" en vez de
+/// "10") colgaría la pantalla generando mil campos.
+const int _maxCamposKg = 120;
+
+/// Deja la lista de controllers del largo que corresponde a las medias
+/// tipeadas. Se llama en cada rebuild del formulario, así los campos aparecen
+/// y desaparecen a medida que se escribe la cantidad.
+void _sincronizarKg(List<TextEditingController> ctrls, double medias) {
+  final objetivo =
+      medias <= 0 ? 0 : medias.ceil().clamp(0, _maxCamposKg).toInt();
+  while (ctrls.length < objetivo) {
+    ctrls.add(TextEditingController());
+  }
+  while (ctrls.length > objetivo) {
+    ctrls.removeLast().dispose();
+  }
+}
+
+/// Los kilos efectivamente cargados, salteando los campos vacíos.
+///
+/// Los kg son opcionales (ver `DepositoMovimiento.kgsPorMedia`): se descarta
+/// lo vacío en vez de guardar ceros, que ensuciarían el total y harían pasar
+/// por pesada una media que nadie pesó.
+List<double> _kgsCargados(List<TextEditingController> ctrls) => ctrls
+    .map((c) => parseNumero(c.text))
+    .where((kg) => kg > 0)
+    .toList();
+
 class DepositoScreen extends StatefulWidget {
   const DepositoScreen({super.key});
 
@@ -237,6 +266,7 @@ class _DepositoScreenState extends State<DepositoScreen> {
     var fecha = DateTime.now();
     final mediasCtrl = TextEditingController();
     final obsCtrl = TextEditingController();
+    final kgCtrls = <TextEditingController>[];
 
     final guardar = await showModalBottomSheet<bool>(
       context: context,
@@ -245,7 +275,10 @@ class _DepositoScreenState extends State<DepositoScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setStateSheet) => Padding(
+        builder: (ctx, setStateSheet) {
+          final medias = parseNumero(mediasCtrl.text);
+          _sincronizarKg(kgCtrls, medias);
+          return Padding(
           padding: EdgeInsets.fromLTRB(
             20,
             20,
@@ -303,6 +336,11 @@ class _DepositoScreenState extends State<DepositoScreen> {
                     labelText: 'Cantidad de medias',
                   ),
                   onChanged: (_) => setStateSheet(() {}),
+                ),
+                _CamposKg(
+                  controllers: kgCtrls,
+                  medias: medias,
+                  onChanged: () => setStateSheet(() {}),
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
@@ -378,7 +416,7 @@ class _DepositoScreenState extends State<DepositoScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: parseNumero(mediasCtrl.text) <= 0
+                    onPressed: medias <= 0
                         ? null
                         : () => Navigator.pop(ctx, true),
                     child: Text(
@@ -389,7 +427,8 @@ class _DepositoScreenState extends State<DepositoScreen> {
               ],
             ),
           ),
-        ),
+          );
+        },
       ),
     );
 
@@ -399,6 +438,7 @@ class _DepositoScreenState extends State<DepositoScreen> {
       tipo: tipo,
       clase: clase,
       medias: parseNumero(mediasCtrl.text),
+      kgsPorMedia: _kgsCargados(kgCtrls),
       esperaRemito: esSalida && esperaRemito,
       fecha: fecha,
       observacion: obsCtrl.text.trim(),
@@ -422,47 +462,65 @@ class _DepositoScreenState extends State<DepositoScreen> {
   Future<void> _registrarRecuento(
       AppProvider app, StockDeposito stock) async {
     final ctrl = TextEditingController();
+    final kgCtrls = <TextEditingController>[];
 
     final guardar = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Recuento de ${stock.tipoLabel.toLowerCase()}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Contá las medias de ${stock.tipoLabel.toLowerCase()} que hay '
-              'ahora en la cámara. El sistema espera '
-              '${formatMedias(stock.teorico)}.',
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppTheme.textSecondary,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) {
+          final medias = parseNumero(ctrl.text);
+          _sincronizarKg(kgCtrls, medias);
+          return AlertDialog(
+            title: Text('Recuento de ${stock.tipoLabel.toLowerCase()}'),
+            content: SizedBox(
+              width: 420,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Contá las medias de ${stock.tipoLabel.toLowerCase()} '
+                      'que hay ahora en la cámara. El sistema espera '
+                      '${formatMedias(stock.teorico)}.',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: ctrl,
+                      autofocus: true,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true),
+                      inputFormatters: const [MilesInputFormatter()],
+                      decoration: const InputDecoration(
+                        labelText: 'Medias contadas',
+                      ),
+                      onChanged: (_) => setStateDialog(() {}),
+                    ),
+                    _CamposKg(
+                      controllers: kgCtrls,
+                      medias: medias,
+                      onChanged: () => setStateDialog(() {}),
+                    ),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: const [MilesInputFormatter()],
-              decoration: const InputDecoration(
-                labelText: 'Medias contadas',
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Guardar recuento'),
-          ),
-        ],
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Guardar recuento'),
+              ),
+            ],
+          );
+        },
       ),
     );
 
@@ -472,6 +530,7 @@ class _DepositoScreenState extends State<DepositoScreen> {
       tipo: stock.tipo,
       clase: DepositoMovimiento.claseRecuento,
       medias: parseNumero(ctrl.text),
+      kgsPorMedia: _kgsCargados(kgCtrls),
       esperaRemito: false,
       observacion: 'Recuento físico',
       registradoPor: app.usuarioActual?.nombreCompleto,
@@ -536,7 +595,8 @@ class _DepositoScreenState extends State<DepositoScreen> {
               Text(
                 '${mov.claseLabel} de '
                 '${formatMediasConUnidad(mov.medias)} de '
-                '${mov.tipoLabel.toLowerCase()}, '
+                '${mov.tipoLabel.toLowerCase()}'
+                '${mov.tieneKg ? ' (${formatKg(mov.totalKg)})' : ''}, '
                 '${formatFecha(mov.fecha)}.',
                 style: const TextStyle(fontSize: 13),
               ),
@@ -744,6 +804,14 @@ class _TarjetaStock extends StatelessWidget {
                   : '—',
               destacado: true,
             ),
+            // Los kilos del recuento son el único kg "de stock" honesto: la
+            // ecuación cierra por medias, no por peso, así que no existe un
+            // kg teórico contra el cual compararlos.
+            if (stock.kgRecuento > 0)
+              _Fila(
+                label: 'Kg pesados en ese recuento',
+                valor: formatKg(stock.kgRecuento),
+              ),
             const SizedBox(height: 10),
             _Veredicto(stock: stock),
             if (stock.hayPendientes) ...[
@@ -852,7 +920,8 @@ class _Pendientes extends StatelessWidget {
               Expanded(
                 child: Text(
                   'Falta el remito de '
-                  '${formatMediasConUnidad(stock.salidasPendientes)}',
+                  '${formatMediasConUnidad(stock.salidasPendientes)}'
+                  '${stock.kgPendientes > 0 ? ' (${formatKg(stock.kgPendientes)})' : ''}',
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -869,6 +938,7 @@ class _Pendientes extends StatelessWidget {
               child: Text(
                 '${mov.numeroFormateado} · ${formatFecha(mov.fecha)} · '
                 '${formatMedias(mov.medias)}'
+                '${mov.tieneKg ? ' · ${formatKg(mov.totalKg)}' : ''}'
                 '${mov.observacion.trim().isEmpty ? '' : ' · ${mov.observacion.trim()}'}',
                 style: const TextStyle(
                   fontSize: 11,
@@ -892,6 +962,88 @@ class _Pendientes extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// Los campos de kg, uno por media, igual que el formulario de nota de
+/// pedido. Aparecen y desaparecen solos a medida que se tipea la cantidad.
+///
+/// Son OPCIONALES a propósito: el pie dice cuántas faltan pesar pero nada
+/// bloquea el guardado. Si el campo frenara a la cajera cuando no tiene la
+/// balanza a mano, no registraría la salida, que es el agujero que este
+/// módulo vino a tapar.
+class _CamposKg extends StatelessWidget {
+  final List<TextEditingController> controllers;
+  final double medias;
+  final VoidCallback onChanged;
+
+  const _CamposKg({
+    required this.controllers,
+    required this.medias,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (controllers.isEmpty) return const SizedBox.shrink();
+
+    final cargados = _kgsCargados(controllers);
+    final total = cargados.fold<double>(0, (t, kg) => t + kg);
+    final faltan = controllers.length - cargados.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 14),
+        const Text(
+          'Kg de cada media (opcional)',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: controllers.asMap().entries.map((e) {
+            return SizedBox(
+              width: 90,
+              child: TextField(
+                controller: e.value,
+                decoration: InputDecoration(
+                  labelText: 'Media ${e.key + 1}',
+                  isDense: true,
+                  suffixText: 'kg',
+                ),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: const [MilesInputFormatter()],
+                onChanged: (_) => onChanged(),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          total <= 0
+              ? 'Sin pesar todavía'
+              : 'Total ${formatKg(total)}'
+                  '${faltan > 0 ? ' · faltan $faltan por pesar' : ''}',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: faltan > 0 ? AppTheme.warning : AppTheme.textSecondary,
+          ),
+        ),
+        if (medias.ceil() > _maxCamposKg)
+          const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: Text(
+              'Son demasiadas medias para pesar una por una: se muestran '
+              'los primeros $_maxCamposKg campos.',
+              style: TextStyle(fontSize: 11, color: AppTheme.warning),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -1064,7 +1216,8 @@ class _Historial extends StatelessWidget {
                 ),
                 title: Text(
                   '${mov.claseLabel} · ${formatMedias(mov.medias)} de '
-                  '${mov.tipoLabel.toLowerCase()}',
+                  '${mov.tipoLabel.toLowerCase()}'
+                  '${mov.tieneKg ? ' · ${formatKg(mov.totalKg)}' : ''}',
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -1073,6 +1226,7 @@ class _Historial extends StatelessWidget {
                 subtitle: Text(
                   '${mov.numeroFormateado} · ${formatFecha(mov.fecha)}'
                   '${mov.esSalidaDefinitiva ? ' · definitiva' : ''}'
+                  '${mov.mediasSinPesar > 0 ? ' · ${mov.mediasSinPesar} sin pesar' : ''}'
                   '${mov.observacion.trim().isEmpty ? '' : '\n${mov.observacion.trim()}'}',
                   style: const TextStyle(fontSize: 11),
                 ),
