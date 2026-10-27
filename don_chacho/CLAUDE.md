@@ -484,7 +484,17 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v19.6) — EN PRODUCCIÓN
+## ESTADO ACTUAL (v19.7) — EN PRODUCCIÓN
+
+Deployada el 27/10/2026 desde `master`. La rama `feat/clientes-orden-alfabetico` se mergeó por **PR #11** (merge commit `9339305`), más el commit del bump. Deploy `web-dk7371nd4`, alias `web-six-indol-svg13avcfl.vercel.app` apuntando ahí.
+
+Verificado contra producción: **mismo sha256** que el build (`0859b74a…`), `app_version.json` y el bundle dicen los dos `v19.7`, y los headers de cache son los que espera el aviso de versión.
+
+Trae el **orden alfabético único de los listados de clientes** (`compararNombres`, que ignora mayúsculas y acentos) y el **getter `clientes` blindado** con `UnmodifiableListView`.
+
+**Sigue faltando el paso manual de v19.5**: fijar el **arranque** del depósito (fecha + las medias contadas a mano en la cámara). Hasta que no esté, la pantalla muestra "Falta el arranque" y no calcula nada.
+
+### v19.6 — deployada el 26/10/2026
 
 Deployada el 26/10/2026 desde `master`. La rama `feat/deposito-kg` se mergeó por **PR #10** (merge commit `c24ba25`). Deploy `web-4e6wf9hnd`, alias `web-six-indol-svg13avcfl.vercel.app` apuntando ahí.
 
@@ -493,6 +503,19 @@ Verificado contra producción: **mismo sha256** que el build (`739a166f…`), `a
 Trae los **kg por media** en los movimientos de depósito. La migración `supabase_migration_deposito_kg.sql` **ya se corrió** (26/10/2026): la columna responde en las dos tablas.
 
 **Sigue faltando el paso manual de v19.5**: fijar el **arranque** del depósito (fecha + las medias contadas a mano en la cámara). Hasta que no esté, la pantalla muestra "Falta el arranque" y no calcula nada.
+
+### `flutter clean` rompe el deploy si no se restaura el `.vercel` (v19.7)
+**`flutter clean` borra `build/` entero**, y ahí adentro vive `build/web/.vercel`, que es lo que vincula el directorio con el proyecto de Vercel. Como el procedimiento de deploy arranca justamente con `flutter clean`, **el vínculo se pierde en cada deploy**.
+
+Sin él, `vercel --prod --yes` **crea un proyecto nuevo** en vez de deployar al de siempre (con `--yes` ni siquiera pregunta). Hay que recrearlo antes de deployar:
+
+```bash
+mkdir -p build/web/.vercel && cat > build/web/.vercel/project.json <<'JSON'
+{"projectId":"prj_uiYOfzx8bjMe6fqYiPKL4mNx3G2V","orgId":"team_b3upaAAwW3dLsrxJvc8fHXVu","projectName":"web"}
+JSON
+```
+
+Los dos ids salen de `vercel project ls` (el proyecto se llama **`web`**, bajo la cuenta `jaguilera`). Pasa siempre, no solo cuando se buildea desde un worktree aparte.
 
 ### Buildear sin pisar trabajo sin commitear (v19.6)
 En este deploy el working tree tenía 13 archivos modificados sin commitear, de otro trabajo en curso (el helper `compararNombres` para ordenar clientes A→Z). Para no tocarlos, el build salió de un **worktree aparte** en el commit de merge:
