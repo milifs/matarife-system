@@ -486,7 +486,7 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 
 ## ESTADO ACTUAL (v19.8) — EN PRODUCCIÓN
 
-Deployada el 27/10/2026 desde la rama `feat/vendedores-orden-alfabetico` (**PR #12, todavía sin mergear a `master`** — mergearla cuando se apruebe; el contenido deployado es exactamente el de esa rama). Deploy `web-iqaososoz`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
+Deployada el 27/10/2026 desde la rama `feat/vendedores-orden-alfabetico`, **ya mergeada a `master`** por **PR #12** (merge commit `23a4620`) — master y producción coinciden (`git diff` entre los dos, vacío). Deploy `web-iqaososoz`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
 
 Verificado contra producción: **mismo sha256** que el build (`5ef3d0ff…`), `app_version.json` dice `v19.8` y se sirve `no-cache, no-store, must-revalidate`.
 
