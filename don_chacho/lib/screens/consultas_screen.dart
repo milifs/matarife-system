@@ -1202,13 +1202,11 @@ class _HistorialTabState extends State<_HistorialTab> {
                     items: [
                       const DropdownMenuItem(
                           value: null, child: Text('Todos')),
-                      ...(app.vendedores.toList()
-                            ..sort((a, b) => a.nombreCompleto
-                                .compareTo(b.nombreCompleto)))
-                          .map((v) => DropdownMenuItem(
-                              value: v.id,
-                              child: Text(v.nombreCompleto,
-                                  overflow: TextOverflow.ellipsis))),
+                      ...app.vendedores.map((v) => DropdownMenuItem(
+                            value: v.id,
+                            child: Text(v.nombreCompleto,
+                                overflow: TextOverflow.ellipsis),
+                          )),
                     ],
                     onChanged: (v) => setState(() {
                       _filtroVendedorId = v;
