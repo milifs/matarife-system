@@ -135,10 +135,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                           _filtroClienteId = null;
                         }),
                       ),
-                      ...(List.of(app.vendedores)
-                            ..sort((a, b) => a.nombreCompleto
-                                .compareTo(b.nombreCompleto)))
-                          .map((v) => _FilterChip(
+                      ...app.vendedores.map((v) => _FilterChip(
                             label: v.nombreCompleto,
                             selected: _filtroVendedorId == v.id,
                             onTap: () => setState(() {

@@ -484,15 +484,23 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v19.7) — EN PRODUCCIÓN
+## ESTADO ACTUAL (v19.8) — EN PRODUCCIÓN
+
+Deployada el 27/10/2026 desde la rama `feat/vendedores-orden-alfabetico` (**PR #12, todavía sin mergear a `master`** — mergearla cuando se apruebe; el contenido deployado es exactamente el de esa rama). Deploy `web-iqaososoz`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
+
+Verificado contra producción: **mismo sha256** que el build (`5ef3d0ff…`), `app_version.json` dice `v19.8` y se sirve `no-cache, no-store, must-revalidate`.
+
+Trae el **orden alfabético de la lista de vendedores** y de los dos filtros por vendedor, con el mismo `compararNombres` de los clientes, y el **getter `vendedores` blindado** con `UnmodifiableListView`. Sin migración: es solo orden de visualización.
+
+**Sigue faltando el paso manual de v19.5**: fijar el **arranque** del depósito (fecha + las medias contadas a mano en la cámara). Hasta que no esté, la pantalla muestra "Falta el arranque" y no calcula nada.
+
+### v19.7 — deployada el 27/10/2026
 
 Deployada el 27/10/2026 desde `master`. La rama `feat/clientes-orden-alfabetico` se mergeó por **PR #11** (merge commit `9339305`), más el commit del bump. Deploy `web-dk7371nd4`, alias `web-six-indol-svg13avcfl.vercel.app` apuntando ahí.
 
 Verificado contra producción: **mismo sha256** que el build (`0859b74a…`), `app_version.json` y el bundle dicen los dos `v19.7`, y los headers de cache son los que espera el aviso de versión.
 
 Trae el **orden alfabético único de los listados de clientes** (`compararNombres`, que ignora mayúsculas y acentos) y el **getter `clientes` blindado** con `UnmodifiableListView`.
-
-**Sigue faltando el paso manual de v19.5**: fijar el **arranque** del depósito (fecha + las medias contadas a mano en la cámara). Hasta que no esté, la pantalla muestra "Falta el arranque" y no calcula nada.
 
 ### v19.6 — deployada el 26/10/2026
 
@@ -579,6 +587,15 @@ Deployada desde la rama `feat/soporte`, **ya mergeada a `master`** (PR #1, merge
 ### v18.31 — deployada el 22/09/2026
 
 Deployada el 22/09/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`. Salió de la rama `feat/reparto-precarga` (que acumulaba v18.30 + v18.31); **esa rama ya está mergeada a `master`** — en su momento no lo estaba y la doc quedó desactualizada hasta el 20/10/2026.
+
+### Cambios v19.8 (27/10/2026) — Orden alfabético de los vendedores
+
+Es la contracara de v19.7: lo mismo que se hizo con los clientes, ahora con los vendedores.
+
+1. **`lib/providers/app_provider.dart`**: `_ordenarVendedores()` (mismo `compararNombres` que los clientes) deja `_vendedores` A→Z **al cargar, al agregar y al editar** — el nombre puede cambiar, así que editar también reordena. El getter `vendedores` pasa a `UnmodifiableListView`: desde que su orden es la fuente de verdad de todos los listados, un `app.vendedores.sort(...)` desde una pantalla lo rompería en silencio y lejos del lugar del error. Los 18 usos de hoy son de solo lectura, así que no cambia ningún comportamiento: cambia el costo de equivocarse de acá en adelante.
+2. **`lib/screens/clientes_screen.dart`** y **`lib/screens/consultas_screen.dart`**: se sacaron los dos `..sort` que quedaron de más (los chips de filtro por vendedor y el dropdown de Historial). Ordenaban con `compareTo` crudo, que manda minúsculas y acentos al final.
+3. **Sin migración ni modelo nuevo**: es solo orden de visualización.
+4. **`lib/utils/app_config.dart`**: `version` de `'v19.7'` a `'v19.8'`.
 
 ### Cambios v19.6 (26/10/2026) — Kg por media en el depósito
 

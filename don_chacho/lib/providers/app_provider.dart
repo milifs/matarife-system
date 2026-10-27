@@ -52,7 +52,13 @@ class AppProvider extends ChangeNotifier {
   final Map<String, List<RemitoItem>> _remitoItems = {};
 
   // ── Getters ──
-  List<Vendedor> get vendedores => _vendedores;
+  /// Los vendedores, SIEMPRE en orden alfabético (ver [_ordenarVendedores]).
+  ///
+  /// Va envuelto en una vista de solo lectura por lo mismo que [clientes]: el
+  /// orden de `_vendedores` es la fuente de verdad de todos los listados, así
+  /// que un `app.vendedores.sort(...)` desde una pantalla lo rompería en
+  /// silencio. Es una VISTA, no una copia (O(1) aunque se lea en cada build).
+  List<Vendedor> get vendedores => UnmodifiableListView(_vendedores);
   /// Los clientes, SIEMPRE en orden alfabético (ver [_ordenarClientes]).
   ///
   /// Va envuelto en una vista de solo lectura a propósito. Desde que el orden
@@ -103,6 +109,14 @@ class AppProvider extends ChangeNotifier {
         (a, b) => compararNombres(a.nombreRazonSocial, b.nombreRazonSocial));
   }
 
+  /// Deja [_vendedores] en orden alfabético, con el mismo criterio que los
+  /// clientes: todas las pantallas leen de `vendedores`, así que cada listado
+  /// y cada filtro sale A→Z sin tener que volver a ordenarlo.
+  void _ordenarVendedores() {
+    _vendedores.sort(
+        (a, b) => compararNombres(a.nombreCompleto, b.nombreCompleto));
+  }
+
   /// Vendedor por ID
   Vendedor? vendedorPorId(String id) {
     try {
@@ -146,6 +160,7 @@ class AppProvider extends ChangeNotifier {
         _db.getNotasCreditoDebito(),
       ]);
       _vendedores = results[0] as List<Vendedor>;
+      _ordenarVendedores();
       _clientes = results[1] as List<Cliente>;
       _ordenarClientes();
       _remitos = results[2] as List<Remito>;
@@ -216,6 +231,7 @@ class AppProvider extends ChangeNotifier {
     try {
       final nuevo = await _db.insertVendedor(vendedor);
       _vendedores.add(nuevo);
+      _ordenarVendedores();
       notifyListeners();
     } catch (e) {
       _error = 'Error al agregar vendedor: $e';
@@ -228,6 +244,7 @@ class AppProvider extends ChangeNotifier {
       await _db.updateVendedor(vendedor);
       final idx = _vendedores.indexWhere((v) => v.id == vendedor.id);
       if (idx != -1) _vendedores[idx] = vendedor;
+      _ordenarVendedores();
       notifyListeners();
     } catch (e) {
       _error = 'Error al editar vendedor: $e';
