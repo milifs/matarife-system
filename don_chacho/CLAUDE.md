@@ -162,8 +162,8 @@ don_chacho/lib/
 16. `supabase_migration_proveedor_tipo.sql` — columna `tipo` (`novillo` / `cerdo`) en `proveedores` + CHECK + índice (v19.1, en raíz del repo). Ya corrida el 20/10/2026.
 17. `supabase_migration_deposito.sql` — tablas `deposito_config` + `deposito_movimientos` + auditoría, y el permiso `gestionar_deposito` (v19.5, en raíz del repo). Ya corrida el 26/10/2026.
 18. `supabase_migration_deposito_kg.sql` — columna `kgs_por_media` JSONB en `deposito_movimientos` y en su tabla de auditoría (v19.6, en raíz del repo). **Hay que correrla ANTES de deployar v19.6**: desde v19.6 el `toMap()` manda siempre esa columna, así que sin la migración todo alta de movimiento falla.
-19. `supabase_migration_deposito_arranque_kg.sql` — columnas `kg_novillo` / `kg_cerdo` en `deposito_config` (v19.9, en raíz del repo). **Hay que correrla ANTES de deployar v19.9**: igual que la anterior, `DepositoConfig.toMap()` manda siempre esas columnas, así que sin la migración guardar el arranque falla.
-20. `supabase_reset_deposito.sql` — **no es una migración, es un reset de una sola vez** (raíz del repo): borra todos los movimientos de depósito y su auditoría y deja el arranque en 0 medias / 0 kg con fecha de hoy, para empezar la carga de nuevo. No toca remitos ni cargas: el depósito no guarda stock, lo deriva, así que mover la fecha de arranque alcanza para que lo viejo deje de contar. Correr DESPUÉS de la 19.
+19. `supabase_migration_deposito_arranque_kg.sql` — columnas `kg_novillo` / `kg_cerdo` en `deposito_config` (v19.9, en raíz del repo). Ya corrida el 28/10/2026. Era **prerequisito del deploy de v19.9**: igual que la anterior, `DepositoConfig.toMap()` manda siempre esas columnas, así que sin la migración guardar el arranque falla.
+20. `supabase_reset_deposito.sql` — **no es una migración, es un reset de una sola vez** (raíz del repo): borra todos los movimientos de depósito y su auditoría y deja el arranque en 0 medias / 0 kg con fecha de hoy, para empezar la carga de nuevo. No toca remitos ni cargas: el depósito no guarda stock, lo deriva, así que mover la fecha de arranque alcanza para que lo viejo deje de contar. Se corrió DESPUÉS de la 19, el 28/10/2026.
 
 ### Tablas Depósito (v19.5)
 - `deposito_config` (id UUID PK, **unica BOOLEAN UNIQUE CHECK (unica)**, fecha_inicio DATE, medias_novillo NUMERIC(12,4), medias_cerdo NUMERIC(12,4), **kg_novillo / kg_cerdo NUMERIC(12,2) DEFAULT 0** (v19.9), registrado_por, actualizado_en) — RLS off. **Una sola fila**, garantizado por el truco de `unica`: es UNIQUE y el CHECK la obliga a ser TRUE, así que un segundo INSERT rebota. El upsert va `onConflict: 'unica'`.
@@ -495,17 +495,25 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v19.8) — EN PRODUCCIÓN
+## ESTADO ACTUAL (v19.9) — EN PRODUCCIÓN
 
-Deployada el 27/10/2026 desde la rama `feat/vendedores-orden-alfabetico`, **ya mergeada a `master`** por **PR #12** (merge commit `23a4620`) — master y producción coinciden (`git diff` entre los dos, vacío). Deploy `web-iqaososoz`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
+Deployada el 28/10/2026 desde `master`. La rama `feat/deposito-kg-partes` se mergeó por **PR #13** (merge commit `ebc7824`) — master y producción coinciden. Deploy `web-1626ei0zt`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
+
+Verificado contra producción: **mismo sha256** que el build (`05dd2a4e…`), `app_version.json` dice `v19.9` y se sirve `no-cache, no-store, must-revalidate`; `main.dart.js`, `no-cache`.
+
+Trae los **kilos del stock de depósito**, el panel de **partes sueltas de la media** y el **reset del módulo** (ver "Cambios v19.9"). Las dos SQL **ya se corrieron el 28/10/2026**: `supabase_migration_deposito_arranque_kg.sql` (las columnas `kg_novillo` / `kg_cerdo` responden) y `supabase_reset_deposito.sql` (verificado por REST: `deposito_movimientos` y su auditoría vacías, arranque en 0 medias / 0 kg con `fecha_inicio = 2026-10-28`).
+
+**Sigue faltando el paso manual de v19.5**, ahora con el reset encima: fijar el **arranque** del depósito con la cuenta física de la cámara (fecha + medias + los kilos de esas medias). Mientras esté en 0 el módulo no miente, pero tampoco sirve: arranca de cero. No lo puede poner el desarrollador.
+
+**Ojo con los remitos de hoy**: la ecuación cuenta los remitos confirmados desde `fecha_inicio` **inclusive**, y el reset la dejó en el 28/10. Cualquier remito confirmado con esa fecha ya está restando.
+
+### v19.8 — deployada el 27/10/2026
+
+Deployada el 27/10/2026 desde la rama `feat/vendedores-orden-alfabetico`, **ya mergeada a `master`** por **PR #12** (merge commit `23a4620`). Deploy `web-iqaososoz`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
 
 Verificado contra producción: **mismo sha256** que el build (`5ef3d0ff…`), `app_version.json` dice `v19.8` y se sirve `no-cache, no-store, must-revalidate`.
 
 Trae el **orden alfabético de la lista de vendedores** y de los dos filtros por vendedor, con el mismo `compararNombres` de los clientes, y el **getter `vendedores` blindado** con `UnmodifiableListView`. Sin migración: es solo orden de visualización.
-
-**Sigue faltando el paso manual de v19.5**: fijar el **arranque** del depósito (fecha + las medias contadas a mano en la cámara, y desde v19.9 también sus kilos). Hasta que no esté, la pantalla muestra "Falta el arranque" y no calcula nada.
-
-**v19.9 está en la rama `feat/deposito-kg-partes`, sin deployar.** Antes del deploy hay que correr en el SQL Editor, en este orden: `supabase_migration_deposito_arranque_kg.sql` (prerequisito: sin esas columnas no se puede guardar el arranque) y `supabase_reset_deposito.sql` (el reset a cero que pidió el usuario). Ver "Cambios v19.9".
 
 ### v19.7 — deployada el 27/10/2026
 
