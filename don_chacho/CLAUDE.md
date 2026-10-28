@@ -498,9 +498,15 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v19.10) — SIN DEPLOYAR
+## ESTADO ACTUAL (v19.10) — EN PRODUCCIÓN
 
-**v19.10 está en el repo pero todavía no en producción**: trae el desglose de los kg de la semana del dashboard (ver "Cambios v19.10"). Sin migración — se deploya con el procedimiento de siempre (la versión ya está subida a `v19.10` en `app_config.dart`, que es lo que `build_web.sh` lee para escribir `app_version.json`).
+Deployada el 28/10/2026 **desde la rama `feat/desglose-kg-semana`**, que todavía está abierta en el **PR #14**: producción va una feature adelante de `master` hasta que se mergee. Deploy `web-5xly6g6d8`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
+
+Verificado contra producción: **mismo sha256** que el build (`acad6772…`), `app_version.json` dice `v19.10`, el bundle trae el código nuevo (la cadena "Factura completa" del desglose está adentro) y los headers son los que espera el aviso de versión (`app_version.json` y `index.html` `no-cache, no-store, must-revalidate`; `main.dart.js` `no-cache`).
+
+Trae el **desglose de los kg de la semana** del dashboard (ver "Cambios v19.10"). **Sin migración.** **Sin pasada visual todavía**: se deployó antes de mirarla andando.
+
+Ojo con el nombre del deploy: la CLI está logueada como `milifsabate` y el deploy sale con el scope `mfsabate` en la URL (`web-5xly6g6d8-mfsabate.vercel.app`), pero el proyecto es el de siempre — el `.vercel/project.json` con el `orgId` del team manda, y el alias se movió solo. La URL directa del deploy contesta "Protected by Vercel Authentication"; el alias es el que es público.
 
 ### v19.9 — deployada el 28/10/2026
 
@@ -639,6 +645,7 @@ El dashboard decía "560,5 kg · 6 medias" y ahí se terminaba: para saber a qui
 7. **`test/desglose_semana_test.dart`** (nuevo, 11 casos): las sumas, el orden por kg, el desempate alfabético sin acentos, el remito mezclado y la semana vacía. El proyecto pasa a **130 tests en verde**.
 8. **`lib/utils/app_config.dart`**: `version` de `'v19.9'` a `'v19.10'`.
 9. **Sin migración**: sale todo de `remitos` + `remito_items`, que ya estaban en memoria.
+10. **Deploy**: 28/10/2026 desde la rama `feat/desglose-kg-semana` (PR #14, sin mergear todavía). `flutter clean` + `flutter pub get` + `./build_web.sh`, se recreó `build/web/.vercel/project.json` (el clean se lo lleva puesto) y `vercel --prod --yes` desde `build/web`. Deploy `web-5xly6g6d8`, que tomó el alias solo.
 
 ### Cambios v19.9 (28/10/2026) — Depósito: kilos, partes de la media y reset
 
