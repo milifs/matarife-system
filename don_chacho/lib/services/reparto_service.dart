@@ -1,9 +1,10 @@
 // ============================================================
 // SERVICIO DE REPARTO - PDF para el repartidor
 // ============================================================
-// Genera un PDF con la lista de reparto de una semana/día:
-// tabla de clientes × CARNE (novillo) / CERDO, con TOTAL MEDIAS,
-// SOBRANTE DEPÓSITO y las notas sueltas. No involucra plata.
+// Genera un PDF con la lista de reparto de una semana/día: una tabla
+// de CARNE (novillo) y otra de CERDO, cada una con su TOTAL MEDIAS,
+// sus clientes y su SOBRANTE DEPÓSITO, más las notas sueltas.
+// No involucra plata.
 // ============================================================
 
 import 'package:flutter/services.dart';
@@ -24,7 +25,7 @@ class RepartoService {
     required List<Cliente> clientes,
   }) async {
     final logo = await _loadLogo();
-    final pdf = _generarPdf(lista: lista, clientes: clientes, logo: logo);
+    final pdf = generarPdf(lista: lista, clientes: clientes, logo: logo);
     final bytes = await pdf.save();
     await Printing.sharePdf(
       bytes: bytes,
@@ -33,7 +34,9 @@ class RepartoService {
     );
   }
 
-  static pw.Document _generarPdf({
+  /// Público para poder armar el documento en los tests sin pasar por
+  /// Printing: los errores de layout de dart_pdf saltan recién acá.
+  static pw.Document generarPdf({
     required RepartoLista lista,
     required List<Cliente> clientes,
     required pw.MemoryImage logo,
@@ -79,17 +82,61 @@ class RepartoService {
           ),
         );
 
-    pw.TableRow fila(String cliente, String sucursal, int carne, int cerdo,
+    pw.TableRow fila(String cliente, String sucursal, int medias,
             {bool bold = false, PdfColor? bg}) =>
         pw.TableRow(
           decoration: bg != null ? pw.BoxDecoration(color: bg) : null,
           children: [
             celdaTexto(cliente, bold: bold),
             celdaTexto(sucursal),
-            celdaNum(carne == 0 ? '' : '$carne', bold: bold),
-            celdaNum(cerdo == 0 ? '' : '$cerdo', bold: bold),
+            celdaNum(medias == 0 ? '' : '$medias', bold: bold),
           ],
         );
+
+    // Una tabla por mercadería, cada una con su total y su sobrante.
+    // Devuelve widgets sueltos y NO un Column: dentro de un MultiPage, la
+    // Table se parte sola entre páginas, pero metida en un Column no, y una
+    // lista larga de clientes haría explotar el armado.
+    List<pw.Widget> tabla(String tipo) {
+      final items = [...lista.itemsDe(tipo)]..sort((a, b) =>
+          compararNombres(nombre(a.clienteId), nombre(b.clienteId)));
+      return [
+        pw.Text(
+          tipo == tipoRepartoCerdo ? 'CERDO' : 'CARNE (NOVILLO)',
+          style: pw.TextStyle(
+              fontSize: 13, fontWeight: pw.FontWeight.bold, color: rojo),
+        ),
+        pw.SizedBox(height: 6),
+        pw.Table(
+          border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+          columnWidths: const {
+            0: pw.FlexColumnWidth(2.4),
+            1: pw.FlexColumnWidth(1.8),
+            2: pw.FlexColumnWidth(0.9),
+          },
+          children: [
+            // Header de columnas
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: gris),
+              children: [
+                celdaTexto('CLIENTES', bold: true),
+                celdaTexto('SUCURSAL', bold: true),
+                celdaNum('MEDIAS', bold: true),
+              ],
+            ),
+            // TOTAL MEDIAS
+            fila('TOTAL MEDIAS', '', lista.totalDe(tipo),
+                bold: true, bg: celeste),
+            // Filas de clientes (orden alfabético por nombre)
+            for (final it in items)
+              fila(nombre(it.clienteId), it.sucursal, it.medias),
+            // SOBRANTE DEPOSITO
+            fila('SOBRANTE DEPOSITO', '', lista.sobranteDe(tipo),
+                bold: true, bg: celeste),
+          ],
+        ),
+      ];
+    }
 
     pdf.addPage(
       pw.MultiPage(
@@ -122,45 +169,14 @@ class RepartoService {
           ),
           pw.SizedBox(height: 16),
 
-          // Tabla
-          pw.Table(
-            border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
-            columnWidths: const {
-              0: pw.FlexColumnWidth(2.4),
-              1: pw.FlexColumnWidth(1.8),
-              2: pw.FlexColumnWidth(0.9),
-              3: pw.FlexColumnWidth(0.9),
-            },
-            children: [
-              // Header de columnas
-              pw.TableRow(
-                decoration: const pw.BoxDecoration(color: gris),
-                children: [
-                  celdaTexto('CLIENTES', bold: true),
-                  celdaTexto('SUCURSAL', bold: true),
-                  celdaNum('CARNE', bold: true),
-                  celdaNum('CERDO', bold: true),
-                ],
-              ),
-              // TOTAL MEDIAS
-              fila('TOTAL MEDIAS', '', lista.totalMediasCarne,
-                  lista.totalMediasCerdo,
-                  bold: true, bg: celeste),
-              // Filas de clientes (orden alfabético por nombre)
-              for (final it in ([...lista.items]..sort((a, b) =>
-                  compararNombres(nombre(a.clienteId), nombre(b.clienteId)))))
-                fila(nombre(it.clienteId), it.sucursal, it.mediasCarne,
-                    it.mediasCerdo),
-              // SOBRANTE DEPOSITO
-              fila('SOBRANTE DEPOSITO', '', lista.sobranteCarne,
-                  lista.sobranteCerdo,
-                  bold: true, bg: celeste),
-            ],
-          ),
+          // Las dos tablas
+          for (final tipo in tiposReparto) ...[
+            ...tabla(tipo),
+            pw.SizedBox(height: 18),
+          ],
 
           // Notas
-          if (lista.notas.trim().isNotEmpty) ...[
-            pw.SizedBox(height: 16),
+          if (lista.notas.trim().isNotEmpty)
             pw.Container(
               width: double.infinity,
               padding: const pw.EdgeInsets.all(10),
@@ -182,7 +198,6 @@ class RepartoService {
                 ],
               ),
             ),
-          ],
         ],
       ),
     );
