@@ -1712,6 +1712,81 @@ double equivalenciaEnMedias(String tipoCarne) {
   return 1;
 }
 
+// ── Las partes de la media (v19.9) ──
+// La media de novillo se parte en TRES: pierna, octavo y plancha de asado
+// (el costillar completo). El cerdo no se fracciona: se vende entero.
+//
+// Esto no es lo mismo que la tabla de equivalencias de arriba. Ahí interesa
+// CUÁNTA media vale un corte para que el stock cierre; acá interesa QUÉ
+// PEDAZO es, para poder decir qué quedó suelto en la cámara: si se remitió
+// una pierna, lo que queda para vender son un octavo y una plancha de asado.
+
+const String partePierna = 'pierna';
+const String parteOctavo = 'octavo';
+const String partePlancha = 'plancha';
+
+/// Qué partes de la media se lleva un tipo de carne del catálogo de remitos.
+///
+/// Una media entera (`Novillo`, `Cerdo`) no abre nada y devuelve vacío. El
+/// `1/4 delantero` se lleva DOS partes de la misma media: el octavo y la
+/// plancha de asado.
+List<String> partesDeCorte(String tipoCarne) {
+  final t = tipoCarne.trim().toLowerCase();
+  if (t.contains('pierna')) return const [partePierna];
+  if (t.contains('octavo')) return const [parteOctavo];
+  if (t.contains('plancha')) return const [partePlancha];
+  if (t.contains('delantero')) return const [parteOctavo, partePlancha];
+  return const [];
+}
+
+/// Los cortes que salieron del depósito, para poder decir qué quedó suelto.
+///
+/// Cada vez que se vende una pierna y no hay ninguna suelta hay que ABRIR una
+/// media, y el octavo y la plancha de esa media quedan disponibles. Como cada
+/// media abierta deja exactamente una parte de cada clase, alcanza con contar
+/// cuántas se pidieron de cada una: las medias que hubo que abrir son el
+/// máximo de las tres, y lo suelto es lo que sobra de ese máximo.
+///
+/// La cuenta cierra con el stock en medias sin trucos: las medias enteras más
+/// las partes sueltas (un tercio cada una) dan exactamente el stock teórico.
+class CortesVendidos {
+  final int piernas;
+  final int octavos;
+  final int planchas;
+
+  const CortesVendidos({
+    this.piernas = 0,
+    this.octavos = 0,
+    this.planchas = 0,
+  });
+
+  /// Cuántas medias hubo que abrir para servir esos cortes.
+  int get mediasAbiertas =>
+      [piernas, octavos, planchas].reduce((a, b) => a > b ? a : b);
+
+  int get piernasSueltas => mediasAbiertas - piernas;
+  int get octavosSueltos => mediasAbiertas - octavos;
+  int get planchasSueltas => mediasAbiertas - planchas;
+
+  int get totalSueltas => piernasSueltas + octavosSueltos + planchasSueltas;
+
+  bool get haySueltas => totalSueltas > 0;
+
+  /// Lo suelto medido en medias: cada parte es un tercio.
+  double get sueltasEnMedias => totalSueltas * _tercio;
+}
+
+/// El nombre de una parte, en singular o plural: "1 octavo", "2 piernas",
+/// "1 plancha de asado".
+String labelParte(String parte, int cantidad) {
+  final plural = cantidad != 1;
+  return switch (parte) {
+    partePierna => plural ? 'piernas' : 'pierna',
+    parteOctavo => plural ? 'octavos' : 'octavo',
+    _ => plural ? 'planchas de asado' : 'plancha de asado',
+  };
+}
+
 /// A qué stock le pega un tipo de carne: [Proveedor.tipoNovillo] o
 /// [Proveedor.tipoCerdo]. Solo "Cerdo" es cerdo; todo el resto (novillo y sus
 /// cinco cortes) computa como novillo. Es la misma regla que `_normalizarTipo`
@@ -1754,6 +1829,13 @@ class DepositoConfig {
   DateTime fechaInicio;
   double mediasNovillo;
   double mediasCerdo;
+
+  /// Lo que pesaban esas medias (v19.9). Opcionales, como todos los kilos del
+  /// módulo: si no hay balanza a mano el arranque se guarda igual y el kilaje
+  /// del stock queda marcado como incompleto.
+  double kgNovillo;
+  double kgCerdo;
+
   String? registradoPor;
   DateTime actualizadoEn;
 
@@ -1762,6 +1844,8 @@ class DepositoConfig {
     DateTime? fechaInicio,
     this.mediasNovillo = 0,
     this.mediasCerdo = 0,
+    this.kgNovillo = 0,
+    this.kgCerdo = 0,
     this.registradoPor,
     DateTime? actualizadoEn,
   })  : id = id ?? _uuid.v4(),
@@ -1772,6 +1856,10 @@ class DepositoConfig {
   double inicialDe(String tipo) =>
       tipo == Proveedor.tipoCerdo ? mediasCerdo : mediasNovillo;
 
+  /// Los kilos de esas medias. 0 cuando no se pesaron.
+  double kgInicialDe(String tipo) =>
+      tipo == Proveedor.tipoCerdo ? kgCerdo : kgNovillo;
+
   Map<String, dynamic> toMap() => {
         'id': id,
         // Va explícito para poder hacer upsert sobre la columna UNIQUE que
@@ -1780,6 +1868,8 @@ class DepositoConfig {
         'fecha_inicio': fechaInicio.toIso8601String(),
         'medias_novillo': mediasNovillo,
         'medias_cerdo': mediasCerdo,
+        'kg_novillo': kgNovillo,
+        'kg_cerdo': kgCerdo,
         'registrado_por': registradoPor,
         'actualizado_en': actualizadoEn.toIso8601String(),
       };
@@ -1789,6 +1879,10 @@ class DepositoConfig {
         fechaInicio: DateTime.tryParse(map['fecha_inicio'] ?? ''),
         mediasNovillo: (map['medias_novillo'] ?? 0).toDouble(),
         mediasCerdo: (map['medias_cerdo'] ?? 0).toDouble(),
+        // Toleran que las columnas no existan: se agregaron en v19.9, con el
+        // módulo ya en producción.
+        kgNovillo: (map['kg_novillo'] ?? 0).toDouble(),
+        kgCerdo: (map['kg_cerdo'] ?? 0).toDouble(),
         registradoPor: map['registrado_por'],
         actualizadoEn: DateTime.tryParse(map['actualizado_en'] ?? ''),
       );
@@ -2066,6 +2160,29 @@ class StockDeposito {
   /// Las salidas todavía sin remito, para poder listarlas y avisar cuál es.
   final List<DepositoMovimiento> pendientes;
 
+  // ── Los kilos de cada componente (v19.9) ──
+  // Misma ecuación que las medias, pero en peso. Son INFORMATIVOS: el
+  // veredicto de faltantes sigue saliendo de las medias. Sirven para la
+  // pregunta que las medias no contestan: cuánta carne hay en la cámara,
+  // porque dos medias pueden diferenciarse en 40 kg.
+  //
+  // Pueden venir incompletos (una carga sin faena, una salida sin pesar).
+  // [mediasSinPesar] dice cuántas medias de esta cuenta no tienen kilos, para
+  // que el número se muestre como lo que es y no como una verdad.
+  final double kgInicial;
+  final double kgComprados;
+  final double kgEntradas;
+  final double kgRemitidos;
+  final double kgSalidasPendientes;
+  final double kgSalidasDefinitivas;
+
+  /// Medias de esta cuenta que nadie pesó. > 0 = el kilaje está incompleto.
+  final double mediasSinPesar;
+
+  /// Los cortes que salieron, para saber qué quedó suelto en la cámara
+  /// (v19.9). En cerdo va siempre vacío: no se fracciona.
+  final CortesVendidos cortes;
+
   const StockDeposito({
     required this.tipo,
     this.inicial = 0,
@@ -2079,6 +2196,14 @@ class StockDeposito {
     this.kgRecuento = 0,
     this.teoricoAlRecuento,
     this.pendientes = const [],
+    this.kgInicial = 0,
+    this.kgComprados = 0,
+    this.kgEntradas = 0,
+    this.kgRemitidos = 0,
+    this.kgSalidasPendientes = 0,
+    this.kgSalidasDefinitivas = 0,
+    this.mediasSinPesar = 0,
+    this.cortes = const CortesVendidos(),
   });
 
   String get tipoLabel =>
@@ -2123,4 +2248,39 @@ class StockDeposito {
   /// Los kilos que salieron del depósito y todavía no tienen remito.
   double get kgPendientes =>
       pendientes.fold<double>(0, (t, m) => t + m.totalKg);
+
+  // ── Kilos y partes de lo que hay en la cámara (v19.9) ──
+
+  /// Los kilos que deberían estar en la cámara ahora mismo, por la misma
+  /// ecuación que [teorico] pero en peso. Nunca baja de cero: con los kilos
+  /// incompletos un negativo no sería un faltante real, solo lo que falta
+  /// pesar.
+  double get kgTeorico {
+    final kg = kgInicial +
+        kgComprados +
+        kgEntradas -
+        kgRemitidos -
+        kgSalidasPendientes -
+        kgSalidasDefinitivas;
+    return kg > 0 ? kg : 0;
+  }
+
+  /// true cuando hay medias sin pesar en la cuenta: el kilaje es parcial.
+  bool get kgIncompleto => mediasSinPesar > toleranciaMedias;
+
+  /// true cuando hay algún kilo que mostrar. Sin esto la pantalla mostraría
+  /// un "0 kg" que no significa "la cámara está vacía" sino "nadie pesó".
+  bool get tieneKg => kgTeorico > 0;
+
+  /// Lo que quedó suelto de las medias que se abrieron, en medias.
+  double get mediasSueltas => cortes.sueltasEnMedias;
+
+  /// Las medias que siguen enteras en la cámara. El resto del stock son las
+  /// partes sueltas: [mediasEnteras] + [mediasSueltas] = [teorico].
+  double get mediasEnteras {
+    final enteras = teorico - mediasSueltas;
+    return enteras > 0 ? enteras : 0;
+  }
+
+  bool get hayPartesSueltas => cortes.haySueltas;
 }

@@ -165,6 +165,15 @@ class _DepositoScreenState extends State<DepositoScreen> {
     final cerdoCtrl = TextEditingController(
       text: textoMiles(actual?.mediasCerdo ?? 0),
     );
+    // Los kilos del arranque son opcionales: si la cámara se cuenta sin
+    // balanza, el arranque igual se guarda y el kilaje queda marcado como
+    // incompleto en la tarjeta.
+    final kgNovilloCtrl = TextEditingController(
+      text: textoMiles(actual?.kgNovillo ?? 0),
+    );
+    final kgCerdoCtrl = TextEditingController(
+      text: textoMiles(actual?.kgCerdo ?? 0),
+    );
 
     final guardar = await showDialog<bool>(
       context: context,
@@ -221,6 +230,38 @@ class _DepositoScreenState extends State<DepositoScreen> {
                     labelText: 'Medias de cerdo en la cámara',
                   ),
                 ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Si las pesaste, cargá los kilos de esas medias. Es lo que '
+                  'le da kilaje al stock: sin esto la pantalla puede decir '
+                  'cuántas medias hay, pero no cuánta carne.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: kgNovilloCtrl,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: const [MilesInputFormatter()],
+                  decoration: const InputDecoration(
+                    labelText: 'Kg de novillo (opcional)',
+                    suffixText: 'kg',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: kgCerdoCtrl,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: const [MilesInputFormatter()],
+                  decoration: const InputDecoration(
+                    labelText: 'Kg de cerdo (opcional)',
+                    suffixText: 'kg',
+                  ),
+                ),
               ],
             ),
           ),
@@ -245,6 +286,8 @@ class _DepositoScreenState extends State<DepositoScreen> {
       fechaInicio: fecha,
       mediasNovillo: parseNumero(novilloCtrl.text),
       mediasCerdo: parseNumero(cerdoCtrl.text),
+      kgNovillo: parseNumero(kgNovilloCtrl.text),
+      kgCerdo: parseNumero(kgCerdoCtrl.text),
       registradoPor: app.usuarioActual?.nombreCompleto,
     );
     final ok = await app.guardarDepositoConfig(config);
@@ -766,33 +809,48 @@ class _TarjetaStock extends StatelessWidget {
               'Lo que debería haber en la cámara',
               style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
             ),
+            // Los kilos contestan lo que las medias no pueden: cuánta carne
+            // hay. Dos medias pueden diferenciarse en 40 kg.
+            _KgEnCamara(stock: stock),
+            // Qué hay realmente para vender: medias enteras y las partes que
+            // quedaron de las que ya se abrieron.
+            if (stock.hayPartesSueltas) _PartesSueltas(stock: stock),
             const Divider(height: 20),
 
             // El desglose completo: de dónde sale ese número.
-            _Fila(label: 'Al arranque', valor: formatMedias(stock.inicial)),
+            _Fila(
+              label: 'Al arranque',
+              valor: formatMedias(stock.inicial),
+              kg: stock.kgInicial,
+            ),
             _Fila(
               label: 'Compradas a proveedores',
               valor: '+ ${formatMedias(stock.compradas)}',
+              kg: stock.kgComprados,
             ),
             if (stock.entradas > 0)
               _Fila(
                 label: 'Entradas (devoluciones, ajustes)',
                 valor: '+ ${formatMedias(stock.entradas)}',
+                kg: stock.kgEntradas,
               ),
             _Fila(
               label: 'Remitidas a clientes',
               valor: '− ${formatMedias(stock.remitidas)}',
+              kg: stock.kgRemitidos,
             ),
             if (stock.salidasPendientes > 0)
               _Fila(
                 label: 'Salidas sin remito',
                 valor: '− ${formatMedias(stock.salidasPendientes)}',
+                kg: stock.kgSalidasPendientes,
                 color: AppTheme.warning,
               ),
             if (stock.salidasDefinitivas > 0)
               _Fila(
                 label: 'Salidas definitivas (merma, consumo)',
                 valor: '− ${formatMedias(stock.salidasDefinitivas)}',
+                kg: stock.kgSalidasDefinitivas,
               ),
             const Divider(height: 20),
             _Fila(
@@ -829,6 +887,130 @@ class _TarjetaStock extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Los kilos de lo que debería estar en la cámara (v19.9).
+///
+/// Hasta ahora el módulo pedía los kilos de cada media pero no los mostraba
+/// nunca de vuelta: se cargaban y desaparecían. Acá vuelven, con la misma
+/// ecuación que las medias pero en peso.
+///
+/// El kilaje puede estar INCOMPLETO (una carga sin faena, una salida que
+/// nadie pesó, un arranque sin balanza) y se dice explícitamente: un número
+/// de kilos que parece exacto y no lo es es peor que no mostrarlo.
+class _KgEnCamara extends StatelessWidget {
+  final StockDeposito stock;
+
+  const _KgEnCamara({required this.stock});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!stock.tieneKg && !stock.kgIncompleto) return const SizedBox.shrink();
+
+    final falta = stock.kgIncompleto
+        ? 'faltan pesar ${formatMediasConUnidad(stock.mediasSinPesar)}'
+        : '';
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        stock.tieneKg
+            ? '${formatKg(stock.kgTeorico)}${falta.isEmpty ? '' : ' · $falta'}'
+            : 'Sin kilos cargados: $falta',
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: stock.kgIncompleto
+              ? AppTheme.warning
+              : AppTheme.textPrimary,
+        ),
+      ),
+    );
+  }
+}
+
+/// Qué hay realmente para vender: medias enteras y las partes que quedaron
+/// de las que ya se abrieron (v19.9).
+///
+/// La media de novillo se parte en tres —pierna, octavo y plancha de asado—
+/// así que remitir una pierna deja un octavo y una plancha disponibles. El
+/// stock en medias ya lo sabe (dice 1,67), pero "1,67 medias" no le dice a
+/// nadie qué pedazo puede vender. Esto sí.
+///
+/// Las dos cuentas son la misma: medias enteras + partes sueltas = el stock.
+class _PartesSueltas extends StatelessWidget {
+  final StockDeposito stock;
+
+  const _PartesSueltas({required this.stock});
+
+  @override
+  Widget build(BuildContext context) {
+    final cortes = stock.cortes;
+    final sueltas = <String>[
+      if (cortes.piernasSueltas > 0)
+        '${cortes.piernasSueltas} '
+            '${labelParte(partePierna, cortes.piernasSueltas)}',
+      if (cortes.octavosSueltos > 0)
+        '${cortes.octavosSueltos} '
+            '${labelParte(parteOctavo, cortes.octavosSueltos)}',
+      if (cortes.planchasSueltas > 0)
+        '${cortes.planchasSueltas} '
+            '${labelParte(partePlancha, cortes.planchasSueltas)}',
+    ];
+
+    final enteras = stock.mediasEnteras;
+    final textoEnteras = enteras < toleranciaMedias
+        ? 'Ninguna media entera'
+        : '${formatMedias(enteras)} '
+            '${(enteras - 1).abs() < toleranciaMedias ? 'media entera' : 'medias enteras'}';
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.infoBg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'DISPONIBLE PARA VENDER',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+              color: AppTheme.info,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            textoEnteras,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          for (final parte in sueltas)
+            Text(
+              parte,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          const SizedBox(height: 6),
+          const Text(
+            'La media de novillo se parte en pierna, octavo y plancha de '
+            'asado. Lo suelto quedó de las medias que ya se abrieron para '
+            'armar un remito.',
+            style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+          ),
+        ],
       ),
     );
   }
@@ -1246,11 +1428,18 @@ class _Fila extends StatelessWidget {
   final bool destacado;
   final Color? color;
 
+  /// Los kilos de esa línea. Van abajo del texto y no en una columna aparte:
+  /// en el celular una tercera columna deja los números ilegibles. Cuando es
+  /// 0 no se muestra nada, porque 0 kg acá significa "nadie lo pesó" y no
+  /// "no pesa nada".
+  final double kg;
+
   const _Fila({
     required this.label,
     required this.valor,
     this.destacado = false,
     this.color,
+    this.kg = 0,
   });
 
   @override
@@ -1260,12 +1449,25 @@ class _Fila extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppTheme.textSecondary,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+                if (kg > 0)
+                  Text(
+                    formatKg(kg),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+              ],
             ),
           ),
           Text(
