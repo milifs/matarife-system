@@ -10,6 +10,7 @@ import '../utils/formatters.dart';
 import '../utils/theme.dart';
 import 'vendedor_detalle_screen.dart';
 import 'costos_semana_screen.dart';
+import 'detalle_kg_semana_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -50,14 +51,14 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                      builder: (_) => const CostosSemanaScreen()),
+                  MaterialPageRoute(builder: (_) => const CostosSemanaScreen()),
                 );
               },
             ),
           IconButton(
-            icon: Icon(
-                _ofuscado ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+            icon: Icon(_ofuscado
+                ? Icons.visibility_off_outlined
+                : Icons.visibility_outlined),
             tooltip: _ofuscado ? 'Mostrar valores' : 'Ocultar valores',
             onPressed: () => setState(() => _ofuscado = !_ofuscado),
           ),
@@ -83,8 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 12),
                   Text(app.error!,
                       textAlign: TextAlign.center,
-                      style:
-                          const TextStyle(color: AppTheme.textSecondary)),
+                      style: const TextStyle(color: AppTheme.textSecondary)),
                   const SizedBox(height: 16),
                   OutlinedButton(
                     onPressed: () => app.cargarDatos(),
@@ -108,7 +108,8 @@ class _HomeScreenState extends State<HomeScreen> {
           final gananciaNovillo = gananciaPorTipo['Novillo'] ?? 0;
           final gananciaCerdo = gananciaPorTipo['Cerdo'] ?? 0;
           final descuentoTransf = app.descuentoTransferenciasSemana(_semanaRef);
-          final gananciaTotal = gananciaNovillo + gananciaCerdo - descuentoTransf;
+          final gananciaTotal =
+              gananciaNovillo + gananciaCerdo - descuentoTransf;
 
           return RefreshIndicator(
             onRefresh: () => app.cargarDatos(),
@@ -124,9 +125,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                       tooltip: 'Semana anterior',
-                      onPressed: () => setState(() =>
-                          _semanaRef =
-                              _semanaRef.subtract(const Duration(days: 7))),
+                      onPressed: () => setState(() => _semanaRef =
+                          _semanaRef.subtract(const Duration(days: 7))),
                     ),
                     Text(
                       'Semana ${formatRangoSemana(_semanaRef)}',
@@ -141,9 +141,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       tooltip: 'Semana siguiente',
                       onPressed: _esSemanaActual
                           ? null
-                          : () => setState(() =>
-                              _semanaRef =
-                                  _semanaRef.add(const Duration(days: 7))),
+                          : () => setState(() => _semanaRef =
+                              _semanaRef.add(const Duration(days: 7))),
                     ),
                   ],
                 ),
@@ -170,7 +169,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           label: 'Kg novillo semana',
                           value: _ocultar(formatKg(kgNovillo)),
                           valueColor: AppTheme.textPrimary,
-                          subtitle: !_ofuscado && mediasNovillo > 0 ? '$mediasNovillo medias' : null,
+                          subtitle: !_ofuscado && mediasNovillo > 0
+                              ? '$mediasNovillo medias'
+                              : null,
+                          onTap: () => _verDesglose(context, 'Novillo'),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -179,7 +181,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           label: 'Kg cerdo semana',
                           value: _ocultar(formatKg(kgCerdo)),
                           valueColor: AppTheme.textPrimary,
-                          subtitle: !_ofuscado && mediasCerdo > 0 ? '$mediasCerdo medias' : null,
+                          subtitle: !_ofuscado && mediasCerdo > 0
+                              ? '$mediasCerdo medias'
+                              : null,
+                          onTap: () => _verDesglose(context, 'Cerdo'),
                         ),
                       ),
                     ],
@@ -193,13 +198,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: _KpiCard(
                           label: 'Costo/kg novillo',
                           value: costoSemana != null
-                              ? _ocultar(formatPesos(costoSemana.costoPorKgNovillo))
+                              ? _ocultar(
+                                  formatPesos(costoSemana.costoPorKgNovillo))
                               : '--',
                           valueColor: AppTheme.textPrimary,
                           badge: costoSemana == null ? 'Cargar' : 'Editar',
-                          badgeType: costoSemana == null ? StatusType.warning : StatusType.info,
-                          onBadgeTap: () =>
-                              _mostrarCargaCosto(context, app),
+                          badgeType: costoSemana == null
+                              ? StatusType.warning
+                              : StatusType.info,
+                          onBadgeTap: () => _mostrarCargaCosto(context, app),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -207,13 +214,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: _KpiCard(
                           label: 'Costo/kg cerdo',
                           value: costoSemana != null
-                              ? _ocultar(formatPesos(costoSemana.costoPorKgCerdo))
+                              ? _ocultar(
+                                  formatPesos(costoSemana.costoPorKgCerdo))
                               : '--',
                           valueColor: AppTheme.textPrimary,
                           badge: costoSemana == null ? 'Cargar' : 'Editar',
-                          badgeType: costoSemana == null ? StatusType.warning : StatusType.info,
-                          onBadgeTap: () =>
-                              _mostrarCargaCosto(context, app),
+                          badgeType: costoSemana == null
+                              ? StatusType.warning
+                              : StatusType.info,
+                          onBadgeTap: () => _mostrarCargaCosto(context, app),
                         ),
                       ),
                     ],
@@ -263,9 +272,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ? _ocultar(formatPesos(gananciaTotal))
                         : '--',
                     valueColor: AppTheme.success,
-                    badge: costoSemana == null
-                        ? 'Sin costo cargado'
-                        : null,
+                    badge: costoSemana == null ? 'Sin costo cargado' : null,
                     badgeType: StatusType.warning,
                     onBadgeTap: _esSemanaActual
                         ? () => _mostrarCargaCosto(context, app)
@@ -301,8 +308,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ...app.vendedores.map((v) {
                     final saldo = app.getSaldoVendedor(v.id);
                     final clientesVend = app.clientesDeVendedor(v.id);
-                    final vencidosVend =
-                        app.clientesVencidosDeVendedor(v.id);
+                    final vencidosVend = app.clientesVencidosDeVendedor(v.id);
 
                     return _VendedorCard(
                       nombre: v.nombreCompleto,
@@ -312,8 +318,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) =>
-                              VendedorDetalleScreen(vendedor: v),
+                          builder: (_) => VendedorDetalleScreen(vendedor: v),
                         ),
                       ),
                     );
@@ -324,6 +329,20 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// Abre el desglose de la tarjeta de kg: a qué clientes fue esa carne.
+  void _verDesglose(BuildContext context, String tipo) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DetalleKgSemanaScreen(
+          tipo: tipo,
+          semana: _semanaRef,
+          ofuscado: _ofuscado,
+        ),
       ),
     );
   }
@@ -351,8 +370,7 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('Costo por kg esta semana',
-                style:
-                    TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
             Text('Semana ${formatRangoSemana(_semanaRef)}',
                 style: const TextStyle(
@@ -415,6 +433,10 @@ class _KpiCard extends StatelessWidget {
   final StatusType? badgeType;
   final VoidCallback? onBadgeTap;
 
+  /// Si la tarjeta lleva a algún lado, además de hacerla tocable le pone el
+  /// chevron al lado del título: si no, nadie se entera de que se puede tocar.
+  final VoidCallback? onTap;
+
   const _KpiCard({
     required this.label,
     required this.value,
@@ -423,44 +445,58 @@ class _KpiCard extends StatelessWidget {
     this.badge,
     this.badgeType,
     this.onBadgeTap,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label,
-                style: const TextStyle(
-                    fontSize: 11, color: AppTheme.textSecondary)),
-            const SizedBox(height: 6),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(value,
-                  style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: valueColor)),
-            ),
-            if (subtitle != null) ...[
-              const SizedBox(height: 2),
-              Text(subtitle!,
-                  style: const TextStyle(
-                      fontSize: 11, color: AppTheme.textSecondary)),
-            ],
-            if (badge != null) ...[
-              const SizedBox(height: 6),
-              GestureDetector(
-                onTap: onBadgeTap,
-                child: StatusPill(
-                    text: badge!, type: badgeType ?? StatusType.info),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(label,
+                        style: const TextStyle(
+                            fontSize: 11, color: AppTheme.textSecondary)),
+                  ),
+                  if (onTap != null)
+                    const Icon(Icons.chevron_right,
+                        size: 16, color: AppTheme.textHint),
+                ],
               ),
+              const SizedBox(height: 6),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(value,
+                    style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: valueColor)),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 2),
+                Text(subtitle!,
+                    style: const TextStyle(
+                        fontSize: 11, color: AppTheme.textSecondary)),
+              ],
+              if (badge != null) ...[
+                const SizedBox(height: 6),
+                GestureDetector(
+                  onTap: onBadgeTap,
+                  child: StatusPill(
+                      text: badge!, type: badgeType ?? StatusType.info),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -490,8 +526,7 @@ class _VendedorCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
               Expanded(
@@ -504,8 +539,7 @@ class _VendedorCard extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text('$cantClientes clientes',
                         style: const TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.textSecondary)),
+                            fontSize: 12, color: AppTheme.textSecondary)),
                   ],
                 ),
               ),
@@ -516,20 +550,16 @@ class _VendedorCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w500,
-                        color:
-                            saldo > 0 ? AppTheme.danger : AppTheme.success,
+                        color: saldo > 0 ? AppTheme.danger : AppTheme.success,
                       )),
                   const SizedBox(height: 4),
                   if (vencidos > 0)
                     StatusPill(
-                        text: '$vencidos vencidos',
-                        type: StatusType.danger)
+                        text: '$vencidos vencidos', type: StatusType.danger)
                   else if (saldo <= 0)
-                    const StatusPill(
-                        text: 'Al día', type: StatusType.success)
+                    const StatusPill(text: 'Al día', type: StatusType.success)
                   else
-                    const StatusPill(
-                        text: 'En plazo', type: StatusType.info),
+                    const StatusPill(text: 'En plazo', type: StatusType.info),
                 ],
               ),
               const SizedBox(width: 4),
@@ -564,8 +594,8 @@ class _EmptyState extends StatelessWidget {
             Icon(icon, size: 40, color: AppTheme.textHint),
             const SizedBox(height: 12),
             Text(message,
-                style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w500)),
+                style:
+                    const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
             const SizedBox(height: 4),
             Text(action,
                 style: const TextStyle(

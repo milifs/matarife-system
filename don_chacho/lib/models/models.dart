@@ -7,6 +7,8 @@
 
 import 'package:uuid/uuid.dart';
 
+import '../utils/formatters.dart' show compararNombres;
+
 const _uuid = Uuid();
 
 /// Redondeo de kilos con el criterio de la planilla: de 0,6 para arriba sube,
@@ -246,7 +248,7 @@ class Pago {
   final DateTime creadoEn;
   String? registradoPor; // nombre_completo del usuario que registró el pago
   double? saldoAnterior; // saldo del cliente antes de aplicar este pago
-  double? saldoNuevo;    // saldo resultante después de aplicar este pago
+  double? saldoNuevo; // saldo resultante después de aplicar este pago
 
   Pago({
     String? id,
@@ -287,8 +289,12 @@ class Pago {
         netoRecibido: (map['neto_recibido'] ?? 0).toDouble(),
         creadoEn: DateTime.tryParse(map['creado_en'] ?? '') ?? DateTime.now(),
         registradoPor: map['registrado_por'],
-        saldoAnterior: map['saldo_anterior'] != null ? (map['saldo_anterior'] as num).toDouble() : null,
-        saldoNuevo: map['saldo_nuevo'] != null ? (map['saldo_nuevo'] as num).toDouble() : null,
+        saldoAnterior: map['saldo_anterior'] != null
+            ? (map['saldo_anterior'] as num).toDouble()
+            : null,
+        saldoNuevo: map['saldo_nuevo'] != null
+            ? (map['saldo_nuevo'] as num).toDouble()
+            : null,
       );
 }
 
@@ -312,9 +318,8 @@ class PagoMedio {
     required this.monto,
   })  : id = id ?? _uuid.v4(),
         descuento = medio == MedioPago.transferencia ? monto * 0.062 : 0,
-        netoRecibido = medio == MedioPago.transferencia
-            ? monto * (1 - 0.062)
-            : monto;
+        netoRecibido =
+            medio == MedioPago.transferencia ? monto * (1 - 0.062) : monto;
 
   /// Recalcula descuento y neto cuando cambia el monto
   void recalcular() {
@@ -396,7 +401,9 @@ class CostoSemanal {
         id: map['id'],
         semanaInicio:
             DateTime.tryParse(map['semana_inicio'] ?? '') ?? DateTime.now(),
-        costoPorKgNovillo: (map['costo_por_kg_novillo'] ?? map['costo_por_kg'] ?? 0).toDouble(),
+        costoPorKgNovillo:
+            (map['costo_por_kg_novillo'] ?? map['costo_por_kg'] ?? 0)
+                .toDouble(),
         costoPorKgCerdo: (map['costo_por_kg_cerdo'] ?? 0).toDouble(),
         creadoEn: DateTime.tryParse(map['creado_en'] ?? '') ?? DateTime.now(),
       );
@@ -499,8 +506,7 @@ class NotaPedido {
   bool get esConfirmado => estado == 'confirmado';
   bool get esRechazado => estado == 'rechazado';
 
-  String get numeroFormateado =>
-      'NP-${numero.toString().padLeft(4, '0')}';
+  String get numeroFormateado => 'NP-${numero.toString().padLeft(4, '0')}';
 
   // Nombre a mostrar (lista o texto libre)
   String get clienteLabel => clienteNombreLibre?.isNotEmpty == true
@@ -525,7 +531,7 @@ class NotaPedido {
       };
 
   factory NotaPedido.fromMap(Map<String, dynamic> map,
-      {List<NotaPedidoItem> items = const []}) =>
+          {List<NotaPedidoItem> items = const []}) =>
       NotaPedido(
         id: map['id'],
         numero: map['numero'] ?? 0,
@@ -594,7 +600,8 @@ class PagoEliminado {
     final mediosRaw = map['medios'];
     final medios = mediosRaw is List
         ? mediosRaw
-            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e as Map))
+            .map<Map<String, dynamic>>(
+                (e) => Map<String, dynamic>.from(e as Map))
             .toList()
         : <Map<String, dynamic>>[];
     return PagoEliminado(
@@ -829,7 +836,8 @@ class RepartoLista {
   })  : id = id ?? _uuid.v4(),
         creadoEn = creadoEn ?? DateTime.now();
 
-  String get diaLabel => dia.isEmpty ? '' : '${dia[0].toUpperCase()}${dia.substring(1)}';
+  String get diaLabel =>
+      dia.isEmpty ? '' : '${dia[0].toUpperCase()}${dia.substring(1)}';
 
   /// Suma de medias de carne ya asignadas a clientes
   int get repartidoCarne => items.fold(0, (s, i) => s + i.mediasCarne);
@@ -947,7 +955,8 @@ class Rol {
   })  : id = id ?? _uuid.v4(),
         creadoEn = creadoEn ?? DateTime.now();
 
-  bool tienePermiso(String permisoId) => esAdmin || permisoIds.contains(permisoId);
+  bool tienePermiso(String permisoId) =>
+      esAdmin || permisoIds.contains(permisoId);
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -1313,9 +1322,8 @@ class Carga {
         totalAPagarServidor: map['total_a_pagar'] == null
             ? null
             : (map['total_a_pagar']).toDouble(),
-        rindeCargaServidor: map['rinde_carga'] == null
-            ? null
-            : (map['rinde_carga']).toDouble(),
+        rindeCargaServidor:
+            map['rinde_carga'] == null ? null : (map['rinde_carga']).toDouble(),
       );
 
   Carga copyWith({
@@ -1340,8 +1348,7 @@ class Carga {
         desvastePorcentaje: desvastePorcentaje ?? this.desvastePorcentaje,
         precioKgVivo: precioKgVivo ?? this.precioKgVivo,
         rindeAsegurado: rindeAsegurado ?? this.rindeAsegurado,
-        kgMediaRes:
-            limpiarKgMediaRes ? null : (kgMediaRes ?? this.kgMediaRes),
+        kgMediaRes: limpiarKgMediaRes ? null : (kgMediaRes ?? this.kgMediaRes),
         observacion: observacion ?? this.observacion,
         registradoPor: registradoPor,
         creadoEn: creadoEn,
@@ -1633,7 +1640,8 @@ class ResumenJornada {
     required List<CobroJornada> cobros,
   })  : dia = DateTime(dia.year, dia.month, dia.day),
         cobros = List.unmodifiable(
-          [...cobros]..sort((a, b) => a.pago.creadoEn.compareTo(b.pago.creadoEn)),
+          [...cobros]
+            ..sort((a, b) => a.pago.creadoEn.compareTo(b.pago.creadoEn)),
         );
 
   /// Total cobrado en el día (bruto).
@@ -1976,8 +1984,7 @@ class DepositoMovimiento {
 
   String get numeroFormateado => 'D-${numero.toString().padLeft(4, '0')}';
 
-  String get tipoLabel =>
-      tipo == Proveedor.tipoCerdo ? 'Cerdo' : 'Novillo';
+  String get tipoLabel => tipo == Proveedor.tipoCerdo ? 'Cerdo' : 'Novillo';
 
   String get claseLabel => switch (clase) {
         claseEntrada => 'Entrada',
@@ -2206,8 +2213,7 @@ class StockDeposito {
     this.cortes = const CortesVendidos(),
   });
 
-  String get tipoLabel =>
-      tipo == Proveedor.tipoCerdo ? 'Cerdo' : 'Novillo';
+  String get tipoLabel => tipo == Proveedor.tipoCerdo ? 'Cerdo' : 'Novillo';
 
   /// Las medias que deberían estar físicamente en la cámara ahora mismo.
   double get teorico =>
@@ -2283,4 +2289,116 @@ class StockDeposito {
   }
 
   bool get hayPartesSueltas => cortes.haySueltas;
+}
+
+// ─────────────────────────────────────────────
+// DESGLOSE DE LO VENDIDO EN LA SEMANA (v19.10)
+// ─────────────────────────────────────────────
+// Lo que hay detrás del número grande de kg del dashboard: a qué clientes se
+// les vendió esa carne, cuántas medias se llevó cada uno y por cuánta plata.
+//
+// DOS DECISIONES:
+//
+// 1. Los kg, las medias y el importe son SOLO los del tipo consultado. Un
+//    remito puede traer novillo y cerdo juntos; si el desglose de novillo
+//    sumara el remito entero, la suma de la pantalla no daría el número de
+//    la tarjeta que se tocó. El total de la factura se muestra aparte, en
+//    los remitos mezclados, que son los únicos donde los dos difieren.
+//
+// 2. El importe sale de los items (`kg × precio/kg`), igual que el kg; el
+//    total de la factura sale de `remito.totalPesos`, que es lo que figura
+//    en el remito del cliente.
+
+/// Un remito de la semana, visto desde un solo tipo de carne.
+class VentaRemitoSemana {
+  final Remito remito;
+
+  /// Medias, kg e importe del tipo consultado (no del remito entero).
+  final int medias;
+  final double kg;
+  final double importe;
+
+  /// El remito trae además items de otro tipo de carne.
+  final bool tieneOtrosTipos;
+
+  const VentaRemitoSemana({
+    required this.remito,
+    required this.medias,
+    required this.kg,
+    required this.importe,
+    this.tieneOtrosTipos = false,
+  });
+
+  /// El total de la factura, con todos los tipos de carne.
+  double get totalFactura => remito.totalPesos;
+}
+
+/// Lo que se llevó un cliente en la semana, de un tipo de carne.
+class VentaClienteSemana {
+  final String clienteId;
+  final String clienteNombre;
+  final String? vendedorNombre;
+  final List<VentaRemitoSemana> remitos;
+
+  VentaClienteSemana({
+    required this.clienteId,
+    required this.clienteNombre,
+    this.vendedorNombre,
+    required List<VentaRemitoSemana> remitos,
+  }) : remitos = List.unmodifiable(
+          [...remitos]..sort((a, b) {
+              final porFecha = a.remito.fecha.compareTo(b.remito.fecha);
+              return porFecha != 0
+                  ? porFecha
+                  : a.remito.numero.compareTo(b.remito.numero);
+            }),
+        );
+
+  int get medias => remitos.fold<int>(0, (s, r) => s + r.medias);
+  double get kg => remitos.fold<double>(0, (s, r) => s + r.kg);
+  double get importe => remitos.fold<double>(0, (s, r) => s + r.importe);
+
+  /// Lo facturado en total (todos los tipos) en los remitos que lo tocaron.
+  double get totalFacturado =>
+      remitos.fold<double>(0, (s, r) => s + r.totalFactura);
+
+  bool get hayRemitosMezclados => remitos.any((r) => r.tieneOtrosTipos);
+
+  int get cantidadRemitos => remitos.length;
+}
+
+/// El desglose completo de un tipo de carne en una semana.
+class DesgloseSemanaTipo {
+  /// 'Novillo' o 'Cerdo', ya normalizado.
+  final String tipo;
+  final DateTime semanaInicio;
+
+  /// Clientes de mayor a menor kg: el desglose se lee para saber a dónde
+  /// se fue la carne, y lo primero que se busca es quién se llevó más.
+  final List<VentaClienteSemana> clientes;
+
+  DesgloseSemanaTipo({
+    required this.tipo,
+    required DateTime semanaInicio,
+    required List<VentaClienteSemana> clientes,
+  })  : semanaInicio =
+            DateTime(semanaInicio.year, semanaInicio.month, semanaInicio.day),
+        clientes = List.unmodifiable(
+          [...clientes]..sort((a, b) {
+              final porKg = b.kg.compareTo(a.kg);
+              return porKg != 0
+                  ? porKg
+                  : compararNombres(a.clienteNombre, b.clienteNombre);
+            }),
+        );
+
+  int get medias => clientes.fold<int>(0, (s, c) => s + c.medias);
+  double get kg => clientes.fold<double>(0, (s, c) => s + c.kg);
+  double get importe => clientes.fold<double>(0, (s, c) => s + c.importe);
+
+  int get cantidadClientes => clientes.length;
+  int get cantidadRemitos =>
+      clientes.fold<int>(0, (s, c) => s + c.cantidadRemitos);
+
+  bool get vacio => clientes.isEmpty;
 }

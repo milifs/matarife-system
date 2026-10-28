@@ -59,6 +59,7 @@ class AppProvider extends ChangeNotifier {
   /// que un `app.vendedores.sort(...)` desde una pantalla lo rompería en
   /// silencio. Es una VISTA, no una copia (O(1) aunque se lea en cada build).
   List<Vendedor> get vendedores => UnmodifiableListView(_vendedores);
+
   /// Los clientes, SIEMPRE en orden alfabético (ver [_ordenarClientes]).
   ///
   /// Va envuelto en una vista de solo lectura a propósito. Desde que el orden
@@ -78,22 +79,19 @@ class AppProvider extends ChangeNotifier {
   List<NotaCreditoDebito> get notasCreditoDebito => _notasCD;
   List<PagoEliminado> get pagosEliminados => _pagosEliminados;
   List<RemitoEliminado> get remitosEliminados => _remitosEliminados;
-  List<NotaPedidoEliminada> get notasPedidoEliminadas =>
-      _notasPedidoEliminadas;
+  List<NotaPedidoEliminada> get notasPedidoEliminadas => _notasPedidoEliminadas;
   List<NotaPedido> get notasPedidoPendientes =>
       _notasPedido.where((n) => n.esPendiente).toList();
   CostoSemanal? get costoSemanaActual => _costoSemanaActual;
   bool get loading => _loading;
   String? get error => _error;
 
-  double getSaldoCliente(String clienteId) =>
-      _saldosClientes[clienteId] ?? 0;
+  double getSaldoCliente(String clienteId) => _saldosClientes[clienteId] ?? 0;
   double getSaldoVendedor(String vendedorId) =>
       _saldosVendedores[vendedorId] ?? 0;
 
   /// Total de saldo pendiente de cobro (todos los clientes)
-  double get saldoTotal =>
-      _saldosClientes.values.fold(0, (sum, s) => sum + s);
+  double get saldoTotal => _saldosClientes.values.fold(0, (sum, s) => sum + s);
 
   /// Clientes de un vendedor (hereda el orden alfabético de [_clientes])
   List<Cliente> clientesDeVendedor(String vendedorId) =>
@@ -113,8 +111,8 @@ class AppProvider extends ChangeNotifier {
   /// clientes: todas las pantallas leen de `vendedores`, así que cada listado
   /// y cada filtro sale A→Z sin tener que volver a ordenarlo.
   void _ordenarVendedores() {
-    _vendedores.sort(
-        (a, b) => compararNombres(a.nombreCompleto, b.nombreCompleto));
+    _vendedores
+        .sort((a, b) => compararNombres(a.nombreCompleto, b.nombreCompleto));
   }
 
   /// Vendedor por ID
@@ -352,8 +350,7 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> actualizarRemito(
-      Remito remito, List<RemitoItem> items) async {
+  Future<void> actualizarRemito(Remito remito, List<RemitoItem> items) async {
     try {
       final actualizado = await _db.updateRemito(remito, items);
       final idx = _remitos.indexWhere((r) => r.id == remito.id);
@@ -400,8 +397,7 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> confirmarRemito(
-      String remitoId, String confirmadoPorId) async {
+  Future<void> confirmarRemito(String remitoId, String confirmadoPorId) async {
     try {
       await _db.cambiarEstadoRemito(
         remitoId: remitoId,
@@ -492,9 +488,8 @@ class AppProvider extends ChangeNotifier {
     try {
       final pago = _pagos.firstWhere((p) => p.id == pagoId);
       final medios = await _db.getPagoMedios(pagoId);
-      final mediosJson = medios
-          .map((m) => {'medio': m.medio.name, 'monto': m.monto})
-          .toList();
+      final mediosJson =
+          medios.map((m) => {'medio': m.medio.name, 'monto': m.monto}).toList();
       final pe = PagoEliminado(
         pagoId: pagoId,
         clienteId: pago.clienteId,
@@ -631,8 +626,7 @@ class AppProvider extends ChangeNotifier {
   /// Cargas de un proveedor en orden cronológico (de la más vieja a la más
   /// nueva). Es el orden en que se encadena el saldo.
   List<Carga> cargasDeProveedor(String proveedorId) {
-    final lista =
-        _cargas.where((c) => c.proveedorId == proveedorId).toList();
+    final lista = _cargas.where((c) => c.proveedorId == proveedorId).toList();
     lista.sort((a, b) {
       final porFecha = a.fecha.compareTo(b.fecha);
       return porFecha != 0 ? porFecha : a.creadoEn.compareTo(b.creadoEn);
@@ -658,7 +652,9 @@ class AppProvider extends ChangeNotifier {
 
   /// Saldo con el que cierra la carga = arrastre + pagos - total a pagar
   double saldoDeCarga(Carga carga) =>
-      saldoAnteriorDeCarga(carga) + totalPagadoCarga(carga.id) - carga.totalAPagar;
+      saldoAnteriorDeCarga(carga) +
+      totalPagadoCarga(carga.id) -
+      carga.totalAPagar;
 
   /// Saldo actual del proveedor (el de su última carga)
   double saldoProveedor(String proveedorId) {
@@ -679,7 +675,8 @@ class AppProvider extends ChangeNotifier {
 
   // ── ABM de proveedores ──
 
-  Future<bool> guardarProveedor(Proveedor proveedor, {bool esNuevo = false}) async {
+  Future<bool> guardarProveedor(Proveedor proveedor,
+      {bool esNuevo = false}) async {
     try {
       if (esNuevo) {
         final creado = await _db.insertProveedor(proveedor);
@@ -881,8 +878,8 @@ class AppProvider extends ChangeNotifier {
   /// pendiente y su fecha de vencimiento (fecha + plazo del cliente).
   List<DeudaBucket> bucketsDeudaCliente(Cliente cliente) {
     final buckets = <DeudaBucket>[];
-    for (final r in _remitos
-        .where((r) => r.clienteId == cliente.id && r.esConfirmado)) {
+    for (final r
+        in _remitos.where((r) => r.clienteId == cliente.id && r.esConfirmado)) {
       buckets.add(DeudaBucket(
         fecha: r.fecha,
         orden: r.numero,
@@ -891,8 +888,8 @@ class AppProvider extends ChangeNotifier {
         deuda: r.totalPesos,
       ));
     }
-    for (final n in _notasCD
-        .where((n) => n.clienteId == cliente.id && n.esDebito)) {
+    for (final n
+        in _notasCD.where((n) => n.clienteId == cliente.id && n.esDebito)) {
       buckets.add(DeudaBucket(
         fecha: n.fecha,
         orden: n.numero,
@@ -964,8 +961,8 @@ class AppProvider extends ChangeNotifier {
       }
     }
 
-    resultado.sort((a, b) =>
-        (b['diasVencido'] as int).compareTo(a['diasVencido'] as int));
+    resultado.sort(
+        (a, b) => (b['diasVencido'] as int).compareTo(a['diasVencido'] as int));
     return resultado;
   }
 
@@ -1002,8 +999,8 @@ class AppProvider extends ChangeNotifier {
       }
     }
 
-    resultado.sort((a, b) =>
-        (b['diasVencido'] as int).compareTo(a['diasVencido'] as int));
+    resultado.sort(
+        (a, b) => (b['diasVencido'] as int).compareTo(a['diasVencido'] as int));
     return resultado;
   }
 
@@ -1073,7 +1070,10 @@ class AppProvider extends ChangeNotifier {
     final inicio = _inicioSemana(semana ?? DateTime.now());
     final fin = inicio.add(const Duration(days: 7));
     return _remitos
-        .where((r) => r.esConfirmado && !r.fecha.isBefore(inicio) && r.fecha.isBefore(fin))
+        .where((r) =>
+            r.esConfirmado &&
+            !r.fecha.isBefore(inicio) &&
+            r.fecha.isBefore(fin))
         .fold<double>(0, (sum, r) => sum + r.totalKg);
   }
 
@@ -1081,8 +1081,8 @@ class AppProvider extends ChangeNotifier {
   Map<String, double> kgVendidosSemanasPorTipo([DateTime? semana]) {
     final inicio = _inicioSemana(semana ?? DateTime.now());
     final fin = inicio.add(const Duration(days: 7));
-    final remitosSemana = _remitos
-        .where((r) => r.esConfirmado && !r.fecha.isBefore(inicio) && r.fecha.isBefore(fin));
+    final remitosSemana = _remitos.where((r) =>
+        r.esConfirmado && !r.fecha.isBefore(inicio) && r.fecha.isBefore(fin));
 
     final resultado = <String, double>{};
     for (final remito in remitosSemana) {
@@ -1099,8 +1099,8 @@ class AppProvider extends ChangeNotifier {
   Map<String, int> mediasVendidasSemanasPorTipo([DateTime? semana]) {
     final inicio = _inicioSemana(semana ?? DateTime.now());
     final fin = inicio.add(const Duration(days: 7));
-    final remitosSemana = _remitos
-        .where((r) => r.esConfirmado && !r.fecha.isBefore(inicio) && r.fecha.isBefore(fin));
+    final remitosSemana = _remitos.where((r) =>
+        r.esConfirmado && !r.fecha.isBefore(inicio) && r.fecha.isBefore(fin));
 
     final resultado = <String, int>{};
     for (final remito in remitosSemana) {
@@ -1113,12 +1113,76 @@ class AppProvider extends ChangeNotifier {
     return resultado;
   }
 
+  /// Desglose de lo vendido en la semana de un tipo de carne: a qué clientes
+  /// fue, cuántas medias se llevó cada uno y por cuánta plata.
+  ///
+  /// Es lo que hay detrás del número de kg del dashboard, así que usa
+  /// exactamente los mismos remitos y el mismo agrupado por tipo que
+  /// [kgVendidosSemanasPorTipo]: si los dos no dan igual, uno de los dos
+  /// está mal.
+  DesgloseSemanaTipo desgloseVentasSemana(String tipo, [DateTime? semana]) {
+    final inicio = _inicioSemana(semana ?? DateTime.now());
+    final fin = inicio.add(const Duration(days: 7));
+    final buscado = _normalizarTipo(tipo);
+
+    final porCliente = <String, List<VentaRemitoSemana>>{};
+    final remitosSemana = _remitos.where((r) =>
+        r.esConfirmado && !r.fecha.isBefore(inicio) && r.fecha.isBefore(fin));
+
+    for (final remito in remitosSemana) {
+      var medias = 0;
+      var kg = 0.0;
+      var importe = 0.0;
+      var coincidencias = 0;
+      var otrosTipos = false;
+
+      for (final item in _remitoItems[remito.id] ?? const <RemitoItem>[]) {
+        if (_normalizarTipo(item.tipoCarne) == buscado) {
+          coincidencias++;
+          medias += item.cantidadMedias;
+          kg += item.kgTotal;
+          importe += item.subtotal;
+        } else {
+          otrosTipos = true;
+        }
+      }
+
+      if (coincidencias == 0) continue;
+
+      porCliente.putIfAbsent(remito.clienteId, () => []).add(VentaRemitoSemana(
+            remito: remito,
+            medias: medias,
+            kg: kg,
+            importe: importe,
+            tieneOtrosTipos: otrosTipos,
+          ));
+    }
+
+    final clientes = porCliente.entries.map((e) {
+      final cliente = clientePorId(e.key);
+      return VentaClienteSemana(
+        clienteId: e.key,
+        clienteNombre: cliente?.nombreRazonSocial ?? 'Cliente eliminado',
+        vendedorNombre: cliente != null
+            ? vendedorPorId(cliente.vendedorId)?.nombreCompleto
+            : null,
+        remitos: e.value,
+      );
+    }).toList();
+
+    return DesgloseSemanaTipo(
+      tipo: buscado,
+      semanaInicio: inicio,
+      clientes: clientes,
+    );
+  }
+
   /// Venta en pesos por tipo de carne en la semana
   Map<String, double> ventaSemanasPorTipo([DateTime? semana]) {
     final inicio = _inicioSemana(semana ?? DateTime.now());
     final fin = inicio.add(const Duration(days: 7));
-    final remitosSemana = _remitos
-        .where((r) => r.esConfirmado && !r.fecha.isBefore(inicio) && r.fecha.isBefore(fin));
+    final remitosSemana = _remitos.where((r) =>
+        r.esConfirmado && !r.fecha.isBefore(inicio) && r.fecha.isBefore(fin));
 
     final resultado = <String, double>{};
     for (final remito in remitosSemana) {
@@ -1233,8 +1297,7 @@ class AppProvider extends ChangeNotifier {
             p.fecha.day == dia.day)
         .toList();
 
-    final medios =
-        await _db.getMediosDePagos(delDia.map((p) => p.id).toList());
+    final medios = await _db.getMediosDePagos(delDia.map((p) => p.id).toList());
 
     return ResumenJornada(
       cobrador: cobrador,
@@ -1255,8 +1318,8 @@ class AppProvider extends ChangeNotifier {
 
   Iterable<Pago> _pagosDe(String cobrador) {
     final buscado = cobrador.trim().toLowerCase();
-    return _pagos.where(
-        (p) => (p.registradoPor ?? '').trim().toLowerCase() == buscado);
+    return _pagos
+        .where((p) => (p.registradoPor ?? '').trim().toLowerCase() == buscado);
   }
 
   void limpiarError() {
@@ -1594,8 +1657,8 @@ class AppProvider extends ChangeNotifier {
     // Los kilos de las salidas que todavía esperan remito van a prorrata: una
     // salida cubierta a medias por un remito descuenta medias a medias, así
     // que sus kilos tienen que descontar igual.
-    final mediasAbiertas = pendientes.movimientos
-        .fold<double>(0, (t, m) => t + m.medias);
+    final mediasAbiertas =
+        pendientes.movimientos.fold<double>(0, (t, m) => t + m.medias);
     final kgAbiertas =
         pendientes.movimientos.fold<double>(0, (t, m) => t + m.totalKg);
     final kgSalidasPendientes = mediasAbiertas <= 0
@@ -1665,8 +1728,7 @@ class AppProvider extends ChangeNotifier {
 
     for (final salida in salidas) {
       final disponible =
-          _remitidasCargadasDespuesDe(tipo, salida.creadoEn, hasta) -
-              consumido;
+          _remitidasCargadasDespuesDe(tipo, salida.creadoEn, hasta) - consumido;
       if (disponible >= salida.medias - toleranciaMedias) {
         // Ya apareció el remito: la salida se cierra y deja de descontar
         // (ahora descuenta el remito, así que no se cuenta dos veces).
