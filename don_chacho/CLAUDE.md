@@ -500,7 +500,7 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 
 ## ESTADO ACTUAL (v19.10) — EN PRODUCCIÓN
 
-Deployada el 28/10/2026 **desde la rama `feat/desglose-kg-semana`**, que todavía está abierta en el **PR #14**: producción va una feature adelante de `master` hasta que se mergee. Deploy `web-5xly6g6d8`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
+Deployada el 28/10/2026 desde la rama `feat/desglose-kg-semana`, **ya mergeada a `master`** por el **PR #14** (merge commit `b264df2`) — master y producción coinciden. Deploy `web-5xly6g6d8`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
 
 Verificado contra producción: **mismo sha256** que el build (`acad6772…`), `app_version.json` dice `v19.10`, el bundle trae el código nuevo (la cadena "Factura completa" del desglose está adentro) y los headers son los que espera el aviso de versión (`app_version.json` y `index.html` `no-cache, no-store, must-revalidate`; `main.dart.js` `no-cache`).
 
@@ -645,7 +645,7 @@ El dashboard decía "560,5 kg · 6 medias" y ahí se terminaba: para saber a qui
 7. **`test/desglose_semana_test.dart`** (nuevo, 11 casos): las sumas, el orden por kg, el desempate alfabético sin acentos, el remito mezclado y la semana vacía. El proyecto pasa a **130 tests en verde**.
 8. **`lib/utils/app_config.dart`**: `version` de `'v19.9'` a `'v19.10'`.
 9. **Sin migración**: sale todo de `remitos` + `remito_items`, que ya estaban en memoria.
-10. **Deploy**: 28/10/2026 desde la rama `feat/desglose-kg-semana` (PR #14, sin mergear todavía). `flutter clean` + `flutter pub get` + `./build_web.sh`, se recreó `build/web/.vercel/project.json` (el clean se lo lleva puesto) y `vercel --prod --yes` desde `build/web`. Deploy `web-5xly6g6d8`, que tomó el alias solo.
+10. **Deploy**: 28/10/2026 desde la rama `feat/desglose-kg-semana` (PR #14, merge commit `b264df2`). `flutter clean` + `flutter pub get` + `./build_web.sh`, se recreó `build/web/.vercel/project.json` (el clean se lo lleva puesto) y `vercel --prod --yes` desde `build/web`. Deploy `web-5xly6g6d8`, que tomó el alias solo.
 
 ### Cambios v19.9 (28/10/2026) — Depósito: kilos, partes de la media y reset
 
