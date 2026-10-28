@@ -1466,6 +1466,14 @@ class AppProvider extends ChangeNotifier {
       kgRecuento: recuento?.totalKg ?? 0,
       teoricoAlRecuento: teoricoAlRecuento,
       pendientes: hoy.pendientes,
+      kgInicial: hoy.kgInicial,
+      kgComprados: hoy.kgComprados,
+      kgEntradas: hoy.kgEntradas,
+      kgRemitidos: hoy.kgRemitidos,
+      kgSalidasPendientes: hoy.kgSalidasPendientes,
+      kgSalidasDefinitivas: hoy.kgSalidasDefinitivas,
+      mediasSinPesar: hoy.mediasSinPesar,
+      cortes: hoy.cortes,
     );
   }
 
@@ -1499,13 +1507,25 @@ class AppProvider extends ChangeNotifier {
     // El tipo lo decide el PROVEEDOR (novillo/cerdo), que es donde vive esa
     // información: a propósito no se congela en la carga.
     var compradas = 0.0;
+    var kgComprados = 0.0;
+    // Medias de esta cuenta que nadie pesó: el kilaje se muestra igual, pero
+    // avisando que está incompleto (los kg son opcionales en todo el módulo).
+    var sinPesar = 0.0;
     for (final carga in _cargas) {
       if (_soloFecha(carga.fecha).isBefore(desde)) continue;
       if (!yaEstaba(carga.creadoEn)) continue;
       final proveedor = proveedorPorId(carga.proveedorId);
       final tipoProveedor = proveedor?.tipo ?? Proveedor.tipoNovillo;
       if (tipoProveedor != tipo) continue;
-      compradas += carga.cantidadAnimales * mediasPorAnimal;
+      final mediasCarga = carga.cantidadAnimales * mediasPorAnimal;
+      compradas += mediasCarga;
+      // El kg de media res se carga DESPUÉS de la faena: hasta entonces la
+      // carga suma medias pero todavía no suma kilos.
+      if (carga.kgMediaRes != null) {
+        kgComprados += carga.kgMediaRes!;
+      } else {
+        sinPesar += mediasCarga;
+      }
     }
 
     // ── Medias distribuidas a clientes ──
@@ -1515,29 +1535,80 @@ class AppProvider extends ChangeNotifier {
     // "Medias" del formulario cuenta unidades del corte elegido: 3 piernas
     // son 1 media, no 3.
     var remitidas = 0.0;
+    var kgRemitidos = 0.0;
+    // Los cortes que se llevaron, para saber qué quedó suelto en la cámara:
+    // una pierna remitida deja un octavo y una plancha de asado disponibles.
+    var piernas = 0;
+    var octavos = 0;
+    var planchas = 0;
     for (final remito in _remitos) {
       if (!remito.esConfirmado) continue;
       if (_soloFecha(remito.fecha).isBefore(desde)) continue;
       if (!yaEstaba(remito.creadoEn)) continue;
       for (final item in (_remitoItems[remito.id] ?? const <RemitoItem>[])) {
         if (stockDeTipoCarne(item.tipoCarne) != tipo) continue;
-        remitidas +=
+        final mediasItem =
             item.cantidadMedias * equivalenciaEnMedias(item.tipoCarne);
+        remitidas += mediasItem;
+        if (item.kgTotal > 0) {
+          kgRemitidos += item.kgTotal;
+        } else {
+          sinPesar += mediasItem;
+        }
+        for (final parte in partesDeCorte(item.tipoCarne)) {
+          switch (parte) {
+            case partePierna:
+              piernas += item.cantidadMedias;
+            case parteOctavo:
+              octavos += item.cantidadMedias;
+            case partePlancha:
+              planchas += item.cantidadMedias;
+          }
+        }
       }
     }
 
     // ── Movimientos cargados a mano ──
     var entradas = 0.0;
+    var kgEntradas = 0.0;
     var salidasDefinitivas = 0.0;
+    var kgSalidasDefinitivas = 0.0;
     for (final mov in _depositoMovimientos) {
       if (mov.tipo != tipo) continue;
       if (_soloFecha(mov.fecha).isBefore(desde)) continue;
       if (!yaEstaba(mov.creadoEn)) continue;
-      if (mov.esEntrada) entradas += mov.medias;
-      if (mov.esSalidaDefinitiva) salidasDefinitivas += mov.medias;
+      if (mov.esEntrada) {
+        entradas += mov.medias;
+        kgEntradas += mov.totalKg;
+        sinPesar += mov.mediasSinPesar;
+      }
+      if (mov.esSalidaDefinitiva) {
+        salidasDefinitivas += mov.medias;
+        kgSalidasDefinitivas += mov.totalKg;
+        sinPesar += mov.mediasSinPesar;
+      }
     }
 
     final pendientes = _salidasPendientes(tipo, hasta);
+
+    // Los kilos de las salidas que todavía esperan remito van a prorrata: una
+    // salida cubierta a medias por un remito descuenta medias a medias, así
+    // que sus kilos tienen que descontar igual.
+    final mediasAbiertas = pendientes.movimientos
+        .fold<double>(0, (t, m) => t + m.medias);
+    final kgAbiertas =
+        pendientes.movimientos.fold<double>(0, (t, m) => t + m.totalKg);
+    final kgSalidasPendientes = mediasAbiertas <= 0
+        ? 0.0
+        : kgAbiertas * (pendientes.medias / mediasAbiertas);
+    for (final mov in pendientes.movimientos) {
+      sinPesar += mov.mediasSinPesar;
+    }
+
+    // El arranque también se pesa (v19.9). Si se contó sin balanza, esas
+    // medias entran a la cuenta de lo que falta pesar.
+    final kgInicial = config.kgInicialDe(tipo);
+    if (kgInicial <= 0) sinPesar += config.inicialDe(tipo);
 
     return StockDeposito(
       tipo: tipo,
@@ -1548,6 +1619,18 @@ class AppProvider extends ChangeNotifier {
       salidasPendientes: pendientes.medias,
       salidasDefinitivas: salidasDefinitivas,
       pendientes: pendientes.movimientos,
+      kgInicial: kgInicial,
+      kgComprados: kgComprados,
+      kgEntradas: kgEntradas,
+      kgRemitidos: kgRemitidos,
+      kgSalidasPendientes: kgSalidasPendientes,
+      kgSalidasDefinitivas: kgSalidasDefinitivas,
+      mediasSinPesar: sinPesar,
+      cortes: CortesVendidos(
+        piernas: piernas,
+        octavos: octavos,
+        planchas: planchas,
+      ),
     );
   }
 

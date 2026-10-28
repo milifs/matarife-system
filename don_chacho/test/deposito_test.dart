@@ -495,6 +495,184 @@ void main() {
     test('toMap manda `unica` para que el upsert tenga por dónde agarrar', () {
       expect(DepositoConfig().toMap()['unica'], true);
     });
+
+    test('devuelve los kg del arranque de cada stock (v19.9)', () {
+      final config = DepositoConfig(kgNovillo: 1200, kgCerdo: 180);
+      expect(config.kgInicialDe(Proveedor.tipoNovillo), 1200);
+      expect(config.kgInicialDe(Proveedor.tipoCerdo), 180);
+    });
+
+    test('un arranque sin pesar queda en cero, no rompe', () {
+      final config = DepositoConfig(mediasNovillo: 3);
+      expect(config.kgInicialDe(Proveedor.tipoNovillo), 0);
+      expect(config.toMap()['kg_novillo'], 0);
+    });
+  });
+
+
+  // ══════════════════════════════════════════
+  // v19.9 — qué pedazo quedó en la cámara
+  // ══════════════════════════════════════════
+  // La tabla de equivalencias dice cuánta media vale un corte; esto dice QUÉ
+  // PEDAZO es. Sin esto el stock sabe que quedan 1,67 medias pero nadie sabe
+  // qué puede vender.
+
+  group('las partes de la media', () {
+    test('una media entera no abre nada', () {
+      expect(partesDeCorte('Novillo'), isEmpty);
+      expect(partesDeCorte('Cerdo'), isEmpty);
+    });
+
+    test('cada corte se lleva su parte', () {
+      expect(partesDeCorte('Pierna mocha'), [partePierna]);
+      expect(partesDeCorte('Pierna pistola'), [partePierna]);
+      expect(partesDeCorte('Octavo'), [parteOctavo]);
+      expect(partesDeCorte('Plancha de asado'), [partePlancha]);
+    });
+
+    test('el 1/4 delantero se lleva dos partes de la misma media', () {
+      expect(partesDeCorte('1/4 delantero'), [parteOctavo, partePlancha]);
+    });
+
+    test('el nombre se ajusta a la cantidad', () {
+      expect(labelParte(parteOctavo, 1), 'octavo');
+      expect(labelParte(parteOctavo, 2), 'octavos');
+      expect(labelParte(partePlancha, 1), 'plancha de asado');
+      expect(labelParte(partePierna, 3), 'piernas');
+    });
+  });
+
+  group('lo que queda suelto', () {
+    test('remitir una pierna deja un octavo y una plancha de asado', () {
+      // El caso textual del usuario: se carga 1 pierna (un tercio de la
+      // media) y lo que queda para vender es un octavo y una plancha.
+      const cortes = CortesVendidos(piernas: 1);
+      expect(cortes.mediasAbiertas, 1);
+      expect(cortes.piernasSueltas, 0);
+      expect(cortes.octavosSueltos, 1);
+      expect(cortes.planchasSueltas, 1);
+      expect(cortes.sueltasEnMedias, closeTo(2 / 3, 1e-12));
+    });
+
+    test('el 1/4 delantero deja la pierna', () {
+      const cortes = CortesVendidos(octavos: 1, planchas: 1);
+      expect(cortes.mediasAbiertas, 1);
+      expect(cortes.piernasSueltas, 1);
+      expect(cortes.octavosSueltos, 0);
+      expect(cortes.planchasSueltas, 0);
+    });
+
+    test('tres piernas abren tres medias, no una', () {
+      // Físicamente no salen tres piernas de una media: hay que abrir tres y
+      // quedan tres octavos y tres planchas dando vueltas.
+      const cortes = CortesVendidos(piernas: 3);
+      expect(cortes.mediasAbiertas, 3);
+      expect(cortes.octavosSueltos, 3);
+      expect(cortes.planchasSueltas, 3);
+      expect(cortes.sueltasEnMedias, closeTo(2, 1e-12));
+    });
+
+    test('una media servida entera, de a pedazos, no deja nada suelto', () {
+      const cortes = CortesVendidos(piernas: 1, octavos: 1, planchas: 1);
+      expect(cortes.mediasAbiertas, 1);
+      expect(cortes.haySueltas, isFalse);
+      expect(cortes.sueltasEnMedias, 0);
+    });
+
+    test('sin cortes no hay nada abierto', () {
+      const cortes = CortesVendidos();
+      expect(cortes.mediasAbiertas, 0);
+      expect(cortes.haySueltas, isFalse);
+    });
+
+    test('enteras + sueltas dan exactamente el stock', () {
+      // La cuenta nueva no puede contradecir a la vieja: el caso real de
+      // producción, 3 al arranque + 3 de entrada − 3 novillos − 1 novillo −
+      // 1 pierna = 1,67 medias, que son 1 entera + 1 octavo + 1 plancha.
+      const stock = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        inicial: 3,
+        entradas: 3,
+        remitidas: 4 + 1 / 3,
+        cortes: CortesVendidos(piernas: 1),
+      );
+      expect(stock.teorico, closeTo(1 + 2 / 3, 1e-12));
+      expect(stock.mediasEnteras, closeTo(1, 1e-12));
+      expect(stock.mediasSueltas, closeTo(2 / 3, 1e-12));
+      expect(
+        stock.mediasEnteras + stock.mediasSueltas,
+        closeTo(stock.teorico, 1e-12),
+      );
+      expect(stock.hayPartesSueltas, isTrue);
+    });
+
+    test('el cerdo nunca se fracciona', () {
+      const stock = StockDeposito(tipo: Proveedor.tipoCerdo, inicial: 3);
+      expect(stock.hayPartesSueltas, isFalse);
+      expect(stock.mediasEnteras, 3);
+    });
+  });
+
+  // ══════════════════════════════════════════
+  // v19.9 — los kilos de lo que hay en la cámara
+  // ══════════════════════════════════════════
+  // Misma ecuación que las medias pero en peso. Siguen siendo informativos:
+  // el veredicto de faltantes NO los mira.
+
+  group('los kilos del stock', () {
+    test('el kg teórico sigue la misma ecuación que las medias', () {
+      const stock = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        kgInicial: 375,
+        kgComprados: 8097,
+        kgEntradas: 120,
+        kgRemitidos: 5000,
+        kgSalidasPendientes: 240,
+        kgSalidasDefinitivas: 100,
+      );
+      // 375 + 8097 + 120 - 5000 - 240 - 100
+      expect(stock.kgTeorico, 3252);
+      expect(stock.tieneKg, isTrue);
+    });
+
+    test('nunca da negativo: sería lo que falta pesar, no un faltante', () {
+      const stock = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        kgRemitidos: 523.9,
+        mediasSinPesar: 3,
+      );
+      expect(stock.kgTeorico, 0);
+      expect(stock.tieneKg, isFalse);
+      expect(stock.kgIncompleto, isTrue);
+    });
+
+    test('avisa cuando hay medias sin pesar', () {
+      const completo = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        kgInicial: 375,
+      );
+      expect(completo.kgIncompleto, isFalse);
+
+      const aMedias = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        kgInicial: 375,
+        mediasSinPesar: 2,
+      );
+      expect(aMedias.kgIncompleto, isTrue);
+    });
+
+    test('los kilos no cambian el veredicto, que es por medias', () {
+      const stock = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        inicial: 10,
+        kgInicial: 1200,
+        kgRemitidos: 9999,
+        recuento: 10,
+        teoricoAlRecuento: 10,
+      );
+      expect(stock.cierra, isTrue);
+      expect(stock.faltan, isFalse);
+    });
   });
 
   group('formato de medias', () {
