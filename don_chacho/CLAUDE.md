@@ -506,7 +506,7 @@ Verificado contra producción: **mismo sha256** que el build (`acad6772…`), `a
 
 Trae el **desglose de los kg de la semana** del dashboard (ver "Cambios v19.10"). **Sin migración.** **Sin pasada visual todavía**: se deployó antes de mirarla andando.
 
-Ojo con el nombre del deploy: la CLI está logueada como `milifsabate` y el deploy sale con el scope `mfsabate` en la URL (`web-5xly6g6d8-mfsabate.vercel.app`), pero el proyecto es el de siempre — el `.vercel/project.json` con el `orgId` del team manda, y el alias se movió solo. La URL directa del deploy contesta "Protected by Vercel Authentication"; el alias es el que es público.
+La URL directa del deploy (`web-5xly6g6d8-mfsabate.vercel.app`) contesta "Protected by Vercel Authentication": es normal, la que es pública es el alias.
 
 ### v19.9 — deployada el 28/10/2026
 
@@ -567,7 +567,9 @@ mkdir -p build/web/.vercel && cat > build/web/.vercel/project.json <<'JSON'
 JSON
 ```
 
-Los dos ids salen de `vercel project ls` (el proyecto se llama **`web`**, bajo la cuenta `jaguilera`). Pasa siempre, no solo cuando se buildea desde un worktree aparte.
+Los dos ids salen de `vercel project ls` (el proyecto se llama **`web`**, bajo el scope **`mfsabate`**, usuario `milifsabate`). Pasa siempre, no solo cuando se buildea desde un worktree aparte.
+
+**La cuenta se llamaba `jaguilera`** y la doc lo decía así hasta v19.10: el usuario le cambió los nombres en Vercel. Es el mismo proyecto de siempre — los ids no cambian con el renombre, por eso el `project.json` de más arriba sigue sirviendo. Lo único que se nota es que el deploy ahora sale con `-mfsabate` en la URL.
 
 ### Buildear sin pisar trabajo sin commitear (v19.6)
 En este deploy el working tree tenía 13 archivos modificados sin commitear, de otro trabajo en curso (el helper `compararNombres` para ordenar clientes A→Z). Para no tocarlos, el build salió de un **worktree aparte** en el commit de merge:
