@@ -85,6 +85,7 @@ don_chacho/lib/
 ├── screens/
 │   ├── login_screen.dart              # Usuario + contraseña
 │   ├── home_screen.dart               # Dashboard KPIs por tipo carne, navegación semanal < >, botón costos (con permiso)
+│   ├── detalle_kg_semana_screen.dart  # Desglose de la tarjeta de kg del dashboard (v19.10): a qué clientes fue esa carne, medias, kg e importe, con los remitos de cada uno
 │   ├── vendedores_screen.dart         # Lista vendedores
 │   ├── vendedor_detalle_screen.dart   # Detalle + reporte PDF vendedor; tap en cliente abre ClienteDetalleScreen; muestra "N remitos vencidos" por cliente
 │   ├── clientes_screen.dart           # Lista clientes; muestra "N remitos vencidos" por cliente (rojo si >0)
@@ -261,6 +262,7 @@ diferencia = teórico al momento del recuento − recuento
 ### Dashboard (home_screen)
 - KPIs de la semana: kg vendidos (novillo/cerdo), venta bruta, ganancia neta
 - Cards de kg por tipo muestran también la cantidad de medias reses ("N medias")
+- **Las dos cards de kg son tocables (v19.10)**: abren `DetalleKgSemanaScreen` con el desglose de esa semana y ese tipo — clientes ordenados de mayor a menor kg, con medias, kg e importe, y los remitos de cada uno al desplegarlos. Arrastran el estado del ojo (si los valores están ofuscados en el dashboard, también lo están en el desglose)
 - **Botón ojo en AppBar (v18.11)**: ofusca todos los valores monetarios y de kg (los reemplaza por `••••`). Toggle `_ofuscado` con ícono visibility/visibility_off. Útil para mostrar la pantalla sin revelar números
 - Navegación `<` / `>` para ver KPIs de semanas anteriores (solo admin). `>` deshabilitado en semana actual.
 - Saldo total a cobrar + contador de vencidos
@@ -471,6 +473,7 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 | v18.14 (01/07) | **Ruta de cobranza (1ª versión)**: embebida en Consultas → Directorio, combo box (Clientes que deben / Solo remitos vencidos) + botón "Armar". Nuevo `ruta_cobranza_service.dart` (GPS, extracción de coords, orden por cercanía, URL Google Maps). Reemplazada por la tab "Ruta" en v18.15. |
 | v18.15 (01/07) | **Ruta de cobranza movida a tab propia "Ruta"** en Consultas (9 tabs). Filtros: cliente (búsqueda), vendedor (dropdown), "Con saldo pendiente" y "Solo vencidos" (FilterChips). Lista con checkboxes para **seleccionar clientes** (los sin ubicación quedan deshabilitados) + "Todos/Ninguno". Botón "Armar recorrido (N)" que calcula la ruta con los elegidos (GPS + orden por cercanía) y abre el panel de paradas → Google Maps. Se quitó el bloque de ruta del Directorio. |
 | v18.16 (02/07) | **Fix ubicaciones de la ruta + editar ubicación desde Directorio**: (1) `_parseCoords` reconoce ahora el formato **DMS** (`24°59'04.1"S`). (2) Nueva **Edge Function `resolver-maps`** (runtime nuevo, `withSupabase` con auth `["publishable","secret"]`) que resuelve del lado del servidor los **links cortos** `maps.app.goo.gl` (el navegador no puede por CORS): sigue el redirect y devuelve `lat/lng`, o si el link es un "compartir lugar" sin coords, devuelve la **dirección/nombre** (`q=…`). `RutaCobranzaService.construirParadas()` llama la función en lote para los clientes sin coords locales. `ParadaRuta` gana `direccionResuelta` y usa ese texto como punto ruteable. (3) En **Directorio**, botón de editar ubicación por tarjeta → bottom sheet para cargar/corregir Dirección + Link Maps (guarda con `editarCliente`). |
+| v19.10 (28/10) | **Desglose de los kg de la semana en el dashboard.** Tocar "Kg novillo semana" o "Kg cerdo semana" abre el detalle de a quién se le vendió esa carne: un cliente por fila (del que más kg se llevó al que menos) con sus medias, sus kg y lo facturado, y al desplegarlo los remitos que lo componen. Los números son **solo los del tipo que se tocó**, así que la suma de la pantalla da exactamente el número de la tarjeta; en los remitos que traen novillo y cerdo juntos se muestra aparte el total de la factura. Nuevas clases `VentaRemitoSemana` / `VentaClienteSemana` / `DesgloseSemanaTipo` y el método `desgloseVentasSemana` del provider. Sin migración. |
 | v19.9 (28/10) | **Depósito: kilos a la vista, partes de la media y reset del módulo.** (1) **Kg del stock**: la tarjeta muestra los kilos de lo que debería haber en la cámara, con la misma ecuación que las medias pero en peso, y los kg de cada línea del desglose. Hasta ahora se cargaban media por media y no se mostraban nunca de vuelta. Siguen siendo **informativos** (el veredicto es por medias) y avisan cuándo están incompletos ("faltan pesar N medias"). Nuevas columnas `kg_novillo`/`kg_cerdo` en `deposito_config` para pesar el arranque (`supabase_migration_deposito_arranque_kg.sql`, prerequisito del deploy). (2) **Qué pedazo hay para vender**: la media de novillo se parte en pierna + octavo + plancha de asado, así que remitir una pierna deja un octavo y una plancha sueltos. Panel "DISPONIBLE PARA VENDER" con las medias enteras y las partes sueltas; `partesDeCorte` + `CortesVendidos` en models. El cerdo no se fracciona. (3) **Reset** del módulo a cero (`supabase_reset_deposito.sql`) para empezar la carga de nuevo. |
 | v19.4 (26/10) | **Aviso de versión nueva dentro de la app.** Barra arriba de todo con "Hay una versión nueva disponible" + Actualizar + X para posponer. Chequea al entrar, cada 30 min y al volver del fondo. `build_web.sh` escribe `app_version.json` con el mismo `AppConfig.version` del bundle; la app lo pide con cache-busting y compara. **El diagnóstico viejo era equivocado**: no era el service worker (con `--pwa-strategy=none` sale de 0 bytes y nadie lo registra) ni los headers (ya eran `no-cache`) — era que nadie recarga, porque la PWA queda abierta días. Ante la duda no se avisa. Nuevo `version_service.dart` (web-only) + `utils/version_check.dart` (puro, testeado). Ver la sección "Aviso de versión nueva". |
 | v19.3 (25/10) | **Comisiones y Reporte también solo para el admin.** Se suman al gate de rol que v19.2 puso sobre Ganancias y Cobranzas: los cuatro muestran la plata del negocio de conjunto. **Saldos quedó afuera a propósito** — es lo que mira el cobrador para armarse el recorrido, y Vencidos solo no alcanza porque no muestra al cliente que debe pero todavía está en plazo. Para los roles con `ver_consultas` quedan seis tabs: Vencidos, Saldos, Historial, Directorio, Ruta y Eliminados. Sin migración ni lógica nueva. |
@@ -495,7 +498,17 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v19.9) — EN PRODUCCIÓN
+## ESTADO ACTUAL (v19.10) — EN PRODUCCIÓN
+
+Deployada el 28/10/2026 **desde la rama `feat/desglose-kg-semana`**, que todavía está abierta en el **PR #14**: producción va una feature adelante de `master` hasta que se mergee. Deploy `web-5xly6g6d8`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
+
+Verificado contra producción: **mismo sha256** que el build (`acad6772…`), `app_version.json` dice `v19.10`, el bundle trae el código nuevo (la cadena "Factura completa" del desglose está adentro) y los headers son los que espera el aviso de versión (`app_version.json` y `index.html` `no-cache, no-store, must-revalidate`; `main.dart.js` `no-cache`).
+
+Trae el **desglose de los kg de la semana** del dashboard (ver "Cambios v19.10"). **Sin migración.** **Sin pasada visual todavía**: se deployó antes de mirarla andando.
+
+Ojo con el nombre del deploy: la CLI está logueada como `milifsabate` y el deploy sale con el scope `mfsabate` en la URL (`web-5xly6g6d8-mfsabate.vercel.app`), pero el proyecto es el de siempre — el `.vercel/project.json` con el `orgId` del team manda, y el alias se movió solo. La URL directa del deploy contesta "Protected by Vercel Authentication"; el alias es el que es público.
+
+### v19.9 — deployada el 28/10/2026
 
 Deployada el 28/10/2026 desde `master`. La rama `feat/deposito-kg-partes` se mergeó por **PR #13** (merge commit `ebc7824`) — master y producción coinciden. Deploy `web-1626ei0zt`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
 
@@ -618,6 +631,21 @@ Deployada desde la rama `feat/soporte`, **ya mergeada a `master`** (PR #1, merge
 ### v18.31 — deployada el 22/09/2026
 
 Deployada el 22/09/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`. Salió de la rama `feat/reparto-precarga` (que acumulaba v18.30 + v18.31); **esa rama ya está mergeada a `master`** — en su momento no lo estaba y la doc quedó desactualizada hasta el 20/10/2026.
+
+### Cambios v19.10 (28/10/2026) — Desglose de los kg de la semana
+
+El dashboard decía "560,5 kg · 6 medias" y ahí se terminaba: para saber a quién se le vendió esa carne había que ir a Consultas y cruzarlo a mano. Ahora la tarjeta se toca y se ve.
+
+1. **`lib/models/models.dart`**: `VentaRemitoSemana` (un remito visto desde un solo tipo de carne, con el flag `tieneOtrosTipos` y `totalFactura`), `VentaClienteSemana` (lo que se llevó un cliente, con los remitos ya ordenados cronológicamente) y `DesgloseSemanaTipo` (el desglose completo, con los clientes ordenados de mayor a menor kg y desempate alfabético por `compararNombres`). El archivo pasa a importar `compararNombres` de `utils/formatters.dart`.
+2. **`lib/providers/app_provider.dart`**: `desgloseVentasSemana(tipo, [semana])`. Recorre **los mismos remitos y con el mismo `_normalizarTipo`** que `kgVendidosSemanasPorTipo` — si los dos no dan igual, uno está mal. Un remito sin items del tipo buscado se saltea entero.
+3. **`lib/screens/detalle_kg_semana_screen.dart`** (nuevo): tarjeta de totales (kg / medias / facturado), contador de clientes y remitos, y un `ExpansionTile` por cliente con sus remitos (número, fecha, medias, kg e importe).
+4. **`lib/screens/home_screen.dart`**: `_KpiCard` gana `onTap` — y cuando lo tiene, el chevron al lado del título, para que se note que se puede tocar. Las dos tarjetas de kg navegan al desglose pasándole `_semanaRef` y `_ofuscado`.
+5. **Decisión: los números son solo los del tipo consultado.** Un remito puede traer novillo y cerdo juntos; si el desglose de novillo sumara el remito entero, la suma de la pantalla no daría el número de la tarjeta que se tocó. El total de la factura se muestra aparte y solo en esos remitos, que son los únicos donde los dos valores difieren.
+6. **El ojo del dashboard viaja al desglose**: si los valores están ofuscados allá, también lo están acá. El toggle existe para mostrar la pantalla sin revelar números, y una pantalla hija que los muestre igual lo haría inútil.
+7. **`test/desglose_semana_test.dart`** (nuevo, 11 casos): las sumas, el orden por kg, el desempate alfabético sin acentos, el remito mezclado y la semana vacía. El proyecto pasa a **130 tests en verde**.
+8. **`lib/utils/app_config.dart`**: `version` de `'v19.9'` a `'v19.10'`.
+9. **Sin migración**: sale todo de `remitos` + `remito_items`, que ya estaban en memoria.
+10. **Deploy**: 28/10/2026 desde la rama `feat/desglose-kg-semana` (PR #14, sin mergear todavía). `flutter clean` + `flutter pub get` + `./build_web.sh`, se recreó `build/web/.vercel/project.json` (el clean se lo lleva puesto) y `vercel --prod --yes` desde `build/web`. Deploy `web-5xly6g6d8`, que tomó el alias solo.
 
 ### Cambios v19.9 (28/10/2026) — Depósito: kilos, partes de la media y reset
 
