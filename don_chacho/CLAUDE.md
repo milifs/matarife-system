@@ -503,9 +503,19 @@ Verificado contra producción: **mismo sha256** que el build (`05dd2a4e…`), `a
 
 Trae los **kilos del stock de depósito**, el panel de **partes sueltas de la media** y el **reset del módulo** (ver "Cambios v19.9"). Las dos SQL **ya se corrieron el 28/10/2026**: `supabase_migration_deposito_arranque_kg.sql` (las columnas `kg_novillo` / `kg_cerdo` responden) y `supabase_reset_deposito.sql` (verificado por REST: `deposito_movimientos` y su auditoría vacías, arranque en 0 medias / 0 kg con `fecha_inicio = 2026-10-28`).
 
-**Sigue faltando el paso manual de v19.5**, ahora con el reset encima: fijar el **arranque** del depósito con la cuenta física de la cámara (fecha + medias + los kilos de esas medias). Mientras esté en 0 el módulo no miente, pero tampoco sirve: arranca de cero. No lo puede poner el desarrollador.
+**Sigue faltando el paso manual de v19.5**, ahora con el reset encima: fijar el **arranque** del depósito con la cuenta física de la cámara. Mientras esté en 0 el módulo no miente, pero tampoco sirve: arranca de cero. **No lo puede poner el desarrollador**: es la cuenta física de la cámara.
 
-**Ojo con los remitos de hoy**: la ecuación cuenta los remitos confirmados desde `fecha_inicio` **inclusive**, y el reset la dejó en el 28/10. Cualquier remito confirmado con esa fecha ya está restando.
+### Cómo se carga el arranque (pendiente al 28/10/2026)
+
+El reset dejó `fecha_inicio` en el 28/10, pero ese mismo día ya había un remito confirmado (R-1131, una pierna mocha) y la ecuación cuenta los remitos **desde `fecha_inicio` inclusive**: contar la cámara después de que esa pierna salió y cargar ese número como arranque se la descontaría **dos veces**. Por eso la fecha se corrió a mano al **29/10/2026** (`PATCH deposito_config?unica=eq.true` por REST, el 28/10 a las 14:01 UTC) y el arranque se carga ese día:
+
+1. Entrar a **Depósito** con un usuario que tenga `gestionar_deposito` (el menú del FAB) y tocar el ícono de la perilla en el AppBar.
+2. La fecha ya va a decir 29/10/2026. **Dejarla**: es el corte, y lo anterior no se audita.
+3. Contar la cámara y cargar **medias de novillo** y **medias de cerdo**.
+4. Si las pesaron, cargar los **kg de cada stock** (v19.9). Son opcionales: sin ellos la tarjeta muestra las medias igual, pero avisa en naranja "faltan pesar N medias" en vez de inventar un kilaje.
+5. Guardar. De ahí en adelante la ecuación corre sola: las cargas de proveedor suman (animales × 2, y los kilos cuando se completa la faena), los remitos confirmados restan y las salidas sin remito quedan avisando.
+
+**La fecha no se puede elegir desde la app si es futura**: el `showDatePicker` del diálogo tiene `lastDate: DateTime.now()`. Si hiciera falta correrla de nuevo hacia adelante, va por SQL (`UPDATE deposito_config SET fecha_inicio = DATE 'AAAA-MM-DD';`) o por REST, como se hizo esta vez.
 
 ### v19.8 — deployada el 27/10/2026
 
