@@ -523,11 +523,17 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v19.14) — EN PRODUCCIÓN
+## ESTADO ACTUAL (v19.15) — EN PRODUCCIÓN
 
-> **v19.15 está escrita pero NO deployada todavía**: la fecha del PDF de reparto (ver "Cambios v19.15"). **Sin migración.**
+Deployada el 28/10/2026 desde la rama `fix/fecha-pdf-reparto` (**PR #18**). Deploy `web-99unb7xxw`, que tomó el alias solo. **Sin migración.**
 
-Deployada el 28/10/2026 desde la rama `fix/dashboard-solo-admin`, **ya mergeada a `master`** por el **PR #17** (merge commit `dd0c0cd`) — master y producción coinciden. Deploy `web-7a18z6zzl`, que tomó el alias solo. **Sin migración.**
+Verificado contra producción: el alias responde 200, **mismo sha256** que el build (`8cb56b6b…`), `app_version.json` dice `v19.15` y el encabezado con la fecha está compilado (`"Reparto del "+n+" "+dd/MM/yyyy`).
+
+Trae la **fecha del día que se reparte** en el nombre del PDF y en el encabezado de la hoja (ver "Cambios v19.15"). **Sin pasada visual del desarrollador.**
+
+### v19.14 — deployada el 28/10/2026
+
+Deployada el 28/10/2026 desde la rama `fix/dashboard-solo-admin`, **ya mergeada a `master`** por el **PR #17** (merge commit `dd0c0cd`). Deploy `web-7a18z6zzl`, que tomó el alias solo. **Sin migración.**
 
 Verificado contra producción: el alias responde 200, **mismo sha256** que el build (`a218830e…`), `app_version.json` dice `v19.14` y los headers son los que espera el aviso de versión. El bundle trae el botón "Agregar cliente" (y **ya no** "Agregar a CARNE") y la pantalla de Inicio sin plata.
 
@@ -713,7 +719,8 @@ Lo reportó el usuario: el PDF salía `reparto_carne_jueves_26-10-2026` estando 
 2. **`lib/models/models.dart`**: `offsetDiaReparto` (jueves 3, viernes 4, sábado 5, sacado del orden de `diasReparto`) y `RepartoLista.fecha`, que es el lunes más ese offset. Se arma con `DateTime(año, mes, día + offset)` y no sumando una `Duration`, así cruza bien el fin de mes y el fin de año.
 3. **`lib/services/reparto_service.dart`**: el nombre del archivo usa esa fecha, y el encabezado del PDF pasa a decir "CARNE (NOVILLO) — **Reparto del Jueves 29/10/2026**". El repartidor lee la hoja, no el nombre del archivo, así que la fecha tiene que estar adentro también.
 4. **La semana sigue apareciendo** abajo del título: es el dato con el que se busca la lista en la app.
-5. **`test/reparto_test.dart`**: 5 casos nuevos (**167 en el proyecto**) — los tres días, que nunca dé el lunes, y los cruces de fin de mes y de fin de año (la semana del 28/12/2026 tiene el jueves en 2026 y el sábado ya en 2027).
+5. **Deploy**: 28/10/2026 desde la rama `fix/fecha-pdf-reparto` (commit `83fa16e`). Deploy `web-99unb7xxw`, que tomó el alias solo.
+6. **`test/reparto_test.dart`**: 5 casos nuevos (**167 en el proyecto**) — los tres días, que nunca dé el lunes, y los cruces de fin de mes y de fin de año (la semana del 28/12/2026 tiene el jueves en 2026 y el sábado ya en 2027).
 
 ### Cambios v19.14 (28/10/2026) — El dashboard es solo del dueño
 
