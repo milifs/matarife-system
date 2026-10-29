@@ -508,7 +508,9 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 
 ## ESTADO ACTUAL (v19.12) — EN PRODUCCIÓN
 
-Deployada el 28/10/2026 desde la rama `feat/reparto-dos-tablas-sabado` (**PR #15**, todavía sin mergear a `master`: producción va adelante de master). Deploy `web-3mo72hm3z`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
+Deployada el 28/10/2026 desde la rama `feat/reparto-dos-tablas-sabado`, **ya mergeada a `master`** por el **PR #15** (merge commit `8b71abb`) — master y producción coinciden. Deploy `web-3mo72hm3z`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
+
+El PR #15 trae **v19.11 y v19.12 juntas** (las dos se deployaron desde esa rama, antes del merge).
 
 Verificado contra producción: **mismo sha256** que el build (`bce8f09b…`), `app_version.json` dice `v19.12` y los headers son los que espera el aviso de versión.
 
