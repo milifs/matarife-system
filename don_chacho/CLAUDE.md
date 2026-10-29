@@ -505,9 +505,21 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v19.10) — EN PRODUCCIÓN
+## ESTADO ACTUAL (v19.11) — EN PRODUCCIÓN
 
-> **v19.11 está escrita pero NO deployada todavía** (Lista de reparto: dos tablas, sábado y día por comando en el asistente — ver "Cambios v19.11"). Antes de deployar hay que correr `supabase_migration_reparto_sabado_tipo.sql` y **redeployar la Edge Function `parse-reparto`** por el dashboard: sin eso, el asistente sigue mandando los pedidos al día viejo.
+Deployada el 28/10/2026 desde la rama `feat/reparto-dos-tablas-sabado`, **todavía NO mergeada a `master`** (sin PR abierta): producción va adelante de master. Deploy `web-kxhqo9t1j`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
+
+Verificado contra producción: **mismo sha256** que el build (`35f276df…`), `app_version.json` dice `v19.11`, el bundle trae el código nuevo y los headers son los que espera el aviso de versión (`app_version.json` e `index.html` `no-cache, no-store, must-revalidate`; `main.dart.js` `no-cache`).
+
+Trae la **Lista de reparto en dos tablas**, el **sábado** y el **día por comando** en el asistente (ver "Cambios v19.11"). **Sin pasada visual todavía**: se deployó antes de mirarla andando.
+
+> **Al verificar el bundle, los acentos no se buscan tal cual**: dart2js los escapa (`Sábado` queda `s\xe1bado`, `cuántas` queda `cu\xe1ntas`). Un `grep "Sábado" main.dart.js` da 0 y parece que faltara el código. Buscar el pedazo sin acento (`bado`, `ntas medias`) o el escape.
+
+Las dos dependencias de este deploy ya estaban hechas antes de subirlo:
+- `supabase_migration_reparto_sabado_tipo.sql` **corrida el 28/10/2026**. Verificado por REST: la columna `tipo` responde, no quedó ninguna fila con carne y cerdo juntos, y el backfill dejó 182 filas de carne y 85 de cerdo (267 en total), ninguna con el tipo cruzado contra la columna de medias.
+- Edge Function **`parse-reparto` redeployada** por dashboard el 28/10/2026. Verificada con llamadas reales: "3 medias de carne para el jueves y 5 de cerdo para el sábado" devuelve **dos items**, cada uno con su día; una frase sin día devuelve `dia: null`; y "sacá a Perico del sábado" devuelve el borrar con su día.
+
+### v19.10 — deployada el 28/10/2026
 
 Deployada el 28/10/2026 desde la rama `feat/desglose-kg-semana`, **ya mergeada a `master`** por el **PR #14** (merge commit `b264df2`) — master y producción coinciden. Deploy `web-5xly6g6d8`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
 
@@ -515,7 +527,7 @@ Verificado contra producción: **mismo sha256** que el build (`acad6772…`), `a
 
 Trae el **desglose de los kg de la semana** del dashboard (ver "Cambios v19.10"). **Sin migración.** **Sin pasada visual todavía**: se deployó antes de mirarla andando.
 
-La URL directa del deploy (`web-5xly6g6d8-mfsabate.vercel.app`) contesta "Protected by Vercel Authentication": es normal, la que es pública es el alias.
+La URL directa del deploy (`web-5xly6g6d8-mfsabate.vercel.app`) contesta "Protected by Vercel Authentication": es normal, la que es pública es el alias. Lo mismo vale para la de v19.11 (`web-kxhqo9t1j-mfsabate.vercel.app`).
 
 ### v19.9 — deployada el 28/10/2026
 
@@ -657,6 +669,7 @@ Cinco pedidos del usuario sobre la Lista de reparto, más lo que arrastraban en 
 8. **Al cargar, solo se toca la tabla que el pedido nombra**: si dice "3 de carne para Perico", la fila de cerdo de Perico queda como estaba en vez de pisarse en cero.
 9. **`test/reparto_test.dart`** (nuevo, 16 casos): los tres días y el sábado sin acento, que una fila pertenezca a una sola tabla, que una fila sin medias igual sepa cuál es la suya, el partido en dos de las filas viejas, los totales y el sobrante por tabla, y tres smoke tests del PDF (incluida una lista de 160 filas que se parte en varias páginas). El proyecto pasa a **146 tests en verde**.
 10. **`lib/utils/app_config.dart`**: `version` de `'v19.10'` a `'v19.11'`.
+11. **Deploy**: 28/10/2026 desde la rama `feat/reparto-dos-tablas-sabado` (commits `1ad1694` y `9db7e5c`), **sin mergear a `master` todavía**. `flutter clean` + `flutter pub get` + `./build_web.sh`, se recreó `build/web/.vercel/project.json` (el clean se lo lleva puesto) y `vercel --prod --yes` desde `build/web`. Deploy `web-kxhqo9t1j`, que tomó el alias solo. La migración y el redeploy de `parse-reparto` se hicieron **antes** del build.
 
 ### Cambios v19.10 (28/10/2026) — Desglose de los kg de la semana
 
