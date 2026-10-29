@@ -513,11 +513,17 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v19.12) — EN PRODUCCIÓN
+## ESTADO ACTUAL (v19.13) — EN PRODUCCIÓN
 
-> **v19.13 está escrita pero NO deployada todavía** (columnas a medida en el reparto — ver "Cambios v19.13"). **Antes de deployar hay que correr `supabase_migration_reparto_columnas_extra.sql`**: sin esas dos columnas, guardar el reparto falla.
+Deployada el 28/10/2026 desde la rama `feat/reparto-columnas-extra`, **todavía sin mergear a `master`**: producción va adelante de master. Deploy `web-eovr0ripg`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
 
-Deployada el 28/10/2026 desde la rama `feat/reparto-dos-tablas-sabado`, **ya mergeada a `master`** por el **PR #15** (merge commit `8b71abb`) — master y producción coinciden. Deploy `web-3mo72hm3z`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
+Verificado contra producción: **mismo sha256** que el build (`e2d9029b…`), `app_version.json` dice `v19.13`, los headers son los que espera el aviso de versión y las cadenas de la feature están en el bundle ("Agregar columna", "Ej: Pierna, Grasa").
+
+Trae las **columnas a medida** de la lista de reparto (ver "Cambios v19.13"). La migración `supabase_migration_reparto_columnas_extra.sql` **ya se corrió** (28/10/2026): verificado por REST, `columnas_extra` responde `{}` y `extras` responde `[]` en las filas que ya existían, que es exactamente "sin columnas extra". **Sin pasada visual del desarrollador**: la mira el usuario.
+
+### v19.12 — deployada el 28/10/2026
+
+Deployada el 28/10/2026 desde la rama `feat/reparto-dos-tablas-sabado`, **ya mergeada a `master`** por el **PR #15** (merge commit `8b71abb`). Deploy `web-3mo72hm3z`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
 
 El PR #15 trae **v19.11 y v19.12 juntas** (las dos se deployaron desde esa rama, antes del merge).
 
@@ -694,6 +700,7 @@ A veces Joaco vende algo que no es una media: una pierna, grasa, lo que aparezca
 11. **El asistente no sabe de columnas extra**: carga medias. Lo que ya está cargado en esas columnas **no se pierde** cuando el asistente toca esa fila, porque muta el item leído de la base.
 12. **`test/reparto_test.dart`**: 8 casos nuevos (26 en el archivo, **156 en el proyecto**) — el tope de dos, que cada tabla tenga las suyas, los números por posición, la celda nunca cargada, la suma de la columna, la tolerancia de la lectura, que la fila partida no duplique los extras, y el PDF con columnas.
 13. **`lib/utils/app_config.dart`**: `version` de `'v19.12'` a `'v19.13'`.
+14. **Deploy**: 28/10/2026 desde la rama `feat/reparto-columnas-extra` (commit `39e3176`). Deploy `web-eovr0ripg`, que tomó el alias solo. La migración se corrió **antes** del build.
 
 ### Cambios v19.12 (28/10/2026) — Una tabla a la vez y un PDF por tabla
 
