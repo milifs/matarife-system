@@ -257,7 +257,12 @@ class _RepartoScreenState extends State<RepartoScreen> {
 
     if (elegido == null) return;
     setState(() {
-      _filas[tipo]!.add(_Fila(clienteId: elegido.id));
+      // Con las columnas que la tabla YA tiene: sin esto la fila nueva nace
+      // sin esos campos y la celda aparece vacía y no se puede tipear.
+      _filas[tipo]!.add(_Fila(
+        clienteId: elegido.id,
+        columnas: _columnas[tipo]!.length,
+      ));
       _precargado = false;
     });
   }
@@ -463,7 +468,7 @@ class _RepartoScreenState extends State<RepartoScreen> {
           : FloatingActionButton.extended(
               onPressed: () => _agregarCliente(_tipo),
               icon: const Icon(Icons.person_add_alt),
-              label: Text('Agregar a ${labelTipoReparto(_tipo)}'),
+              label: const Text('Agregar cliente'),
             ),
     );
   }
@@ -567,12 +572,40 @@ class _RepartoScreenState extends State<RepartoScreen> {
   // ─────────────────────────────────────────────
   // Una tabla (CARNE o CERDO)
   // ─────────────────────────────────────────────
+  /// Las filas como se ven, A→Z. Lo usan la grilla y el salto con las
+  /// flechas: si no fuera el mismo orden, la flecha bajaría a otra fila.
+  List<_Fila> _filasOrdenadas(AppProvider app, String tipo) =>
+      [..._filas[tipo]!]..sort((a, b) {
+          final na = app.clientePorId(a.clienteId)?.nombreRazonSocial ?? '';
+          final nb = app.clientePorId(b.clienteId)?.nombreRazonSocial ?? '';
+          return compararNombres(na, nb);
+        });
+
+  /// Baja o sube una celda, en la misma columna. Es para cargar la lista de
+  /// corrido: el tabulador pasa por la sucursal y por la cruz de quitar.
+  void _moverFoco(
+      AppProvider app, String tipo, _Fila desde, int columna, int delta) {
+    final filas = _filasOrdenadas(app, tipo);
+    final i = filas.indexOf(desde);
+    if (i < 0) return;
+    final destino = i + delta;
+    if (destino < 0 || destino >= filas.length) return;
+
+    final foco = filas[destino].focoDe(columna);
+    if (foco == null) return;
+    foco.requestFocus();
+
+    // Deja el número seleccionado: así se tipea encima sin borrar antes,
+    // que es como se carga una planilla.
+    final ctrl = filas[destino].controllerDe(columna);
+    if (ctrl != null) {
+      ctrl.selection =
+          TextSelection(baseOffset: 0, extentOffset: ctrl.text.length);
+    }
+  }
+
   Widget _tabla(AppProvider app, String tipo) {
-    final filas = [..._filas[tipo]!]..sort((a, b) {
-        final na = app.clientePorId(a.clienteId)?.nombreRazonSocial ?? '';
-        final nb = app.clientePorId(b.clienteId)?.nombreRazonSocial ?? '';
-        return compararNombres(na, nb);
-      });
+    final filas = _filasOrdenadas(app, tipo);
     final esCerdo = tipo == tipoRepartoCerdo;
 
     return Container(
@@ -664,6 +697,8 @@ class _RepartoScreenState extends State<RepartoScreen> {
                     _precargado = false;
                   });
                 },
+                onFlecha: (columna, delta) =>
+                    _moverFoco(app, tipo, fila, columna, delta),
               ),
           _filaSobrante(tipo, _sobrante(tipo)),
         ],
@@ -827,9 +862,12 @@ Widget _filaGrilla({
 Widget _campoMedias({
   required TextEditingController ctrl,
   required VoidCallback onCambio,
+  FocusNode? focusNode,
+  void Function(int delta)? onFlechaVertical,
 }) {
-  return TextField(
+  final campo = TextField(
     controller: ctrl,
+    focusNode: focusNode,
     textAlign: TextAlign.center,
     keyboardType: TextInputType.number,
     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
@@ -839,6 +877,30 @@ Widget _campoMedias({
       contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       hintText: '0',
     ),
+  );
+  if (onFlechaVertical == null) return campo;
+
+  // Se engancha ARRIBA del campo: la tecla sube desde el que tiene el foco
+  // hacia sus padres, así que llega acá antes que a los atajos de edición
+  // de texto. En un campo de una línea la flecha vertical no hace nada
+  // útil, así que no le sacamos nada al usuario.
+  return Focus(
+    canRequestFocus: false,
+    onKeyEvent: (_, evento) {
+      if (evento is! KeyDownEvent && evento is! KeyRepeatEvent) {
+        return KeyEventResult.ignored;
+      }
+      if (evento.logicalKey == LogicalKeyboardKey.arrowDown) {
+        onFlechaVertical(1);
+        return KeyEventResult.handled;
+      }
+      if (evento.logicalKey == LogicalKeyboardKey.arrowUp) {
+        onFlechaVertical(-1);
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    },
+    child: campo,
   );
 }
 
@@ -854,6 +916,9 @@ class _FilaCliente extends StatefulWidget {
   final VoidCallback onCambio;
   final VoidCallback onQuitar;
 
+  /// Flecha arriba / abajo en una celda: (columna, -1 o 1).
+  final void Function(int columna, int delta) onFlecha;
+
   const _FilaCliente({
     super.key,
     required this.fila,
@@ -861,6 +926,7 @@ class _FilaCliente extends StatefulWidget {
     required this.columnas,
     required this.onCambio,
     required this.onQuitar,
+    required this.onFlecha,
   });
 
   @override
@@ -912,12 +978,19 @@ class _FilaClienteState extends State<_FilaCliente> {
         ),
         celdas: [
           _campoMedias(
-              ctrl: widget.fila.mediasCtrl, onCambio: widget.onCambio),
+            ctrl: widget.fila.mediasCtrl,
+            focusNode: widget.fila.mediasFocus,
+            onCambio: widget.onCambio,
+            onFlechaVertical: (delta) => widget.onFlecha(0, delta),
+          ),
           for (var i = 0; i < widget.columnas; i++)
             if (i < widget.fila.extraCtrls.length)
               _campoMedias(
-                  ctrl: widget.fila.extraCtrls[i],
-                  onCambio: widget.onCambio)
+                ctrl: widget.fila.extraCtrls[i],
+                focusNode: widget.fila.extraFocus[i],
+                onCambio: widget.onCambio,
+                onFlechaVertical: (delta) => widget.onFlecha(i + 1, delta),
+              )
             else
               const SizedBox.shrink(),
         ],
@@ -943,6 +1016,11 @@ class _Fila {
   /// Un campo por columna extra de su tabla, en el mismo orden.
   final List<TextEditingController> extraCtrls;
 
+  /// El foco de cada celda numérica, para poder bajar y subir con las
+  /// flechas. El índice 0 es la de medias; de ahí en más, las extra.
+  final FocusNode mediasFocus = FocusNode();
+  final List<FocusNode> extraFocus = [];
+
   _Fila({
     required this.clienteId,
     int medias = 0,
@@ -958,7 +1036,25 @@ class _Fila {
                 text: (i < extras.length && extras[i] != 0)
                     ? '${extras[i]}'
                     : ''),
-        ];
+        ] {
+    for (var i = 0; i < columnas; i++) {
+      extraFocus.add(FocusNode());
+    }
+  }
+
+  /// El foco de la celda [columna]: 0 es medias, 1 en adelante las extra.
+  FocusNode? focoDe(int columna) {
+    if (columna == 0) return mediasFocus;
+    final i = columna - 1;
+    return i < extraFocus.length ? extraFocus[i] : null;
+  }
+
+  /// El controller de la celda [columna], con el mismo criterio.
+  TextEditingController? controllerDe(int columna) {
+    if (columna == 0) return mediasCtrl;
+    final i = columna - 1;
+    return i < extraCtrls.length ? extraCtrls[i] : null;
+  }
 
   int get cantidad => int.tryParse(mediasCtrl.text.trim()) ?? 0;
 
@@ -969,22 +1065,29 @@ class _Fila {
   void ajustarColumnas(int columnas) {
     while (extraCtrls.length > columnas) {
       extraCtrls.removeLast().dispose();
+      extraFocus.removeLast().dispose();
     }
     while (extraCtrls.length < columnas) {
       extraCtrls.add(TextEditingController());
+      extraFocus.add(FocusNode());
     }
   }
 
   /// Saca el campo de una columna que se quitó del medio.
   void quitarColumna(int i) {
     if (i >= 0 && i < extraCtrls.length) extraCtrls.removeAt(i).dispose();
+    if (i >= 0 && i < extraFocus.length) extraFocus.removeAt(i).dispose();
   }
 
   void dispose() {
     mediasCtrl.dispose();
     sucursalCtrl.dispose();
+    mediasFocus.dispose();
     for (final c in extraCtrls) {
       c.dispose();
+    }
+    for (final f in extraFocus) {
+      f.dispose();
     }
   }
 }

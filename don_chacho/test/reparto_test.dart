@@ -291,6 +291,7 @@ void main() {
   });
 
   _pdf();
+  _filasNuevas();
 }
 
 // Smoke test de layout del PDF del repartidor: dart_pdf tira los errores de
@@ -427,6 +428,37 @@ void _pdf() {
       );
       expect(await armar(lista, const [], tipoRepartoCarne),
           greaterThan(1000));
+    });
+  });
+}
+
+// La fila nueva tiene que nacer con las columnas que la tabla YA tiene.
+// Si no, la celda de la columna extra aparece vacía y no se puede tipear:
+// es el bug que reportó el usuario (agregar columna -> agregar cliente ->
+// la celda nueva no deja escribir).
+void _filasNuevas() {
+  group('una fila agregada después de la columna', () {
+    test('el item nuevo arranca sin extras y eso no rompe la lectura', () {
+      final it = RepartoItem(clienteId: 'nuevo', tipo: tipoRepartoCarne);
+      expect(it.extras, isEmpty);
+      expect(it.extraEn(0), 0);
+    });
+
+    test('la lista suma bien aunque una fila no tenga la celda cargada', () {
+      final lista = RepartoLista(
+        semanaInicio: DateTime(2026, 10, 26),
+        dia: 'jueves',
+        columnasExtra: {
+          tipoRepartoCarne: ['Pierna'],
+        },
+        items: [
+          RepartoItem(
+              clienteId: 'viejo', tipo: tipoRepartoCarne, extras: [2]),
+          // El que se agregó después de crear la columna.
+          RepartoItem(clienteId: 'nuevo', tipo: tipoRepartoCarne),
+        ],
+      );
+      expect(lista.repartidoExtra(tipoRepartoCarne, 0), 2);
     });
   });
 }
