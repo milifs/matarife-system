@@ -3,8 +3,11 @@
 // ============================================================
 // Dos tablas por día: una de CARNE (novillo) y otra de CERDO. Cada una
 // con su TOTAL MEDIAS (a mano), sus clientes y su SOBRANTE (calculado).
+// Se ve una por vez, con su propio selector arriba, igual que el día:
+// la carne y el cerdo los reparte gente distinta y son dos listas.
 // Un día por lista: jueves, viernes y sábado, navegable por semana.
-// No involucra plata, saldos ni remitos. Exporta PDF para el repartidor.
+// No involucra plata, saldos ni remitos. Exporta UN PDF POR TABLA, que es
+// lo que recibe cada repartidor.
 // ============================================================
 
 import 'package:flutter/material.dart';
@@ -29,6 +32,10 @@ class _RepartoScreenState extends State<RepartoScreen> {
 
   late DateTime _semana; // lunes de la semana
   String _dia = 'jueves';
+
+  /// Tabla que se está mirando. Las dos viven en memoria y se guardan
+  /// juntas (son la misma lista del día); esto es solo cuál se muestra.
+  String _tipo = tipoRepartoCarne;
 
   bool _cargando = true;
   bool _guardando = false;
@@ -220,7 +227,7 @@ class _RepartoScreenState extends State<RepartoScreen> {
     });
   }
 
-  Future<void> _generarPdf() async {
+  Future<void> _generarPdf(String tipo) async {
     final app = context.read<AppProvider>();
     // Persistimos antes para que el PDF y la base queden alineados.
     await _persistir(silencioso: true);
@@ -228,6 +235,7 @@ class _RepartoScreenState extends State<RepartoScreen> {
       await RepartoService.generarYCompartir(
         lista: _construirLista(),
         clientes: app.clientes,
+        tipo: tipo,
       );
     } catch (e) {
       if (mounted) {
@@ -260,10 +268,19 @@ class _RepartoScreenState extends State<RepartoScreen> {
                   )
                 : const Icon(Icons.save_outlined),
           ),
-          IconButton(
+          // Un PDF por tabla: cada repartidor se lleva el suyo.
+          PopupMenuButton<String>(
             tooltip: 'PDF para el repartidor',
-            onPressed: _guardando ? null : _generarPdf,
+            enabled: !_guardando,
             icon: const Icon(Icons.picture_as_pdf_outlined),
+            onSelected: _generarPdf,
+            itemBuilder: (_) => [
+              for (final t in tiposReparto)
+                PopupMenuItem(
+                  value: t,
+                  child: Text('PDF de ${labelTipoReparto(t)}'),
+                ),
+            ],
           ),
         ],
       ),
@@ -271,26 +288,26 @@ class _RepartoScreenState extends State<RepartoScreen> {
         children: [
           _barraSemana(),
           _selectorDia(),
+          _selectorTipo(),
           const Divider(height: 1),
           if (_precargado && !_cargando) _bannerPrecargado(),
           Expanded(
             child: _cargando
                 ? const Center(child: CircularProgressIndicator())
                 : ListView(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 32),
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
                     children: [
-                      for (final tipo in tiposReparto) ...[
-                        _tabla(app, tipo),
-                        const SizedBox(height: 16),
-                      ],
-                      // NOTAS
+                      _tabla(app, _tipo),
+                      const SizedBox(height: 16),
+                      // NOTAS: son del día, así que se ven y se editan desde
+                      // las dos tablas. Es el mismo texto.
                       TextField(
                         controller: _notasCtrl,
                         minLines: 2,
                         maxLines: 4,
                         onChanged: (_) => _marcarModificado(),
                         decoration: const InputDecoration(
-                          labelText: 'Notas sueltas',
+                          labelText: 'Notas sueltas del día',
                           hintText: 'Ej: buscar morcillas de La Florida',
                           alignLabelWithHint: true,
                         ),
@@ -300,6 +317,13 @@ class _RepartoScreenState extends State<RepartoScreen> {
           ),
         ],
       ),
+      floatingActionButton: _cargando
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () => _agregarCliente(_tipo),
+              icon: const Icon(Icons.person_add_alt),
+              label: Text('Agregar a ${labelTipoReparto(_tipo)}'),
+            ),
     );
   }
 
@@ -355,6 +379,30 @@ class _RepartoScreenState extends State<RepartoScreen> {
             icon: const Icon(Icons.chevron_right),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Selector de tabla, con el mismo gesto que el del día. Cambiar de tabla
+  /// no toca la base: las dos son la misma lista y se guardan juntas.
+  Widget _selectorTipo() {
+    return Container(
+      color: AppTheme.card,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: SegmentedButton<String>(
+        showSelectedIcon: false,
+        segments: [
+          for (final t in tiposReparto)
+            ButtonSegment(
+              value: t,
+              icon: Icon(t == tipoRepartoCerdo
+                  ? Icons.savings_outlined
+                  : Icons.kebab_dining),
+              label: Text(t == tipoRepartoCerdo ? 'Cerdo' : 'Carne'),
+            ),
+        ],
+        selected: {_tipo},
+        onSelectionChanged: (s) => setState(() => _tipo = s.first),
       ),
     );
   }
@@ -450,16 +498,6 @@ class _RepartoScreenState extends State<RepartoScreen> {
                   for (final fila in filas) _filaCliente(app, tipo, fila),
                 const SizedBox(height: 4),
                 _filaSobrante(_sobrante(tipo)),
-                const SizedBox(height: 4),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () => _agregarCliente(tipo),
-                    icon: const Icon(Icons.person_add_alt, size: 18),
-                    label: Text(
-                        'Agregar cliente a ${labelTipoReparto(tipo)}'),
-                  ),
-                ),
               ],
             ),
           ),

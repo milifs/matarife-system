@@ -1,9 +1,13 @@
 // ============================================================
 // SERVICIO DE REPARTO - PDF para el repartidor
 // ============================================================
-// Genera un PDF con la lista de reparto de una semana/día: una tabla
-// de CARNE (novillo) y otra de CERDO, cada una con su TOTAL MEDIAS,
-// sus clientes y su SOBRANTE DEPÓSITO, más las notas sueltas.
+// Genera el PDF de UNA de las dos tablas de un día: la de CARNE
+// (novillo) o la de CERDO, con su TOTAL MEDIAS, sus clientes y su
+// SOBRANTE DEPÓSITO, más las notas sueltas del día.
+//
+// Son dos PDF separados a propósito: la carne y el cerdo los reparte
+// gente distinta, y cada uno se lleva su hoja. Las notas del día van en
+// los dos, porque son del reparto, no de la mercadería.
 // No involucra plata.
 // ============================================================
 
@@ -23,14 +27,18 @@ class RepartoService {
   static Future<void> generarYCompartir({
     required RepartoLista lista,
     required List<Cliente> clientes,
+    required String tipo,
   }) async {
     final logo = await _loadLogo();
-    final pdf = generarPdf(lista: lista, clientes: clientes, logo: logo);
+    final pdf =
+        generarPdf(lista: lista, clientes: clientes, logo: logo, tipo: tipo);
     final bytes = await pdf.save();
+    final semana = formatFecha(lista.semanaInicio).replaceAll('/', '-');
     await Printing.sharePdf(
       bytes: bytes,
-      filename:
-          'reparto_${lista.dia}_${formatFecha(lista.semanaInicio).replaceAll('/', '-')}.pdf',
+      // El tipo va en el nombre: en el celular los dos PDF del mismo día
+      // quedan uno al lado del otro y hay que poder distinguirlos.
+      filename: 'reparto_${tipo}_${lista.dia}_$semana.pdf',
     );
   }
 
@@ -40,6 +48,7 @@ class RepartoService {
     required RepartoLista lista,
     required List<Cliente> clientes,
     required pw.MemoryImage logo,
+    required String tipo,
   }) {
     final pdf = pw.Document();
 
@@ -93,20 +102,15 @@ class RepartoService {
           ],
         );
 
-    // Una tabla por mercadería, cada una con su total y su sobrante.
-    // Devuelve widgets sueltos y NO un Column: dentro de un MultiPage, la
-    // Table se parte sola entre páginas, pero metida en un Column no, y una
+    final titulo = tipo == tipoRepartoCerdo ? 'CERDO' : 'CARNE (NOVILLO)';
+
+    // La tabla va como widgets sueltos y NO dentro de un Column: en un
+    // MultiPage la Table se parte sola entre páginas, un Column no, y una
     // lista larga de clientes haría explotar el armado.
-    List<pw.Widget> tabla(String tipo) {
+    List<pw.Widget> tabla() {
       final items = [...lista.itemsDe(tipo)]..sort((a, b) =>
           compararNombres(nombre(a.clienteId), nombre(b.clienteId)));
       return [
-        pw.Text(
-          tipo == tipoRepartoCerdo ? 'CERDO' : 'CARNE (NOVILLO)',
-          style: pw.TextStyle(
-              fontSize: 13, fontWeight: pw.FontWeight.bold, color: rojo),
-        ),
-        pw.SizedBox(height: 6),
         pw.Table(
           border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
           columnWidths: const {
@@ -157,7 +161,7 @@ class RepartoService {
                           fontSize: 18,
                           fontWeight: pw.FontWeight.bold,
                           color: rojo)),
-                  pw.Text('Reparto del ${lista.diaLabel}',
+                  pw.Text('$titulo — Reparto del ${lista.diaLabel}',
                       style: pw.TextStyle(
                           fontSize: 13, fontWeight: pw.FontWeight.bold)),
                   pw.Text('Semana ${formatRangoSemana(lista.semanaInicio)}',
@@ -169,11 +173,9 @@ class RepartoService {
           ),
           pw.SizedBox(height: 16),
 
-          // Las dos tablas
-          for (final tipo in tiposReparto) ...[
-            ...tabla(tipo),
-            pw.SizedBox(height: 18),
-          ],
+          // La tabla de esta mercadería
+          ...tabla(),
+          pw.SizedBox(height: 18),
 
           // Notas
           if (lista.notas.trim().isNotEmpty)

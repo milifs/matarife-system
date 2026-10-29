@@ -193,9 +193,11 @@ void main() {
 }
 
 // Smoke test de layout del PDF del repartidor: dart_pdf tira los errores de
-// armado recién al construir el documento. Las dos tablas van como widgets
-// sueltos del MultiPage justamente para que se puedan partir entre páginas;
-// metidas en un Column, una lista larga de clientes haría explotar el armado.
+// armado recién al construir el documento. La tabla va como widgets sueltos
+// del MultiPage justamente para que se pueda partir entre páginas; metida en
+// un Column, una lista larga de clientes haría explotar el armado.
+//
+// Son DOS PDF por día, uno por tabla, así que cada caso se arma con los dos.
 Cliente cliente(String id, String nombre) => Cliente(
       id: id,
       vendedorId: 'v',
@@ -214,16 +216,18 @@ void _pdf() {
       logo = pw.MemoryImage(File('assets/logo.png').readAsBytesSync());
     });
 
-    Future<int> armar(RepartoLista lista, List<Cliente> clientes) async {
+    Future<int> armar(
+        RepartoLista lista, List<Cliente> clientes, String tipo) async {
       final doc = RepartoService.generarPdf(
         lista: lista,
         clientes: clientes,
         logo: logo,
+        tipo: tipo,
       );
       return (await doc.save()).length;
     }
 
-    test('las dos tablas, con notas', () async {
+    test('un PDF por tabla, con las notas del día en los dos', () async {
       final clientes = [
         cliente('a', 'Perico'),
         cliente('b', 'La Florida'),
@@ -243,7 +247,9 @@ void _pdf() {
           RepartoItem(clienteId: 'b', tipo: tipoRepartoCerdo, medias: 5),
         ],
       );
-      expect(await armar(lista, clientes), greaterThan(1000));
+      for (final tipo in tiposReparto) {
+        expect(await armar(lista, clientes, tipo), greaterThan(1000));
+      }
     });
 
     test('una lista larga se parte en varias páginas', () async {
@@ -264,7 +270,26 @@ void _pdf() {
                 clienteId: 'c$i', tipo: tipoRepartoCerdo, medias: i + 1),
         ],
       );
-      expect(await armar(lista, clientes), greaterThan(1000));
+      for (final tipo in tiposReparto) {
+        expect(await armar(lista, clientes, tipo), greaterThan(1000));
+      }
+    });
+
+    test('la tabla vacía igual sale (el repartidor se lleva la hoja)',
+        () async {
+      // Un día puede no tener cerdo. El PDF igual tiene que salir, con su
+      // TOTAL MEDIAS y su sobrante, y no quedar a mitad de camino.
+      final lista = RepartoLista(
+        semanaInicio: DateTime(2026, 10, 26),
+        dia: 'jueves',
+        totalMediasCarne: 10,
+        items: [
+          RepartoItem(clienteId: 'a', tipo: tipoRepartoCarne, medias: 4),
+        ],
+      );
+      expect(lista.itemsDe(tipoRepartoCerdo), isEmpty);
+      expect(await armar(lista, [cliente('a', 'Perico')], tipoRepartoCerdo),
+          greaterThan(1000));
     });
 
     test('un cliente borrado no rompe el PDF', () async {
@@ -276,7 +301,8 @@ void _pdf() {
               clienteId: 'fantasma', tipo: tipoRepartoCarne, medias: 2),
         ],
       );
-      expect(await armar(lista, const []), greaterThan(1000));
+      expect(await armar(lista, const [], tipoRepartoCarne),
+          greaterThan(1000));
     });
   });
 }
