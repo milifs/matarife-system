@@ -33,12 +33,15 @@ class RepartoService {
     final pdf =
         generarPdf(lista: lista, clientes: clientes, logo: logo, tipo: tipo);
     final bytes = await pdf.save();
-    final semana = formatFecha(lista.semanaInicio).replaceAll('/', '-');
+    // La fecha del DÍA que se reparte, no el lunes de la semana: la lista
+    // del jueves de la semana del 26/10 se reparte el 29/10, y el nombre
+    // con el lunes se lee como una fecha equivocada.
+    final fecha = formatFecha(lista.fecha).replaceAll('/', '-');
     await Printing.sharePdf(
       bytes: bytes,
       // El tipo va en el nombre: en el celular los dos PDF del mismo día
       // quedan uno al lado del otro y hay que poder distinguirlos.
-      filename: 'reparto_${tipo}_${lista.dia}_$semana.pdf',
+      filename: 'reparto_${tipo}_${lista.dia}_$fecha.pdf',
     );
   }
 
@@ -198,7 +201,9 @@ class RepartoService {
                           fontSize: 18,
                           fontWeight: pw.FontWeight.bold,
                           color: rojo)),
-                  pw.Text('$titulo — Reparto del ${lista.diaLabel}',
+                  pw.Text(
+                      '$titulo — Reparto del ${lista.diaLabel} '
+                      '${formatFecha(lista.fecha)}',
                       style: pw.TextStyle(
                           fontSize: 13, fontWeight: pw.FontWeight.bold)),
                   pw.Text('Semana ${formatRangoSemana(lista.semanaInicio)}',
