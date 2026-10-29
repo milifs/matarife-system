@@ -522,11 +522,19 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v19.13) — EN PRODUCCIÓN
+## ESTADO ACTUAL (v19.14) — EN PRODUCCIÓN
 
-> **v19.14 está escrita pero NO deployada todavía**, y tapa una filtración: la Encargada de Depósito ve el saldo del negocio en Inicio y puede entrar a la Nota de crédito / débito (ver "Cambios v19.14"). **Sin migración**: sale con un build.
+Deployada el 28/10/2026 desde la rama `fix/dashboard-solo-admin` (**PR #17**, todavía sin mergear: producción va adelante de master). Deploy `web-7a18z6zzl`, que tomó el alias solo. **Sin migración.**
 
-Deployada el 28/10/2026 desde la rama `feat/reparto-columnas-extra`, **ya mergeada a `master`** por el **PR #16** (merge commit `82db63d`) — master y producción coinciden. Deploy `web-eovr0ripg`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
+Verificado contra producción: el alias responde 200, **mismo sha256** que el build (`a218830e…`), `app_version.json` dice `v19.14` y los headers son los que espera el aviso de versión. El bundle trae el botón "Agregar cliente" (y **ya no** "Agregar a CARNE") y la pantalla de Inicio sin plata.
+
+Trae el **gate del dashboard y de la Nota de crédito / débito**, el arreglo de la **celda muerta** de las columnas extra, el texto del botón y las **flechas ↑ ↓** entre celdas (ver "Cambios v19.14"). **Sin pasada visual del desarrollador.**
+
+**El deploy lo corre el usuario**: el modo automático del agente bloquea `vercel --prod`. El agente deja el build hecho con su `.vercel/project.json` restaurado y pasa el comando. Este deploy salió dos veces del **mismo** build (mismo `buildeado` y mismo sha256): la segunda fue al pedo pero inofensiva, solo cambió el id del deployment.
+
+### v19.13 — deployada el 28/10/2026
+
+Deployada el 28/10/2026 desde la rama `feat/reparto-columnas-extra`, **ya mergeada a `master`** por el **PR #16** (merge commit `82db63d`). Deploy `web-eovr0ripg`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
 
 Verificado contra producción: **mismo sha256** que el build (`e2d9029b…`), `app_version.json` dice `v19.13`, los headers son los que espera el aviso de versión y las cadenas de la feature están en el bundle ("Agregar columna", "Ej: Pierna, Grasa").
 
@@ -712,7 +720,8 @@ Lo reportó el usuario con una captura: la Encargada de Depósito, entrando con 
 9. **BUG: la celda de una columna extra no se dejaba escribir.** Agregar columna → agregar cliente → la celda nueva aparecía vacía y muerta. `_agregarCliente` creaba el `_Fila` **sin pasarle `columnas`**, así que nacía sin esos controllers y la grilla dibujaba un hueco. Cubierto por test.
 10. **El botón dice "Agregar cliente"** y no "Agregar a CARNE": con una sola tabla a la vista, a cuál se agrega ya se ve arriba.
 11. **Flechas ↑ ↓ entre celdas** (`_moverFoco`): bajan y suben en la **misma columna**, que es como se carga una planilla. El tabulador no servía porque pasa por el campo de sucursal y por la cruz de quitar. El salto usa **el mismo orden A→Z que la grilla** (`_filasOrdenadas`, compartido): con otro orden, la flecha bajaría a una fila que no es la de abajo. Al llegar, el número queda **seleccionado**, para tipear encima sin borrar antes.
-12. **El `Focus` de la flecha va ARRIBA del campo**: la tecla sube desde el que tiene el foco hacia sus padres, así que llega ahí antes que a los atajos de edición de texto de Flutter. En un campo de una línea la flecha vertical no hace nada útil, así que no se le saca nada al usuario. Va con `canRequestFocus: false` para no meterse en el recorrido del tabulador.
+12. **Deploy**: 28/10/2026 desde la rama `fix/dashboard-solo-admin` (commits `d4117f4` y `ae0c1b1`). Deploy `web-7a18z6zzl`, que tomó el alias solo. Sin migración.
+13. **El `Focus` de la flecha va ARRIBA del campo**: la tecla sube desde el que tiene el foco hacia sus padres, así que llega ahí antes que a los atajos de edición de texto de Flutter. En un campo de una línea la flecha vertical no hace nada útil, así que no se le saca nada al usuario. Va con `canRequestFocus: false` para no meterse en el recorrido del tabulador.
 
 ### Cambios v19.13 (28/10/2026) — Columnas a medida en el reparto
 
