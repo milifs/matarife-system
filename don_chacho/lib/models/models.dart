@@ -1156,11 +1156,26 @@ class Rol {
 class Usuario {
   final String id;
   String usuario;
+
+  /// Hash SHA-256 del login viejo. Queda solo para el login legacy del
+  /// período de transición; las contraseñas nuevas las guarda Supabase Auth.
+  /// Vacío = este usuario ya cambió su contraseña y el hash viejo se borró.
   String passwordHash;
   String rolId;
   String nombreCompleto;
   bool activo;
   final DateTime creadoEn;
+
+  /// Identidad de Supabase Auth (`usuarios.auth_id`). NULL = todavía no tiene
+  /// cuenta de acceso creada, así que entra por el login legacy.
+  ///
+  /// Es de LECTURA: la escribe el SQL del vínculo, no la app. Por eso no está
+  /// en [toMap] — si estuviera, guardar un usuario desde Gestión de Usuarios
+  /// (que arma un `Usuario` nuevo con los campos del formulario) le borraría
+  /// el vínculo en silencio y lo dejaría afuera.
+  final String? authId;
+
+  bool get tieneCuentaDeAuth => authId != null;
 
   // Se carga aparte
   Rol? rol;
@@ -1173,6 +1188,7 @@ class Usuario {
     required this.nombreCompleto,
     this.activo = true,
     DateTime? creadoEn,
+    this.authId,
     this.rol,
   })  : id = id ?? _uuid.v4(),
         creadoEn = creadoEn ?? DateTime.now();
@@ -1190,6 +1206,8 @@ class Usuario {
         'creado_en': creadoEn.toIso8601String(),
       };
 
+  /// Tolera que `auth_id` no exista todavía (app nueva contra base sin la
+  /// migración corrida): cae en null, que es "sin cuenta".
   factory Usuario.fromMap(Map<String, dynamic> map) => Usuario(
         id: map['id'],
         usuario: map['usuario'] ?? '',
@@ -1197,6 +1215,7 @@ class Usuario {
         rolId: map['rol_id'] ?? '',
         nombreCompleto: map['nombre_completo'] ?? '',
         activo: map['activo'] ?? true,
+        authId: map['auth_id'] as String?,
         creadoEn: DateTime.tryParse(map['creado_en'] ?? '') ?? DateTime.now(),
       );
 }

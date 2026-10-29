@@ -27,6 +27,7 @@ import 'screens/reparto_screen.dart';
 import 'screens/deposito_screen.dart';
 import 'screens/asistente_reparto_sheet.dart';
 import 'screens/login_screen.dart';
+import 'screens/cambiar_password_screen.dart';
 import 'screens/gestion_usuarios_screen.dart';
 import 'screens/bandeja_remitos_screen.dart';
 import 'screens/soporte_form_screen.dart';
@@ -85,10 +86,33 @@ class _AppWrapperState extends State<AppWrapper> {
   bool _verificandoSesion = true;
   Usuario? _usuario;
 
+  /// La sesión la manda Supabase Auth, no la app. Esto escucha sus cambios
+  /// para que un token revocado, vencido o cerrado desde otra pestaña saque
+  /// al usuario a la pantalla de login, en vez de dejarlo adentro con una app
+  /// que ya no puede leer nada.
+  StreamSubscription<AuthState>? _subSesion;
+
   @override
   void initState() {
     super.initState();
+    _subSesion = AuthService.cambiosDeSesion.listen(_onCambioDeSesion);
     _verificarSesion();
+  }
+
+  @override
+  void dispose() {
+    _subSesion?.cancel();
+    super.dispose();
+  }
+
+  /// Solo reacciona al cierre: el ingreso ya lo maneja [_onLogin], que además
+  /// tiene que cargar los datos antes de mostrar la app. Atender también
+  /// `signedIn` acá haría que las dos cosas corran en paralelo sobre el mismo
+  /// estado.
+  void _onCambioDeSesion(AuthState estado) {
+    if (estado.event != AuthChangeEvent.signedOut) return;
+    if (!mounted || _usuario == null) return;
+    setState(() => _usuario = null);
   }
 
   Future<void> _verificarSesion() async {
@@ -662,6 +686,27 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
                   },
                 ),
               ],
+              // Cambiar contraseña: para todos los roles. Cada usuario arranca
+              // con una temporal (las viejas no se pudieron migrar a Supabase
+              // Auth) y la cambia acá la primera vez.
+              const Divider(height: 1),
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: AppTheme.textHint.withOpacity(0.1),
+                  child: const Icon(Icons.lock_reset,
+                      color: AppTheme.textHint),
+                ),
+                title: const Text('Cambiar contraseña'),
+                subtitle: const Text('Elegir una nueva para entrar'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const CambiarPasswordScreen()),
+                  );
+                },
+              ),
               const Divider(height: 1),
               ListTile(
                 leading: CircleAvatar(
