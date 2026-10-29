@@ -246,14 +246,43 @@ Permisos de cada rol, tal como están en `rol_permisos` hoy:
 |---|---|---|---|---|---|
 | `vendedores` | L+AMB | L+AMB | L+AMB | L | Lectura: cualquier usuario (los nombres salen en filtros y en el reparto). Escritura: `gestionar_vendedores` |
 | `clientes` | L+AMB | L+AMB | L+AMB | L | Lectura: cualquier usuario (la Lista de reparto es para todos y necesita los nombres). Escritura: `gestionar_clientes` |
-| `remitos` | L+AMB | L+AM | L | L | Lectura: `ver_consultas` ∨ `crear_remito` ∨ `gestionar_deposito`. Alta: `crear_remito`. Modif.: `editar_remito` ∨ `confirmar_remito`. Baja: `eliminar_remito` |
+| `remitos` | L+AMB | L+AM | L | L | Lectura: **regla del saldo** (abajo) ∨ `crear_remito` ∨ `gestionar_deposito`. Alta: `crear_remito`. Modif.: `editar_remito` ∨ `confirmar_remito`. Baja: `eliminar_remito` |
 | `remito_items` | L+AMB | L+AM | L | L | Sigue a `remitos` (los ítems no tienen vida propia) |
-| `pagos` | L+AMB | L+A | L+AB | **—** | Lectura: `ver_consultas` ∨ `crear_pago`. Alta: `crear_pago`. Baja: `editar_pago`. **No hay modificación: los pagos no se editan** (generaba errores de saldo) |
+| `pagos` | L+AMB | L+A | L+AB | **—** | Lectura: **regla del saldo** (abajo). Alta: `crear_pago`. Baja: `editar_pago`. **No hay modificación: los pagos no se editan** (generaba errores de saldo) |
 | `pago_medios` | L+AMB | L+A | L+AB | **—** | Sigue a `pagos` |
-| `notas_credito_debito` | L+AMB | L+A | L+AB | **—** | Igual que `pagos`: mueve el saldo de un cliente. Alta: `crear_pago` (gate de la pantalla desde v19.14). Baja: `editar_pago` |
+| `notas_credito_debito` | L+AMB | L+A | L+AB | **—** | Igual que `pagos`: mueve el saldo de un cliente. Lectura: **regla del saldo**. Alta: `crear_pago` (gate de la pantalla desde v19.14). Baja: `editar_pago` |
 | `notas_pedido` | L+AMB | L+AMB | L | — | Lectura: `crear_remito` ∨ `confirmar_remito` ∨ `ver_consultas`. Alta: `crear_remito`. Modif.: `editar_remito` ∨ `confirmar_remito`. Baja: `editar_remito` |
 | `nota_pedido_items` | L+AMB | L+AMB | L | — | Sigue a `notas_pedido` |
 | `costos_semana` | L+AMB | — | — | — | `gestionar_costos` (lectura incluida: el costo es margen, y Ganancias y el dashboard ya son solo del dueño desde v19.14) |
+
+#### La regla del saldo
+
+> **Todo permiso que abra una pantalla donde se vea un saldo tiene que dar lectura sobre
+> las TRES tablas de las que el saldo está hecho** — `remitos`, `pagos` y
+> `notas_credito_debito` (más sus tablas de ítems) — porque
+> `saldo = remitos confirmados − pagos ± notas`. Hoy eso son cuatro permisos:
+>
+> ```
+> ver_consultas  ∨  crear_pago  ∨  gestionar_clientes  ∨  gestionar_vendedores
+> ```
+>
+> Los dos últimos no son obvios y es justamente por eso que la regla se escribe acá en vez
+> de repetir una lista en cada fila: la pestaña **Clientes** (gate `gestionar_clientes`)
+> muestra el saldo de cada cliente en pesos, y la pestaña **Vendedores** (gate
+> `gestionar_vendedores`) muestra el saldo de cada vendedor. Un rol con `gestionar_clientes`
+> y **sin** `ver_consultas` vería esa columna de pesos con `pagos` denegado, o sea mal, sin
+> que nada avise.
+>
+> Con los cuatro roles que existen hoy esto no se nota, porque los tres que llegan a esas
+> pestañas tienen además `ver_consultas`. **Pero los roles son configurables**: el admin
+> crea roles con permisos a la carta desde Gestión de Usuarios, así que un rol armado
+> mañana puede caer exactamente en ese hueco. Una política no se escribe para los roles que
+> hay, se escribe para los que el admin puede armar.
+>
+> Corolario para la Fase 2: si alguna vez hay que esconderle de verdad la deuda de la
+> cartera a un rol, **no alcanza con sacarle `ver_consultas`** — hay que sacarle también la
+> pestaña que muestra el saldo. Es el mismo criterio que ya está escrito para Saldos en
+> `CLAUDE.md`: el camino es un permiso nuevo, no estirar uno existente.
 
 ### 5.2 Compras y depósito
 
@@ -315,12 +344,31 @@ saldo del cliente = suma de sus remitos confirmados − suma de sus pagos
 ```
 
 Con `pagos` vacío, esa resta se convierte en "saldo = todo lo que se le remitió alguna vez".
-**Todos los saldos se mostrarían inflados**, con cara de dato correcto. El Encargado de
-Depósito es el caso exacto: por la matriz de arriba, `pagos` para él es `—`.
+**Todos los saldos se mostrarían inflados**, con cara de dato correcto.
 
 **Ya pasó algo así**: en v18.22 el límite de 1000 filas de PostgREST cortó la lista de pagos
 y los saldos aparecieron mal sin que nada avisara. La diferencia es que esta vez el recorte
 sería sistemático y por rol.
+
+**Hoy el peligro está latente, no a la vista — y conviene no confundir las dos cosas.** Con
+los cuatro roles que existen, el único al que la matriz le niega `pagos` es el Encargado de
+Depósito, y resulta que **no entra a ninguna pantalla que muestre un saldo**: su rol tiene
+un solo permiso, así que ve la pestaña Inicio y nada más, y desde v19.14 Inicio sin ser
+admin es un saludo sin plata (`home_screen.dart:102`). Las ocho pantallas que muestran
+saldos están todas detrás de `gestionar_clientes`, `gestionar_vendedores`, `crear_pago`,
+`ver_consultas` o `es_admin`.
+
+Así que el saldo inflado **no se vería** el día que se enciendan las políticas. Lo que lo
+hace peligroso es otra cosa, y es peor: está a **un tilde de distancia**. Alcanza con que
+alguien le dé a ese rol `ver_consultas` para mirar algo, o que se cree un rol nuevo (ver la
+regla del saldo en 5.1), y los números salen mal sin ninguna señal. Y conviene recordar que
+hasta **v19.14, hace una versión**, ese mismo rol **sí** veía el saldo total a cobrar y la
+deuda de cada vendedor en el dashboard. Lo que hoy tapa el agujero es un gate de UI de una
+semana, no una propiedad del sistema.
+
+Por eso esto se arregla antes y no después: el costo de arreglarlo ahora es un rato de
+provider, y el de arreglarlo cuando se note es un cobrador que salió a cobrar con números
+que no eran.
 
 Lo que hay que hacer en la Fase 2, en este orden:
 
@@ -339,9 +387,19 @@ Lo que hay que hacer en la Fase 2, en este orden:
 ### 6.2 `soportes` no tiene con qué identificar al dueño del ticket
 
 La política "cada uno ve sus propios tickets" necesita comparar contra algo estable, y hoy
-`soportes.reportado_por` es **texto con el nombre** (`"Rocio Lopez"`), no un id. Comparar
-nombres es frágil: dos "Rocio" existen hoy mismo (`rociolopez` y `rocio_cejas`), y cambiar
-el nombre completo de alguien en Gestión de Usuarios le haría perder sus tickets.
+`soportes.reportado_por` es **texto con el nombre completo** (`"Rocio Lopez"`), no un id:
+`soporte_form_screen.dart:63` filtra con `getTicketsSoporte(reportadoPor:
+usuario.nombreCompleto)`.
+
+Hoy eso **funciona** — los seis nombres completos son distintos, Rocio Lopez y Rocio Cejas
+incluidas. Pero no aguanta una política, por tres razones:
+
+- **`nombre_completo` no es único** y nada impide que lo sea: son dos personas escribiendo
+  un nombre en un formulario. El día que se repita, cada una ve los tickets de la otra.
+- **Renombrar a alguien le borra su historia.** Cambiarle el nombre completo en Gestión de
+  Usuarios le hace perder todos sus tickets anteriores, sin aviso.
+- **Depende de tildes y mayúsculas.** `"soledad Alcalá"` está guardado así, con minúscula y
+  con tilde. Cualquier corrección cosmética de ese nombre rompe el match.
 
 La Fase 2 tiene que agregar `soportes.reportado_por_id UUID REFERENCES usuarios(id)` (o
 directamente el `auth_id`), backfillear lo que se pueda por nombre y dejar la columna de
@@ -389,7 +447,7 @@ sesión es trabajo de la Fase 3.
 | Fase | Qué hace | Estado |
 |---|---|---|
 | **1 — Identidad** | `auth_id` + `es_admin()` + `tiene_permiso()`, login por Supabase Auth, 6 cuentas creadas y vinculadas, contraseñas temporales cambiadas, legacy apagado | **esta PR** (SQL escrita sin correr) |
-| **2 — Políticas** | Arreglar `cargarDatos()` (6.1) y `soportes.reportado_por_id` (6.2); escribir las políticas de la matriz del punto 5; encender RLS **tabla por tabla**, empezando por las que no bloquean el reparto, nunca un jueves, viernes o sábado | pendiente |
+| **2 — Políticas** | Arreglar `cargarDatos()` (6.1) y `soportes.reportado_por_id` (6.2); escribir las políticas de la matriz del punto 5, **con la regla del saldo de 5.1 y no fila por fila**; encender RLS **tabla por tabla**, empezando por las que no bloquean el reparto, nunca un jueves, viernes o sábado | pendiente |
 | **3 — Cerrar lo que queda** | Borrar `password_hash` (6.3); alta de usuarios en un paso con Edge Function; Edge Functions con JWT de sesión (6.5); revisar si `mili` sigue existiendo | pendiente |
 
 **Condiciones para empezar la Fase 2** (las tres, no dos de tres):
