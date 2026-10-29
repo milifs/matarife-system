@@ -525,7 +525,7 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 
 ## ESTADO ACTUAL (v19.15) — EN PRODUCCIÓN
 
-Deployada el 28/10/2026 desde la rama `fix/fecha-pdf-reparto` (**PR #18**). Deploy `web-99unb7xxw`, que tomó el alias solo. **Sin migración.**
+Deployada el 28/10/2026 desde la rama `fix/fecha-pdf-reparto`, **ya mergeada a `master`** por el **PR #18** (merge commit `85eff1a`) — master y producción coinciden. Deploy `web-99unb7xxw`, que tomó el alias solo. **Sin migración.**
 
 Verificado contra producción: el alias responde 200, **mismo sha256** que el build (`8cb56b6b…`), `app_version.json` dice `v19.15` y el encabezado con la fecha está compilado (`"Reparto del "+n+" "+dd/MM/yyyy`).
 
