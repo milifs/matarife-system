@@ -1848,144 +1848,35 @@ class ResumenJornada {
 }
 
 // ─────────────────────────────────────────────
-// DEPÓSITO (v19.5) — stock de medias reses
+// DEPÓSITO (v19.5, reescrito en v19.16) — stock de medias reses
 // ─────────────────────────────────────────────
-// Existe porque desde la cámara sacaron dos medias para un cliente, la cajera
-// se olvidó de cargar el remito y nadie podía decir dónde estaban: plata
-// perdida. El módulo cierra la ecuación entre lo comprado, lo distribuido a
-// clientes y lo guardado en depósito.
+// Es el libro de lo que hay en la cámara, y nada más: se carga a mano lo que
+// entra y lo que sale.
 //
-// Nada del stock se persiste: se deriva de cargas + remitos + movimientos,
-// igual que el saldo arrastrado del proveedor. Así, cargar un remito atrasado
-// o corregir uno viejo reacomoda todo solo.
-
-/// Un tercio de media res. Se escribe como fracción exacta y NO como 0,33
-/// para que pierna + octavo + plancha de asado den exactamente una media:
-/// con 0,33 tres cortes darían 0,99 y aparecerían diferencias fantasma.
-const _tercio = 1 / 3;
-
-/// Cuántas medias reses vale UNA unidad de cada tipo de carne del catálogo
-/// de remitos (el campo del formulario se llama "Medias", pero cuando el tipo
-/// es un corte esa unidad es el corte, no una media entera).
-///
-/// La media de novillo se divide en TRES partes: pierna, octavo y plancha de
-/// asado. El "1/4 delantero" son dos de esos tercios (octavo + plancha).
-const Map<String, double> equivalenciasMedia = {
-  'Novillo': 1,
-  'Cerdo': 1,
-  'Pierna mocha': _tercio,
-  'Pierna pistola': _tercio,
-  'Plancha de asado': _tercio,
-  'Octavo': _tercio,
-  '1/4 delantero': 2 / 3,
-};
-
-/// La equivalencia de [tipoCarne], tolerante a mayúsculas y espacios.
-///
-/// Un tipo que no está en el catálogo cuenta como UNA media: es lo que dice
-/// el campo del formulario y es el criterio conservador (de más, no de menos).
-/// En la práctica no se usa: el stock arranca de cero en la fecha de
-/// configuración y desde v18.17 los tipos salen de un dropdown fijo.
-double equivalenciaEnMedias(String tipoCarne) {
-  final buscado = tipoCarne.trim().toLowerCase();
-  for (final entrada in equivalenciasMedia.entries) {
-    if (entrada.key.toLowerCase() == buscado) return entrada.value;
-  }
-  return 1;
-}
-
-// ── Las partes de la media (v19.9) ──
-// La media de novillo se parte en TRES: pierna, octavo y plancha de asado
-// (el costillar completo). El cerdo no se fracciona: se vende entero.
+//   lo que hay = arranque + entradas - salidas
 //
-// Esto no es lo mismo que la tabla de equivalencias de arriba. Ahí interesa
-// CUÁNTA media vale un corte para que el stock cierre; acá interesa QUÉ
-// PEDAZO es, para poder decir qué quedó suelto en la cámara: si se remitió
-// una pierna, lo que queda para vender son un octavo y una plancha de asado.
-
-const String partePierna = 'pierna';
-const String parteOctavo = 'octavo';
-const String partePlancha = 'plancha';
-
-/// Qué partes de la media se lleva un tipo de carne del catálogo de remitos.
-///
-/// Una media entera (`Novillo`, `Cerdo`) no abre nada y devuelve vacío. El
-/// `1/4 delantero` se lleva DOS partes de la misma media: el octavo y la
-/// plancha de asado.
-List<String> partesDeCorte(String tipoCarne) {
-  final t = tipoCarne.trim().toLowerCase();
-  if (t.contains('pierna')) return const [partePierna];
-  if (t.contains('octavo')) return const [parteOctavo];
-  if (t.contains('plancha')) return const [partePlancha];
-  if (t.contains('delantero')) return const [parteOctavo, partePlancha];
-  return const [];
-}
-
-/// Los cortes que salieron del depósito, para poder decir qué quedó suelto.
-///
-/// Cada vez que se vende una pierna y no hay ninguna suelta hay que ABRIR una
-/// media, y el octavo y la plancha de esa media quedan disponibles. Como cada
-/// media abierta deja exactamente una parte de cada clase, alcanza con contar
-/// cuántas se pidieron de cada una: las medias que hubo que abrir son el
-/// máximo de las tres, y lo suelto es lo que sobra de ese máximo.
-///
-/// La cuenta cierra con el stock en medias sin trucos: las medias enteras más
-/// las partes sueltas (un tercio cada una) dan exactamente el stock teórico.
-class CortesVendidos {
-  final int piernas;
-  final int octavos;
-  final int planchas;
-
-  const CortesVendidos({
-    this.piernas = 0,
-    this.octavos = 0,
-    this.planchas = 0,
-  });
-
-  /// Cuántas medias hubo que abrir para servir esos cortes.
-  int get mediasAbiertas =>
-      [piernas, octavos, planchas].reduce((a, b) => a > b ? a : b);
-
-  int get piernasSueltas => mediasAbiertas - piernas;
-  int get octavosSueltos => mediasAbiertas - octavos;
-  int get planchasSueltas => mediasAbiertas - planchas;
-
-  int get totalSueltas => piernasSueltas + octavosSueltos + planchasSueltas;
-
-  bool get haySueltas => totalSueltas > 0;
-
-  /// Lo suelto medido en medias: cada parte es un tercio.
-  double get sueltasEnMedias => totalSueltas * _tercio;
-}
-
-/// El nombre de una parte, en singular o plural: "1 octavo", "2 piernas",
-/// "1 plancha de asado".
-String labelParte(String parte, int cantidad) {
-  final plural = cantidad != 1;
-  return switch (parte) {
-    partePierna => plural ? 'piernas' : 'pierna',
-    parteOctavo => plural ? 'octavos' : 'octavo',
-    _ => plural ? 'planchas de asado' : 'plancha de asado',
-  };
-}
-
-/// A qué stock le pega un tipo de carne: [Proveedor.tipoNovillo] o
-/// [Proveedor.tipoCerdo]. Solo "Cerdo" es cerdo; todo el resto (novillo y sus
-/// cinco cortes) computa como novillo. Es la misma regla que `_normalizarTipo`
-/// en app_provider y `costoPorTipo` en [CostoSemanal].
-String stockDeTipoCarne(String tipoCarne) =>
-    tipoCarne.trim().toLowerCase().contains('cerdo')
-        ? Proveedor.tipoCerdo
-        : Proveedor.tipoNovillo;
-
-/// Cuántas medias reses sale de un animal en pie: una res se parte al medio.
-const int mediasPorAnimal = 2;
+// NO MIRA EL RESTO DEL SISTEMA. Hasta v19.15 el stock se derivaba también de
+// las cargas de proveedores (animales × 2) y de los remitos confirmados, y el
+// módulo avisaba cuando esas tres cosas no cerraban. Esa reconciliación se
+// sacó por decisión del usuario: el depósito registra lo que hay, no lo cruza
+// con lo que se compró ni con lo que se facturó. De paso se fue todo lo que
+// colgaba de los remitos: la tabla de equivalencias de cortes, las salidas
+// que esperaban su remito (con su cierre por FIFO) y el panel de partes
+// sueltas.
+//
+// El stock sigue sin persistirse: se deriva del arranque y de los
+// movimientos, así que corregir un movimiento viejo reacomoda todo solo.
+//
+// El recuento físico SE QUEDA: comparar lo contado a mano contra lo que dice
+// el libro sigue siendo lo que delata a la media que salió sin que nadie la
+// registre, y eso no necesita remitos.
 
 /// Margen con el que se considera que los números "dan redondos".
 ///
-/// Hace falta por los tercios: en coma flotante 1/3 + 1/3 + 1/3 no da
-/// exactamente 1, y la BD guarda los movimientos con cuatro decimales. Sin
-/// este margen, una diferencia de 0,0000000001 media encendería la alerta.
+/// Las medias se cargan con decimales (media media, un cuarto) y la BD las
+/// guarda con cuatro, así que una resta puede dejar un resto de coma
+/// flotante. Sin este margen, una diferencia de 0,0000000001 media
+/// encendería la alerta.
 const double toleranciaMedias = 0.02;
 
 /// Lee la columna JSONB `kgs_por_media`. Tolera que no venga (se agregó en
@@ -2002,10 +1893,9 @@ List<double> _leerKgs(dynamic valor) {
 
 /// Configuración del arranque del depósito: una sola fila.
 ///
-/// El sistema tiene remitos de hace meses pero cargas de proveedores recién
-/// desde el 20/10/2026, así que contar "desde siempre" daría cualquier cosa.
-/// Por eso el depósito arranca de cero en una fecha elegida: se cuenta a mano
-/// lo que hay en la cámara ese día y de ahí en adelante manda la ecuación.
+/// El libro necesita un punto de partida: se cuenta a mano lo que hay en la
+/// cámara un día y de ahí en adelante manda lo que se vaya cargando. Los
+/// movimientos anteriores a esa fecha no cuentan.
 class DepositoConfig {
   final String id;
   DateTime fechaInicio;
@@ -2074,19 +1964,20 @@ class DepositoConfig {
 /// distintas, no variantes de lo mismo — ver [claseEntrada], [claseSalida] y
 /// [claseRecuento]. `medias` va siempre en positivo: el signo lo pone la clase.
 class DepositoMovimiento {
-  /// Medias que entran al depósito SIN venir de una carga: una devolución de
-  /// un cliente o un ajuste a favor. La compra al proveedor NO necesita una
-  /// entrada, ya suma sola por la ecuación.
+  /// Medias que entran a la cámara: lo que llega del proveedor, una
+  /// devolución de un cliente, un ajuste a favor. Desde v19.16 TODO lo que
+  /// entra se carga a mano — el módulo ya no lee las cargas de proveedores.
   static const claseEntrada = 'entrada';
 
-  /// Medias que salieron de la cámara. Es el botón que aprieta la cajera
-  /// cuando saca carne y todavía no cargó el remito: con [esperaRemito] en
-  /// true la salida queda pendiente y se cierra sola cuando aparece un remito
-  /// de ese tipo. En false es definitiva (merma, consumo propio, rotura).
+  /// Medias que salieron de la cámara, por el motivo que sea: se las llevó un
+  /// cliente, merma, consumo propio, rotura. Todas descuentan igual y el
+  /// motivo vive en [observacion]. Hasta v19.15 una salida podía quedar
+  /// "esperando su remito" y se cerraba por FIFO; eso se fue con la
+  /// reconciliación contra remitos.
   static const claseSalida = 'salida';
 
   /// No mueve nada: es la foto de lo que se contó físicamente en la cámara,
-  /// para comparar contra el stock teórico de ese momento.
+  /// para comparar contra el stock de ese momento.
   static const claseRecuento = 'recuento';
 
   final String id;
@@ -2104,11 +1995,10 @@ class DepositoMovimiento {
   /// salida — que es justo el agujero que este módulo vino a tapar. Por eso
   /// nada valida que la lista tenga tantos valores como [medias].
   ///
-  /// **Son informativos**: la ecuación del depósito cierra por MEDIAS. Los
-  /// kilos se muestran, pero no disparan la alerta de faltantes.
+  /// **Son informativos**: el stock del depósito cuenta MEDIAS. Los kilos se
+  /// muestran, pero no disparan la alerta de faltantes.
   List<double> kgsPorMedia;
 
-  bool esperaRemito;
   DateTime fecha;
   String observacion;
   String? registradoPor;
@@ -2121,7 +2011,6 @@ class DepositoMovimiento {
     required this.clase,
     this.medias = 0,
     List<double>? kgsPorMedia,
-    this.esperaRemito = true,
     DateTime? fecha,
     this.observacion = '',
     this.registradoPor,
@@ -2148,14 +2037,6 @@ class DepositoMovimiento {
   bool get esSalida => clase == claseSalida;
   bool get esRecuento => clase == claseRecuento;
 
-  /// Una salida que todavía espera su remito. Es lo que la pantalla muestra
-  /// como "medias que salieron sin registrar".
-  bool get esSalidaPendienteDeRemito => esSalida && esperaRemito;
-
-  /// Una salida que nunca va a tener remito: merma, consumo propio o rotura.
-  /// Descuenta del stock para siempre.
-  bool get esSalidaDefinitiva => esSalida && !esperaRemito;
-
   String get numeroFormateado => 'D-${numero.toString().padLeft(4, '0')}';
 
   String get tipoLabel => tipo == Proveedor.tipoCerdo ? 'Cerdo' : 'Novillo';
@@ -2174,7 +2055,9 @@ class DepositoMovimiento {
         'clase': clase,
         'medias': medias,
         'kgs_por_media': kgsPorMedia,
-        'espera_remito': esperaRemito,
+        // `espera_remito` ya no se manda: la distinción se fue con la
+        // reconciliación contra remitos (v19.16). La columna sigue en la
+        // tabla y se llena con su DEFAULT, así que no hace falta migración.
         'fecha': fecha.toIso8601String(),
         'observacion': observacion,
         'registrado_por': registradoPor,
@@ -2191,7 +2074,6 @@ class DepositoMovimiento {
         clase: map['clase'] ?? claseEntrada,
         medias: (map['medias'] ?? 0).toDouble(),
         kgsPorMedia: _leerKgs(map['kgs_por_media']),
-        esperaRemito: map['espera_remito'] ?? true,
         fecha: DateTime.tryParse(map['fecha'] ?? ''),
         observacion: map['observacion'] ?? '',
         registradoPor: map['registrado_por'],
@@ -2210,7 +2092,6 @@ class DepositoMovimientoEliminado {
   final String clase;
   final double medias;
   final List<double> kgsPorMedia;
-  final bool esperaRemito;
   final DateTime fecha;
   final String observacionOriginal;
   final String observacion;
@@ -2225,7 +2106,6 @@ class DepositoMovimientoEliminado {
     this.clase = DepositoMovimiento.claseEntrada,
     this.medias = 0,
     List<double>? kgsPorMedia,
-    this.esperaRemito = true,
     DateTime? fecha,
     this.observacionOriginal = '',
     required this.observacion,
@@ -2249,7 +2129,6 @@ class DepositoMovimientoEliminado {
         clase: mov.clase,
         medias: mov.medias,
         kgsPorMedia: mov.kgsPorMedia,
-        esperaRemito: mov.esperaRemito,
         fecha: mov.fecha,
         observacionOriginal: mov.observacion,
         observacion: observacion,
@@ -2264,7 +2143,6 @@ class DepositoMovimientoEliminado {
         'clase': clase,
         'medias': medias,
         'kgs_por_media': kgsPorMedia,
-        'espera_remito': esperaRemito,
         'fecha': fecha.toIso8601String(),
         'observacion_original': observacionOriginal,
         'observacion': observacion,
@@ -2281,7 +2159,6 @@ class DepositoMovimientoEliminado {
         clase: map['clase'] ?? DepositoMovimiento.claseEntrada,
         medias: (map['medias'] ?? 0).toDouble(),
         kgsPorMedia: _leerKgs(map['kgs_por_media']),
-        esperaRemito: map['espera_remito'] ?? true,
         fecha: DateTime.tryParse(map['fecha'] ?? ''),
         observacionOriginal: map['observacion_original'] ?? '',
         observacion: map['observacion'] ?? '',
@@ -2290,12 +2167,15 @@ class DepositoMovimientoEliminado {
       );
 }
 
-/// El resultado de la ecuación del depósito para UN tipo (novillo o cerdo).
+/// Lo que el libro del depósito dice que hay, para UN tipo (novillo o cerdo).
 ///
 /// Es un valor calculado al vuelo por `AppProvider.stockDeposito`: no hay
 /// tabla que lo guarde. Los componentes están expuestos uno por uno porque la
-/// pantalla los muestra desglosados — si Joaco no puede ver de dónde sale cada
-/// número, no le va a creer a la alerta.
+/// pantalla los muestra desglosados — si Joaco no puede ver de dónde sale
+/// cada número, no le va a creer.
+///
+/// Desde v19.16 no hay acá NADA que venga de las cargas de proveedores ni de
+/// los remitos: solo el arranque y los movimientos cargados a mano.
 class StockDeposito {
   final String tipo;
 
@@ -2303,110 +2183,70 @@ class StockDeposito {
   /// Lo que había en la cámara el día del arranque (ver [DepositoConfig]).
   final double inicial;
 
-  /// Medias que entraron por compras a proveedores: animales × 2.
-  final double compradas;
-
-  /// Entradas manuales: devoluciones de clientes y ajustes a favor.
+  /// Medias que entraron a la cámara. Todo lo que entra se carga a mano,
+  /// incluida la carne que llega del proveedor: el depósito ya no lee las
+  /// cargas.
   final double entradas;
 
-  /// Medias que salieron a clientes con remito CONFIRMADO, ya convertidas por
-  /// la tabla de equivalencias (un remito de 3 piernas descuenta 1 media).
-  final double remitidas;
-
-  /// Salidas que todavía esperan su remito: la carne ya no está en la cámara
-  /// pero nadie la facturó. Es exactamente el agujero que motivó el módulo.
-  final double salidasPendientes;
-
-  /// Salidas que nunca van a tener remito: merma, consumo propio, rotura.
-  final double salidasDefinitivas;
+  /// Medias que salieron de la cámara, por el motivo que sea: se las llevó un
+  /// cliente, merma, consumo propio. Todas descuentan igual.
+  final double salidas;
 
   // ── El recuento físico y su comparación ──
   /// Lo último que se contó a mano en la cámara. Null si nunca se contó.
   final double? recuento;
   final DateTime? fechaRecuento;
 
-  /// Los kilos de ese recuento, si se pesaron. Es el único kg "de stock" que
-  /// se puede mostrar honestamente: los kilos NO se reconcilian como las
-  /// medias, así que no hay un kg teórico que valga la pena mostrar.
+  /// Los kilos de ese recuento, si se pesaron.
   final double kgRecuento;
 
-  /// El stock teórico que correspondía EN EL MOMENTO del recuento.
+  /// Lo que el libro decía EN EL MOMENTO del recuento.
   ///
   /// La comparación se hace contra este valor y no contra [teorico], porque si
-  /// no cualquier compra posterior al último recuento aparecería como un
-  /// faltante gigante: se cuenta 10 el viernes, el lunes entra una carga de
-  /// 200 y el sistema gritaría "faltan 200 medias".
+  /// no cualquier movimiento posterior al último recuento aparecería como una
+  /// diferencia: se cuentan 10 el viernes, el lunes entran 200 y el sistema
+  /// gritaría "sobran 200 medias".
   final double? teoricoAlRecuento;
 
-  /// Las salidas todavía sin remito, para poder listarlas y avisar cuál es.
-  final List<DepositoMovimiento> pendientes;
-
-  // ── Los kilos de cada componente (v19.9) ──
-  // Misma ecuación que las medias, pero en peso. Son INFORMATIVOS: el
-  // veredicto de faltantes sigue saliendo de las medias. Sirven para la
-  // pregunta que las medias no contestan: cuánta carne hay en la cámara,
-  // porque dos medias pueden diferenciarse en 40 kg.
+  // ── Los kilos de cada componente ──
+  // La misma cuenta que las medias, pero en peso. Son INFORMATIVOS: el
+  // veredicto sale de las medias. Contestan lo que las medias no pueden —
+  // cuánta carne hay — porque dos medias pueden diferenciarse en 40 kg.
   //
-  // Pueden venir incompletos (una carga sin faena, una salida sin pesar).
-  // [mediasSinPesar] dice cuántas medias de esta cuenta no tienen kilos, para
-  // que el número se muestre como lo que es y no como una verdad.
+  // Pueden venir incompletos (una entrada sin pesar, un arranque sin
+  // balanza). [mediasSinPesar] dice cuántas medias de esta cuenta no tienen
+  // kilos, para que el número se muestre como lo que es y no como una verdad.
   final double kgInicial;
-  final double kgComprados;
   final double kgEntradas;
-  final double kgRemitidos;
-  final double kgSalidasPendientes;
-  final double kgSalidasDefinitivas;
+  final double kgSalidas;
 
   /// Medias de esta cuenta que nadie pesó. > 0 = el kilaje está incompleto.
   final double mediasSinPesar;
 
-  /// Los cortes que salieron, para saber qué quedó suelto en la cámara
-  /// (v19.9). En cerdo va siempre vacío: no se fracciona.
-  final CortesVendidos cortes;
-
   const StockDeposito({
     required this.tipo,
     this.inicial = 0,
-    this.compradas = 0,
     this.entradas = 0,
-    this.remitidas = 0,
-    this.salidasPendientes = 0,
-    this.salidasDefinitivas = 0,
+    this.salidas = 0,
     this.recuento,
     this.fechaRecuento,
     this.kgRecuento = 0,
     this.teoricoAlRecuento,
-    this.pendientes = const [],
     this.kgInicial = 0,
-    this.kgComprados = 0,
     this.kgEntradas = 0,
-    this.kgRemitidos = 0,
-    this.kgSalidasPendientes = 0,
-    this.kgSalidasDefinitivas = 0,
+    this.kgSalidas = 0,
     this.mediasSinPesar = 0,
-    this.cortes = const CortesVendidos(),
   });
 
   String get tipoLabel => tipo == Proveedor.tipoCerdo ? 'Cerdo' : 'Novillo';
 
   /// Las medias que deberían estar físicamente en la cámara ahora mismo.
-  double get teorico =>
-      inicial +
-      compradas +
-      entradas -
-      remitidas -
-      salidasPendientes -
-      salidasDefinitivas;
-
-  /// Total comprado + lo que ya había + devoluciones: el lado de las entradas.
-  /// Es el "disponible para vender" del que habla el circuito: una compra
-  /// nueva se suma a las medias que ya estaban en depósito sin vender.
-  double get totalDisponible => inicial + compradas + entradas;
+  double get teorico => inicial + entradas - salidas;
 
   bool get tieneRecuento => recuento != null && teoricoAlRecuento != null;
 
-  /// Positivo = faltan medias en la cámara (salieron sin registrar).
-  /// Negativo = hay medias de más que el sistema no conoce.
+  /// Positivo = faltan medias en la cámara (salieron sin registrarse).
+  /// Negativo = hay medias de más que el libro no conoce.
   /// Null = todavía no se contó nada, no hay con qué comparar.
   double? get diferencia =>
       tieneRecuento ? teoricoAlRecuento! - recuento! : null;
@@ -2423,46 +2263,21 @@ class StockDeposito {
   /// Cuántas medias hay de más (0 si no sobran).
   double get sobrantes => sobran ? -diferencia! : 0;
 
-  bool get hayPendientes => pendientes.isNotEmpty;
-
-  /// Los kilos que salieron del depósito y todavía no tienen remito.
-  double get kgPendientes =>
-      pendientes.fold<double>(0, (t, m) => t + m.totalKg);
-
-  // ── Kilos y partes de lo que hay en la cámara (v19.9) ──
-
   /// Los kilos que deberían estar en la cámara ahora mismo, por la misma
-  /// ecuación que [teorico] pero en peso. Nunca baja de cero: con los kilos
+  /// cuenta que [teorico] pero en peso. Nunca baja de cero: con los kilos
   /// incompletos un negativo no sería un faltante real, solo lo que falta
   /// pesar.
   double get kgTeorico {
-    final kg = kgInicial +
-        kgComprados +
-        kgEntradas -
-        kgRemitidos -
-        kgSalidasPendientes -
-        kgSalidasDefinitivas;
+    final kg = kgInicial + kgEntradas - kgSalidas;
     return kg > 0 ? kg : 0;
   }
 
   /// true cuando hay medias sin pesar en la cuenta: el kilaje es parcial.
   bool get kgIncompleto => mediasSinPesar > toleranciaMedias;
 
-  /// true cuando hay algún kilo que mostrar. Sin esto la pantalla mostraría
-  /// un "0 kg" que no significa "la cámara está vacía" sino "nadie pesó".
+  /// true cuando hay algún kilo que mostrar. Sin esto la pantalla mostraría un
+  /// "0 kg" que no significa "la cámara está vacía" sino "nadie pesó".
   bool get tieneKg => kgTeorico > 0;
-
-  /// Lo que quedó suelto de las medias que se abrieron, en medias.
-  double get mediasSueltas => cortes.sueltasEnMedias;
-
-  /// Las medias que siguen enteras en la cámara. El resto del stock son las
-  /// partes sueltas: [mediasEnteras] + [mediasSueltas] = [teorico].
-  double get mediasEnteras {
-    final enteras = teorico - mediasSueltas;
-    return enteras > 0 ? enteras : 0;
-  }
-
-  bool get hayPartesSueltas => cortes.haySueltas;
 }
 
 // ─────────────────────────────────────────────
