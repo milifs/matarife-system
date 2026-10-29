@@ -54,6 +54,14 @@ class _RepartoScreenState extends State<RepartoScreen> {
     tipoRepartoCerdo: [],
   };
 
+  /// Encabezados de las columnas agregadas a mano, por tabla. El índice es
+  /// la posición de la columna, y es lo que ata cada número de las filas a
+  /// su encabezado.
+  final Map<String, List<TextEditingController>> _columnas = {
+    tipoRepartoCarne: [],
+    tipoRepartoCerdo: [],
+  };
+
   final _notasCtrl = TextEditingController();
 
   @override
@@ -71,6 +79,9 @@ class _RepartoScreenState extends State<RepartoScreen> {
       c.dispose();
     }
     _notasCtrl.dispose();
+    for (final c in _columnas.values.expand((l) => l)) {
+      c.dispose();
+    }
     for (final f in _todasLasFilas) {
       f.dispose();
     }
@@ -98,6 +109,15 @@ class _RepartoScreenState extends State<RepartoScreen> {
     for (final tipo in _filas.keys) {
       _filas[tipo] = [];
     }
+    for (final tipo in _columnas.keys) {
+      for (final c in _columnas[tipo]!) {
+        c.dispose();
+      }
+      _columnas[tipo] = [
+        for (final nombre in lista.columnasDe(tipo))
+          TextEditingController(text: nombre),
+      ];
+    }
     _precargado = res.precargado;
 
     _totalCtrl[tipoRepartoCarne]!.text =
@@ -110,6 +130,8 @@ class _RepartoScreenState extends State<RepartoScreen> {
         clienteId: it.clienteId,
         medias: it.medias,
         sucursal: it.sucursal,
+        extras: it.extras,
+        columnas: _columnas[it.tipo]?.length ?? 0,
       ));
     }
 
@@ -124,12 +146,18 @@ class _RepartoScreenState extends State<RepartoScreen> {
           clienteId: f.clienteId,
           tipo: tipo,
           medias: f.cantidad,
+          extras: f.extras,
           sucursal: f.sucursalCtrl.text.trim(),
           orden: items.length,
         ));
       }
     }
     return RepartoLista(
+      columnasExtra: {
+        for (final tipo in tiposReparto)
+          if (_columnas[tipo]!.isNotEmpty)
+            tipo: [for (final c in _columnas[tipo]!) c.text.trim()],
+      },
       semanaInicio: _semana,
       dia: _dia,
       totalMediasCarne: _total(tipoRepartoCarne),
@@ -146,6 +174,13 @@ class _RepartoScreenState extends State<RepartoScreen> {
       _filas[tipo]!.fold(0, (s, f) => s + f.cantidad);
 
   int _sobrante(String tipo) => _total(tipo) - _repartido(tipo);
+
+  int _sumaExtra(String tipo, int columna) => _filas[tipo]!.fold(
+      0,
+      (s, f) => s +
+          (columna < f.extraCtrls.length
+              ? int.tryParse(f.extraCtrls[columna].text.trim()) ?? 0
+              : 0));
 
   // Al tocar cualquier campo, la plantilla precargada deja de serlo: pasa a
   // ser la lista real de esta semana (se auto-guardará al navegar).
@@ -225,6 +260,112 @@ class _RepartoScreenState extends State<RepartoScreen> {
       _filas[tipo]!.add(_Fila(clienteId: elegido.id));
       _precargado = false;
     });
+  }
+
+  void _agregarColumna(String tipo) {
+    if (_columnas[tipo]!.length >= maxColumnasExtra) return;
+    setState(() {
+      _columnas[tipo]!.add(TextEditingController());
+      for (final f in _filas[tipo]!) {
+        f.ajustarColumnas(_columnas[tipo]!.length);
+      }
+      _precargado = false;
+    });
+  }
+
+  void _quitarColumna(String tipo, int i) {
+    setState(() {
+      _columnas[tipo]!.removeAt(i).dispose();
+      for (final f in _filas[tipo]!) {
+        f.quitarColumna(i);
+      }
+      _precargado = false;
+    });
+  }
+
+  /// La celda del encabezado mide 56: no entra un campo de texto con su
+  /// botón de borrar al lado. Se toca y se edita acá.
+  Future<void> _editarColumna(String tipo, int i) async {
+    final ctrl = _columnas[tipo]![i];
+    final previo = ctrl.text;
+    final accion = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Columna'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLength: 14,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            labelText: 'Encabezado',
+            hintText: 'Ej: Pierna, Grasa',
+            counterText: '',
+          ),
+          onSubmitted: (_) => Navigator.pop(ctx, 'guardar'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'quitar'),
+            child: const Text('Quitar columna',
+                style: TextStyle(color: AppTheme.danger)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'cancelar'),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, 'guardar'),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (accion == 'quitar') {
+      final nombre = ctrl.text.trim();
+      final ok = await _confirmarQuitarColumna(tipo, i, nombre);
+      if (ok) _quitarColumna(tipo, i);
+      return;
+    }
+    if (accion == 'guardar') {
+      _marcarModificado();
+      setState(() {});
+    } else {
+      // Cancelar tiene que deshacer lo tipeado: el controller es el mismo
+      // que vive en la grilla, así que el diálogo lo edita en vivo.
+      ctrl.text = previo;
+    }
+  }
+
+  Future<bool> _confirmarQuitarColumna(
+      String tipo, int i, String nombre) async {
+    final cargadas =
+        _filas[tipo]!.where((f) => f.extras.length > i && f.extras[i] > 0);
+    if (cargadas.isEmpty) return true;
+    // Quitar la columna se lleva los números de todos los clientes, así que
+    // si hay algo cargado hay que preguntar.
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Quitar ${nombre.isEmpty ? "la columna" : nombre}'),
+        content: Text(
+            'Hay ${cargadas.length} ${cargadas.length == 1 ? "cliente" : "clientes"} '
+            'con cantidad cargada en esta columna. Se van a borrar.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.danger),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Quitar'),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false;
   }
 
   Future<void> _generarPdf(String tipo) async {
@@ -478,10 +619,24 @@ class _RepartoScreenState extends State<RepartoScreen> {
                   style: const TextStyle(
                       fontSize: 12, color: AppTheme.textSecondary),
                 ),
+                // Hasta dos columnas más, para lo que se vende suelto y no
+                // es una media (una pierna, grasa).
+                IconButton(
+                  tooltip: _columnas[tipo]!.length >= maxColumnasExtra
+                      ? 'Ya tiene las $maxColumnasExtra columnas'
+                      : 'Agregar columna',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: _columnas[tipo]!.length >= maxColumnasExtra
+                      ? null
+                      : () => _agregarColumna(tipo),
+                  icon: const Icon(Icons.add_box_outlined, size: 22),
+                ),
               ],
             ),
           ),
-          _filaHeader(),
+          _filaHeader(tipo),
           _filaTotal(tipo),
           if (filas.isEmpty)
             const Padding(
@@ -495,6 +650,7 @@ class _RepartoScreenState extends State<RepartoScreen> {
               _FilaCliente(
                 key: ObjectKey(fila),
                 fila: fila,
+                columnas: _columnas[tipo]!.length,
                 nombre: app.clientePorId(fila.clienteId)?.nombreRazonSocial ??
                     '(cliente eliminado)',
                 onCambio: () {
@@ -509,46 +665,94 @@ class _RepartoScreenState extends State<RepartoScreen> {
                   });
                 },
               ),
-          _filaSobrante(_sobrante(tipo)),
+          _filaSobrante(tipo, _sobrante(tipo)),
         ],
       ),
     );
   }
 
-  Widget _filaHeader() {
+  Widget _filaHeader(String tipo) {
     return _filaGrilla(
       fondo: AppTheme.background,
       izquierda: const Text('CLIENTE',
           style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-      centro: const Text('MEDIAS',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+      celdas: [
+        const Text('MEDIAS',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+        for (var i = 0; i < _columnas[tipo]!.length; i++)
+          _encabezadoColumna(tipo, i),
+      ],
+    );
+  }
+
+  /// Encabezado de una columna agregada a mano. Se toca para renombrarla o
+  /// sacarla.
+  Widget _encabezadoColumna(String tipo, int i) {
+    final nombre = _columnas[tipo]![i].text.trim();
+    return InkWell(
+      onTap: () => _editarColumna(tipo, i),
+      child: Tooltip(
+        message: 'Tocá para renombrar o quitar',
+        child: Text(
+          nombre.isEmpty ? 'SIN NOMBRE' : nombre.toUpperCase(),
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: nombre.isEmpty ? AppTheme.textHint : AppTheme.info,
+          ),
+        ),
+      ),
     );
   }
 
   Widget _filaTotal(String tipo) {
     return _filaGrilla(
       fondo: AppTheme.infoBg,
-      izquierda: const Text('TOTAL MEDIAS',
+      izquierda: const Text('TOTAL',
           style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-      centro: _campoNumero(_totalCtrl[tipo]!),
+      celdas: [
+        _campoNumero(_totalCtrl[tipo]!),
+        // Las columnas extra no tienen un total que cargar a mano: no hay
+        // stock de "grasa" contra el cual contarlas. Se muestra la suma de
+        // lo repartido, y por eso tampoco tienen sobrante.
+        for (var i = 0; i < _columnas[tipo]!.length; i++)
+          Text(
+            '${_sumaExtra(tipo, i)}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textSecondary),
+          ),
+      ],
     );
   }
 
-  Widget _filaSobrante(int valor) {
+  Widget _filaSobrante(String tipo, int valor) {
     return _filaGrilla(
       fondo: AppTheme.infoBg,
       ultima: true,
       izquierda: const Text('SOBRANTE DEPÓSITO',
           style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-      centro: Text(
-        '$valor',
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          color: valor < 0 ? AppTheme.danger : AppTheme.textPrimary,
+      celdas: [
+        Text(
+          '$valor',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: valor < 0 ? AppTheme.danger : AppTheme.textPrimary,
+          ),
         ),
-      ),
+        for (var i = 0; i < _columnas[tipo]!.length; i++)
+          const Text('—',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: AppTheme.textHint)),
+      ],
     );
   }
 
@@ -569,12 +773,12 @@ class _RepartoScreenState extends State<RepartoScreen> {
 // alineadas de punta a punta. Si una fila se dibujara por su cuenta, la
 // columna de medias se correría y la grilla dejaría de leerse.
 
-const double _anchoMedias = 64;
+const double _anchoCelda = 56;
 const double _anchoAccion = 40;
 
 Widget _filaGrilla({
   required Widget izquierda,
-  required Widget centro,
+  required List<Widget> celdas,
   Widget? derecha,
   Color? fondo,
   bool ultima = false,
@@ -599,12 +803,14 @@ Widget _filaGrilla({
                   alignment: Alignment.centerLeft, child: izquierda),
             ),
           ),
-          Container(
-            width: _anchoMedias,
-            decoration: const BoxDecoration(border: Border(left: linea)),
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-            child: Center(child: centro),
-          ),
+          for (final celda in celdas)
+            Container(
+              width: _anchoCelda,
+              decoration: const BoxDecoration(border: Border(left: linea)),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
+              child: Center(child: celda),
+            ),
           Container(
             width: _anchoAccion,
             decoration: const BoxDecoration(border: Border(left: linea)),
@@ -644,6 +850,7 @@ Widget _campoMedias({
 class _FilaCliente extends StatefulWidget {
   final _Fila fila;
   final String nombre;
+  final int columnas;
   final VoidCallback onCambio;
   final VoidCallback onQuitar;
 
@@ -651,6 +858,7 @@ class _FilaCliente extends StatefulWidget {
     super.key,
     required this.fila,
     required this.nombre,
+    required this.columnas,
     required this.onCambio,
     required this.onQuitar,
   });
@@ -702,8 +910,17 @@ class _FilaClienteState extends State<_FilaCliente> {
             ),
           ],
         ),
-        centro: _campoMedias(
-            ctrl: widget.fila.mediasCtrl, onCambio: widget.onCambio),
+        celdas: [
+          _campoMedias(
+              ctrl: widget.fila.mediasCtrl, onCambio: widget.onCambio),
+          for (var i = 0; i < widget.columnas; i++)
+            if (i < widget.fila.extraCtrls.length)
+              _campoMedias(
+                  ctrl: widget.fila.extraCtrls[i],
+                  onCambio: widget.onCambio)
+            else
+              const SizedBox.shrink(),
+        ],
         derecha: IconButton(
           tooltip: 'Quitar',
           padding: EdgeInsets.zero,
@@ -723,19 +940,52 @@ class _Fila {
   final TextEditingController mediasCtrl;
   final TextEditingController sucursalCtrl;
 
+  /// Un campo por columna extra de su tabla, en el mismo orden.
+  final List<TextEditingController> extraCtrls;
+
   _Fila({
     required this.clienteId,
     int medias = 0,
     String sucursal = '',
+    List<int> extras = const [],
+    int columnas = 0,
   })  : mediasCtrl =
             TextEditingController(text: medias == 0 ? '' : '$medias'),
-        sucursalCtrl = TextEditingController(text: sucursal);
+        sucursalCtrl = TextEditingController(text: sucursal),
+        extraCtrls = [
+          for (var i = 0; i < columnas; i++)
+            TextEditingController(
+                text: (i < extras.length && extras[i] != 0)
+                    ? '${extras[i]}'
+                    : ''),
+        ];
 
   int get cantidad => int.tryParse(mediasCtrl.text.trim()) ?? 0;
+
+  List<int> get extras =>
+      [for (final c in extraCtrls) int.tryParse(c.text.trim()) ?? 0];
+
+  /// Suma o saca campos cuando la tabla gana o pierde una columna.
+  void ajustarColumnas(int columnas) {
+    while (extraCtrls.length > columnas) {
+      extraCtrls.removeLast().dispose();
+    }
+    while (extraCtrls.length < columnas) {
+      extraCtrls.add(TextEditingController());
+    }
+  }
+
+  /// Saca el campo de una columna que se quitó del medio.
+  void quitarColumna(int i) {
+    if (i >= 0 && i < extraCtrls.length) extraCtrls.removeAt(i).dispose();
+  }
 
   void dispose() {
     mediasCtrl.dispose();
     sucursalCtrl.dispose();
+    for (final c in extraCtrls) {
+      c.dispose();
+    }
   }
 }
 

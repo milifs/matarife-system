@@ -189,6 +189,107 @@ void main() {
     });
   });
 
+  group('columnas extra', () {
+    // Joaco de golpe vende una pierna o grasa: lo anota en una columna que
+    // se agrega a mano al final de la tabla.
+
+    test('el tope es de dos por tabla y la lectura lo respeta', () {
+      expect(maxColumnasExtra, 2);
+      final lista = RepartoLista.fromMap({
+        'semana_inicio': '2026-10-26',
+        'dia': 'jueves',
+        'columnas_extra': {
+          'carne': ['Pierna', 'Grasa', 'De mas'],
+        },
+      });
+      expect(lista.columnasDe(tipoRepartoCarne), ['Pierna', 'Grasa']);
+    });
+
+    test('cada tabla tiene las suyas', () {
+      final lista = RepartoLista(
+        semanaInicio: DateTime(2026, 10, 26),
+        dia: 'jueves',
+        columnasExtra: {
+          tipoRepartoCarne: ['Pierna'],
+        },
+      );
+      expect(lista.columnasDe(tipoRepartoCarne), ['Pierna']);
+      expect(lista.columnasDe(tipoRepartoCerdo), isEmpty);
+    });
+
+    test('los números van por posición, no por nombre', () {
+      // Es lo que deja renombrar el encabezado sin perder lo cargado.
+      final it = RepartoItem(
+          clienteId: 'c1', tipo: tipoRepartoCarne, extras: [3, 0]);
+      expect(it.extraEn(0), 3);
+      expect(it.extraEn(1), 0);
+      expect(it.toMap()['extras'], [3, 0]);
+    });
+
+    test('una celda que nunca se cargó vale 0 y no rompe', () {
+      final it = RepartoItem(clienteId: 'c1', extras: [2]);
+      expect(it.extraEn(1), 0);
+      expect(it.extraEn(-1), 0);
+      expect(RepartoItem(clienteId: 'c1').extraEn(0), 0);
+    });
+
+    test('el total de una columna extra es lo repartido', () {
+      // No hay stock de "grasa" contra el cual contarlo, así que el
+      // encabezado muestra la suma y la columna no tiene sobrante.
+      final lista = RepartoLista(
+        semanaInicio: DateTime(2026, 10, 26),
+        dia: 'jueves',
+        columnasExtra: {
+          tipoRepartoCarne: ['Pierna'],
+        },
+        items: [
+          RepartoItem(
+              clienteId: 'a', tipo: tipoRepartoCarne, medias: 2, extras: [3]),
+          RepartoItem(
+              clienteId: 'b', tipo: tipoRepartoCarne, medias: 1, extras: [4]),
+          // El cerdo no tiene esa columna: no suma.
+          RepartoItem(
+              clienteId: 'c', tipo: tipoRepartoCerdo, medias: 5, extras: [9]),
+        ],
+      );
+      expect(lista.repartidoExtra(tipoRepartoCarne, 0), 7);
+      expect(lista.repartidoExtra(tipoRepartoCerdo, 0), 9);
+      // Las medias no se mezclan con los extras.
+      expect(lista.repartidoDe(tipoRepartoCarne), 3);
+    });
+
+    test('la lectura tolera que la columna no exista o traiga basura', () {
+      // La lista tiene que abrirse igual, sin columnas extra.
+      final lista = RepartoLista.fromMap({
+        'semana_inicio': '2026-10-26',
+        'dia': 'jueves',
+      });
+      expect(lista.columnasDe(tipoRepartoCarne), isEmpty);
+
+      final it = RepartoItem.desdeMap({
+        'cliente_id': 'c1',
+        'tipo': 'carne',
+        'medias_carne': 2,
+        'extras': ['3', null, 'cualquier cosa'],
+      }).single;
+      expect(it.extras, [3, 0]);
+    });
+
+    test('una fila vieja partida en dos no duplica los extras', () {
+      // Los extras son de la fila, que es de la tabla de carne: dárselos
+      // también a la de cerdo los contaría dos veces en el total.
+      final filas = RepartoItem.desdeMap({
+        'cliente_id': 'c1',
+        'medias_carne': 2,
+        'medias_cerdo': 3,
+        'extras': [5],
+      });
+      expect(filas, hasLength(2));
+      expect(filas[0].extras, [5]);
+      expect(filas[1].extras, isEmpty);
+    });
+  });
+
   _pdf();
 }
 
@@ -288,6 +389,29 @@ void _pdf() {
         ],
       );
       expect(lista.itemsDe(tipoRepartoCerdo), isEmpty);
+      expect(await armar(lista, [cliente('a', 'Perico')], tipoRepartoCerdo),
+          greaterThan(1000));
+    });
+
+    test('las columnas extra salen en el PDF', () async {
+      final lista = RepartoLista(
+        semanaInicio: DateTime(2026, 10, 26),
+        dia: 'jueves',
+        totalMediasCarne: 10,
+        columnasExtra: {
+          tipoRepartoCarne: ['Pierna', 'Grasa'],
+        },
+        items: [
+          RepartoItem(
+              clienteId: 'a',
+              tipo: tipoRepartoCarne,
+              medias: 4,
+              extras: [2, 1]),
+        ],
+      );
+      expect(await armar(lista, [cliente('a', 'Perico')], tipoRepartoCarne),
+          greaterThan(1000));
+      // La tabla de cerdo no tiene esas columnas y se arma igual.
       expect(await armar(lista, [cliente('a', 'Perico')], tipoRepartoCerdo),
           greaterThan(1000));
     });

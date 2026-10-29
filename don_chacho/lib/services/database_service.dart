@@ -696,8 +696,8 @@ class DatabaseService {
       // / al sembrar.
       final vistos = <String>{};
       lista.items = lista.items.where((it) {
-        final clave =
-            '${it.clienteId}|${it.tipo}|${it.sucursal}|${it.medias}';
+        final clave = '${it.clienteId}|${it.tipo}|${it.sucursal}'
+            '|${it.medias}|${it.extras.join(',')}';
         return vistos.add(clave);
       }).toList();
       return lista;
@@ -725,6 +725,14 @@ class DatabaseService {
     final plantilla = RepartoLista(
       semanaInicio: lunes,
       dia: dia,
+      // Las columnas extra se siembran con sus números: si la semana pasada
+      // hubo una columna "Pierna", lo más probable es que esta también.
+      columnasExtra: previa == null
+          ? null
+          : {
+              for (final e in previa.columnasExtra.entries)
+                e.key: [...e.value],
+            },
       items: [
         if (previa != null)
           for (final it in previa.items)
@@ -732,6 +740,7 @@ class DatabaseService {
               clienteId: it.clienteId,
               tipo: it.tipo,
               medias: it.medias,
+              extras: [...it.extras],
               sucursal: it.sucursal,
               orden: it.orden,
             ),
