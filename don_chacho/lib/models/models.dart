@@ -837,6 +837,40 @@ const List<String> tiposReparto = [tipoRepartoCarne, tipoRepartoCerdo];
 String labelTipoReparto(String tipo) =>
     tipo == tipoRepartoCerdo ? 'CERDO' : 'CARNE';
 
+/// Cuántas columnas puede agregarle el usuario a una tabla, además de la de
+/// medias. Son para lo que se vende suelto y no es una media (una pierna,
+/// grasa). El tope es de forma: con más, la grilla no entra en el celular.
+const int maxColumnasExtra = 2;
+
+/// Lee el JSONB de encabezados tolerando que la columna no exista todavía,
+/// que venga null o que traiga basura: la lista de reparto tiene que poder
+/// abrirse igual, sin columnas extra, y no explotar en la cara del usuario.
+Map<String, List<String>> _leerColumnas(dynamic valor) {
+  final salida = <String, List<String>>{};
+  if (valor is Map) {
+    for (final tipo in tiposReparto) {
+      final crudo = valor[tipo];
+      if (crudo is! List) continue;
+      final nombres = crudo
+          .map((e) => '${e ?? ''}'.trim())
+          .take(maxColumnasExtra)
+          .toList();
+      if (nombres.isNotEmpty) salida[tipo] = nombres;
+    }
+  }
+  return salida;
+}
+
+/// Lo mismo para los números de una fila. Un valor que no sea número cuenta
+/// como 0: vale más una celda vacía que una lista que no abre.
+List<int> _leerExtras(dynamic valor) {
+  if (valor is! List) return [];
+  return valor.take(maxColumnasExtra).map((e) {
+    if (e is num) return e.toInt();
+    return int.tryParse('${e ?? ''}'.trim()) ?? 0;
+  }).toList();
+}
+
 class RepartoLista {
   final String id;
   DateTime semanaInicio; // lunes de la semana
@@ -844,6 +878,12 @@ class RepartoLista {
   int totalMediasCarne;
   int totalMediasCerdo;
   String notas;
+
+  /// Columnas agregadas a mano, por mercadería:
+  /// `{'carne': ['Pierna', 'Grasa'], 'cerdo': []}`. La posición en la lista
+  /// es la posición de la columna en la grilla, y es lo que ata cada número
+  /// de `RepartoItem.extras` a su encabezado.
+  Map<String, List<String>> columnasExtra;
   final DateTime creadoEn;
   List<RepartoItem> items;
 
@@ -854,9 +894,11 @@ class RepartoLista {
     this.totalMediasCarne = 0,
     this.totalMediasCerdo = 0,
     this.notas = '',
+    Map<String, List<String>>? columnasExtra,
     DateTime? creadoEn,
     this.items = const [],
   })  : id = id ?? _uuid.v4(),
+        columnasExtra = columnasExtra ?? {},
         creadoEn = creadoEn ?? DateTime.now();
 
   String get diaLabel => labelDiaReparto(dia);
@@ -864,6 +906,15 @@ class RepartoLista {
   /// Las filas de una sola mercadería, que es lo que muestra cada tabla.
   List<RepartoItem> itemsDe(String tipo) =>
       items.where((i) => i.tipo == tipo).toList();
+
+  /// Los encabezados de las columnas extra de una tabla.
+  List<String> columnasDe(String tipo) => columnasExtra[tipo] ?? const [];
+
+  /// Lo repartido en una columna extra. No tiene TOTAL cargado a mano como
+  /// las medias —no hay stock de "grasa" contra el cual contarlo—, así que
+  /// el encabezado muestra esta suma y no hay sobrante.
+  int repartidoExtra(String tipo, int columna) => itemsDe(tipo)
+      .fold(0, (s, i) => s + i.extraEn(columna));
 
   /// Suma de medias de carne ya asignadas a clientes
   int get repartidoCarne => items.fold(0, (s, i) => s + i.mediasCarne);
@@ -889,6 +940,7 @@ class RepartoLista {
         'total_medias_carne': totalMediasCarne,
         'total_medias_cerdo': totalMediasCerdo,
         'notas': notas,
+        'columnas_extra': columnasExtra,
         'creado_en': creadoEn.toIso8601String(),
       };
 
@@ -902,6 +954,7 @@ class RepartoLista {
         totalMediasCarne: map['total_medias_carne'] ?? 0,
         totalMediasCerdo: map['total_medias_cerdo'] ?? 0,
         notas: map['notas'] ?? '',
+        columnasExtra: _leerColumnas(map['columnas_extra']),
         creadoEn: DateTime.tryParse(map['creado_en'] ?? '') ?? DateTime.now(),
         items: items,
       );
@@ -923,6 +976,11 @@ class RepartoItem {
   /// en la tabla y las medias se cargan después.
   int medias;
 
+  /// Lo que lleva en las columnas extra de su tabla, en el mismo orden que
+  /// `RepartoLista.columnasDe(tipo)`. Puede ser más corta que esa lista (el
+  /// cliente no lleva nada de esa columna): `extraEn` lo resuelve.
+  List<int> extras;
+
   String sucursal; // texto libre (máx 40): a qué sucursal del cliente va
   int orden;
 
@@ -932,9 +990,14 @@ class RepartoItem {
     required this.clienteId,
     this.tipo = tipoRepartoCarne,
     this.medias = 0,
+    List<int>? extras,
     this.sucursal = '',
     this.orden = 0,
-  }) : id = id ?? _uuid.v4();
+  })  : id = id ?? _uuid.v4(),
+        extras = extras ?? [];
+
+  /// Lo que lleva en la columna [i], o 0 si esa celda nunca se cargó.
+  int extraEn(int i) => (i >= 0 && i < extras.length) ? extras[i] : 0;
 
   bool get esCerdo => tipo == tipoRepartoCerdo;
 
@@ -950,6 +1013,7 @@ class RepartoItem {
         'tipo': tipo,
         'medias_carne': mediasCarne,
         'medias_cerdo': mediasCerdo,
+        'extras': extras,
         'sucursal': sucursal,
         'orden': orden,
       };
@@ -962,12 +1026,20 @@ class RepartoItem {
     final cerdo = (map['medias_cerdo'] ?? 0) as int;
     final tipoRaw = '${map['tipo'] ?? ''}'.trim().toLowerCase();
 
-    RepartoItem armar(String tipo, int medias, {String? id}) => RepartoItem(
+    final extras = _leerExtras(map['extras']);
+
+    RepartoItem armar(String tipo, int medias,
+            {String? id, bool conExtras = true}) =>
+        RepartoItem(
           id: id,
           listaId: map['lista_id'] ?? '',
           clienteId: map['cliente_id'] ?? '',
           tipo: tipo,
           medias: medias,
+          // Los extras son de la fila, y una fila vieja que se parte en dos
+          // pertenece a la tabla de carne: dárselos también a la de cerdo
+          // los contaría dos veces.
+          extras: conExtras ? extras : [],
           sucursal: map['sucursal'] ?? '',
           orden: map['orden'] ?? 0,
         );
@@ -992,7 +1064,7 @@ class RepartoItem {
     if (carne > 0 && cerdo > 0) {
       return [
         armar(tipoRepartoCarne, carne, id: map['id']),
-        armar(tipoRepartoCerdo, cerdo),
+        armar(tipoRepartoCerdo, cerdo, conExtras: false),
       ];
     }
     if (cerdo > 0) return [armar(tipoRepartoCerdo, cerdo, id: map['id'])];

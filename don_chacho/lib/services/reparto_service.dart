@@ -91,16 +91,24 @@ class RepartoService {
           ),
         );
 
-    pw.TableRow fila(String cliente, String sucursal, int medias,
+    // Las columnas que el usuario le agregó a mano a esta tabla.
+    final extras = lista.columnasDe(tipo);
+
+    pw.TableRow fila(String cliente, String sucursal, String medias,
+            List<String> valores,
             {bool bold = false, PdfColor? bg}) =>
         pw.TableRow(
           decoration: bg != null ? pw.BoxDecoration(color: bg) : null,
           children: [
             celdaTexto(cliente, bold: bold),
             celdaTexto(sucursal),
-            celdaNum(medias == 0 ? '' : '$medias', bold: bold),
+            celdaNum(medias, bold: bold),
+            for (var i = 0; i < extras.length; i++)
+              celdaNum(i < valores.length ? valores[i] : '', bold: bold),
           ],
         );
+
+    String txt(int v) => v == 0 ? '' : '$v';
 
     final titulo = tipo == tipoRepartoCerdo ? 'CERDO' : 'CARNE (NOVILLO)';
 
@@ -113,10 +121,12 @@ class RepartoService {
       return [
         pw.Table(
           border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
-          columnWidths: const {
-            0: pw.FlexColumnWidth(2.4),
-            1: pw.FlexColumnWidth(1.8),
-            2: pw.FlexColumnWidth(0.9),
+          columnWidths: {
+            0: const pw.FlexColumnWidth(2.4),
+            1: const pw.FlexColumnWidth(1.8),
+            2: const pw.FlexColumnWidth(0.9),
+            for (var i = 0; i < extras.length; i++)
+              3 + i: const pw.FlexColumnWidth(0.9),
           },
           children: [
             // Header de columnas
@@ -126,17 +136,44 @@ class RepartoService {
                 celdaTexto('CLIENTES', bold: true),
                 celdaTexto('SUCURSAL', bold: true),
                 celdaNum('MEDIAS', bold: true),
+                for (final nombre in extras)
+                  celdaNum(nombre.trim().toUpperCase(), bold: true),
               ],
             ),
-            // TOTAL MEDIAS
-            fila('TOTAL MEDIAS', '', lista.totalDe(tipo),
-                bold: true, bg: celeste),
+            // TOTAL: las columnas extra no tienen un total cargado a mano,
+            // se muestra la suma de lo repartido (y por eso no tienen
+            // sobrante más abajo).
+            fila(
+              'TOTAL',
+              '',
+              txt(lista.totalDe(tipo)),
+              [
+                for (var i = 0; i < extras.length; i++)
+                  txt(lista.repartidoExtra(tipo, i)),
+              ],
+              bold: true,
+              bg: celeste,
+            ),
             // Filas de clientes (orden alfabético por nombre)
             for (final it in items)
-              fila(nombre(it.clienteId), it.sucursal, it.medias),
+              fila(
+                nombre(it.clienteId),
+                it.sucursal,
+                txt(it.medias),
+                [
+                  for (var i = 0; i < extras.length; i++)
+                    txt(it.extraEn(i)),
+                ],
+              ),
             // SOBRANTE DEPOSITO
-            fila('SOBRANTE DEPOSITO', '', lista.sobranteDe(tipo),
-                bold: true, bg: celeste),
+            fila(
+              'SOBRANTE DEPOSITO',
+              '',
+              txt(lista.sobranteDe(tipo)),
+              [for (var i = 0; i < extras.length; i++) '-'],
+              bold: true,
+              bg: celeste,
+            ),
           ],
         ),
       ];
