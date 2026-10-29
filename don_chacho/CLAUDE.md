@@ -39,8 +39,12 @@ App Flutter Web para gestionar la venta de medias reses a carnicerías terceras.
 ## SISTEMA DE USUARIOS Y PERMISOS
 
 ### Login
-- Usuario + contraseña (SHA-256 hash)
-- Sesión persistente con SharedPreferences (cierre manual)
+- Usuario + contraseña. **La identidad la pone Supabase Auth** (Fase 1 de auth, rama `feat/auth-identidad-supabase`): el usuario se traduce a un **mail sintético** `<usuario>@donchacho.local` y se entra con `signInWithPassword`. El rol y los permisos siguen viviendo en `usuarios` / `roles` / `rol_permisos`, y `usuarios.auth_id` une las dos mitades.
+- **La sesión es la de Supabase** (`onAuthStateChange`), no el id guardado en SharedPreferences. Un token revocado o vencido saca al usuario a la pantalla de login.
+- **Login legacy transitorio**: `AuthService.permitirLoginLegacy` (en `true`) deja entrar con la contraseña vieja (SHA-256) a quien todavía no tenga cuenta de Auth. **Hay que apagarlo antes de encender RLS**: un login legacy no abre sesión, así que `auth.uid()` queda NULL y bajo RLS ese usuario vería **todas las tablas vacías**, no un error.
+- **Las contraseñas viejas no se migran** (SHA-256 sin sal vs. bcrypt). Cada usuario arranca con una temporal y la cambia desde `+` → **Cambiar contraseña** (pantalla nueva, para todos los roles). Al cambiarla, `cambiarPassword` **borra el `password_hash` viejo**: deja de servir y deja de ser robable.
+- **El alta de usuarios queda en dos pasos**: la app crea el perfil (nombre, rol, activo) y el dashboard de Supabase la cuenta de acceso — crear una identidad de Auth necesita la service key, que no puede viajar en un bundle web. El editor ya no pide contraseña; muestra el mail que hay que crear, y la lista marca **SIN CUENTA** a quien no esté vinculado.
+- Documentación de la fase: `auth_fase1_diseno.md` (diseño + matriz rol × tabla), `auth_fase1_runbook.md` (migración de las 6 cuentas, paso por paso y cómo volver atrás), `auth_fase1_staging.md` (dónde probar las políticas). Todo en la raíz del repo.
 - Usuario inicial: `admin` / `admin123`
 - **IMPORTANTE**: Las tablas `usuarios`, `roles`, `rol_permisos`, `permisos` tienen RLS deshabilitado. Se corrió en Supabase:
 ```sql
@@ -138,7 +142,8 @@ don_chacho/lib/
 - `permisos` (id TEXT PK, nombre, descripcion) — 12 permisos predefinidos
 - `roles` (id UUID, nombre UNIQUE, es_admin BOOLEAN, creado_en)
 - `rol_permisos` (rol_id, permiso_id) — relación N:N con CASCADE
-- `usuarios` (id UUID, usuario UNIQUE, password_hash, rol_id FK, nombre_completo, activo, creado_en)
+- `usuarios` (id UUID, usuario UNIQUE, password_hash, rol_id FK, nombre_completo, activo, creado_en, **`auth_id` UUID nullable REFERENCES auth.users ON DELETE SET NULL** con índice UNIQUE — Fase 1 de auth). `password_hash` queda solo para el login legacy y **se borra en la Fase 3**.
+- **Funciones `security definer` para las políticas de la Fase 2**: `es_admin()` y `tiene_permiso(text)`, que resuelven por `auth.uid()` contra `usuarios`. Son `SECURITY DEFINER` para evitar la recursión infinita (una política de `pagos` que lea `usuarios` dispararía la política de `usuarios`, que vuelve a preguntar quién es) y `STABLE` para que Postgres las llame una vez por consulta y no una por fila. **La Fase 1 NO habilita RLS en ninguna tabla.**
 
 ### Tablas Notas de Pedido (v18)
 - `notas_pedido` (id UUID PK, numero INT, fecha DATE, cliente_id UUID nullable FK, cliente_nombre_libre TEXT nullable, estado TEXT pendiente/confirmado/rechazado, motivo_rechazo, creado_por, confirmado_por, confirmado_en, remito_id UUID nullable FK, total_kg, total_pesos, creado_en)
@@ -173,6 +178,7 @@ don_chacho/lib/
 20. `supabase_reset_deposito.sql` — **no es una migración, es un reset de una sola vez** (raíz del repo): borra todos los movimientos de depósito y su auditoría y deja el arranque en 0 medias / 0 kg con fecha de hoy, para empezar la carga de nuevo. No toca remitos ni cargas: el depósito no guarda stock, lo deriva, así que mover la fecha de arranque alcanza para que lo viejo deje de contar. Se corrió DESPUÉS de la 19, el 28/10/2026.
 21. `supabase_migration_reparto_sabado_tipo.sql` — el día `'sabado'` en el CHECK de `reparto_listas` y la columna `tipo` en `reparto_items`, con el backfill que parte en dos las filas que traían carne y cerdo juntos (v19.11, en raíz del repo). **Prerequisito del deploy de v19.11**: desde v19.11 `RepartoItem.toMap()` manda siempre `tipo` y la pantalla guarda el sábado, así que sin la migración guardar el reparto falla.
 22. `supabase_migration_reparto_columnas_extra.sql` — `columnas_extra` JSONB en `reparto_listas` y `extras` JSONB en `reparto_items` (v19.13, en raíz del repo). **Prerequisito del deploy de v19.13**: desde v19.13 el `toMap()` de los dos manda siempre esas columnas.
+23. `supabase_migration_auth_identidad.sql` — **NO CORRIDA TODAVÍA**. Fase 1 de auth: `usuarios.auth_id` + índice UNIQUE + `es_admin()` + `tiene_permiso(text)`, el vínculo perfil ↔ cuenta por el mail sintético, y las policies del bucket `soporte-adjuntos` ampliadas a `authenticated`. **No se corre de una**: tiene bloques que van antes y después de crear las cuentas a mano en el dashboard. El orden exacto está en `auth_fase1_runbook.md`. **No habilita RLS.**
 
 ### Tablas Depósito (v19.5)
 - `deposito_config` (id UUID PK, **unica BOOLEAN UNIQUE CHECK (unica)**, fecha_inicio DATE, medias_novillo NUMERIC(12,4), medias_cerdo NUMERIC(12,4), **kg_novillo / kg_cerdo NUMERIC(12,2) DEFAULT 0** (v19.9), registrado_por, actualizado_en) — RLS off. **Una sola fila**, garantizado por el truco de `unica`: es UNIQUE y el CHECK la obliga a ser TRUE, así que un segundo INSERT rebota. El upsert va `onConflict: 'unica'`.
@@ -711,6 +717,38 @@ Deployada desde la rama `feat/soporte`, **ya mergeada a `master`** (PR #1, merge
 
 Deployada el 22/09/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`. Salió de la rama `feat/reparto-precarga` (que acumulaba v18.30 + v18.31); **esa rama ya está mergeada a `master`** — en su momento no lo estaba y la doc quedó desactualizada hasta el 20/10/2026.
 
+### Cambios v19.16 — Identidad de Supabase Auth (Fase 1 de auth) · **SIN DEPLOYAR**
+
+Rama `feat/auth-identidad-supabase`. **No está en producción y no se puede deployar sola**:
+antes hay que correr la migración y crear las 6 cuentas (ver `auth_fase1_runbook.md`).
+
+El objetivo de la fase es que la base **sepa quién pregunta**. Hasta hoy no podía: la app se
+conecta con la publishable key, el login es propio y la sesión es un id en el navegador, así
+que `auth.uid()` es NULL y **no se puede escribir ninguna política de RLS**. Esta fase pone
+la identidad; las políticas son la fase siguiente.
+
+- **`usuarios.auth_id`** (nullable, FK a `auth.users`, índice UNIQUE) + las funciones
+  `security definer` `es_admin()` y `tiene_permiso(text)` que van a usar las políticas.
+  **No se habilita RLS en ninguna tabla.**
+- **El login pide lo mismo de siempre** (usuario + contraseña) pero adentro arma un mail
+  sintético `<usuario>@donchacho.local` y hace `signInWithPassword`. La sesión pasa a ser la
+  de Supabase (`onAuthStateChange`).
+- **Login legacy transitorio** (`AuthService.permitirLoginLegacy`): red para la ventana
+  entre crear las cuentas y deployar. **Hay que apagarlo antes de la Fase 2.**
+- **Pantalla nueva "Cambiar contraseña"** en el menú del `+`, para todos los roles. Las
+  contraseñas viejas no se migran (SHA-256 sin sal vs. bcrypt), así que cada uno arranca con
+  una temporal. `cambiarPassword` **borra el hash viejo** al cambiarla. Hasta ahora el método
+  existía en el servicio y ninguna pantalla lo llamaba: era código muerto.
+- **El alta de usuarios queda en dos pasos**: el editor ya no pide contraseña (crear una
+  identidad de Auth necesita la service key, que no puede viajar en un bundle web) y muestra
+  el mail que hay que crear en el dashboard. La lista marca **SIN CUENTA** a quien no esté
+  vinculado.
+- **Las policies del bucket `soporte-adjuntos` se amplían a `authenticated`**: estaban
+  escritas `TO anon` y con sesión de verdad las consultas llegan como `authenticated` —
+  adjuntar la foto de un reclamo habría dejado de funcionar el día del deploy.
+- Cubierto por `test/auth_identidad_test.dart` (mail sintético + el vínculo `auth_id`, con el
+  caso de que la columna no exista todavía).
+
 ### Cambios v19.15 (28/10/2026) — La fecha del PDF de reparto
 
 Lo reportó el usuario: el PDF salía `reparto_carne_jueves_26-10-2026` estando a 28 de octubre.
@@ -1135,17 +1173,28 @@ URL: `https://web-six-indol-svg13avcfl.vercel.app`
 - `costoParaFecha(DateTime)`: busca el costo de la semana correspondiente
 
 ### AuthService — métodos clave
-- `login(usuario, password)`: retorna Usuario con Rol y permisos, o null
-- `restaurarSesion()`: lee userId de SharedPreferences, recarga desde DB
-- `cerrarSesion()`: limpia SharedPreferences
-- `hashPassword(String)`: SHA-256
-- CRUD: `getUsuarios`, `crearUsuario`, `actualizarUsuario`, `eliminarUsuario`
+- `login(usuario, password)`: `signInWithPassword` con el mail sintético y, si anduvo, busca el perfil por `auth_id`. Si hay identidad pero no perfil activo, **cierra la sesión** y devuelve null. Si Auth falla, cae en `_loginLegacy` mientras `permitirLoginLegacy` sea `true`
+- `mailDe(usuario)`: `<usuario>@donchacho.local`, normalizado igual que el login (`trim().toLowerCase()`)
+- `cambiosDeSesion`: el `onAuthStateChange` de Supabase. `main.dart` lo escucha para sacar al usuario cuando llega `signedOut`
+- `restaurarSesion()`: `auth.currentSession` → perfil por `auth_id`. Sin sesión de Supabase cae en la clave vieja de SharedPreferences (solo con el legacy prendido)
+- `cerrarSesion()`: `auth.signOut()` + limpia SharedPreferences
+- `hashPassword(String)`: SHA-256. **Solo para el login legacy** — se va con la Fase 3
+- CRUD: `getUsuarios`, `crearUsuario` (**solo el perfil, no la cuenta de acceso**), `actualizarUsuario`, `eliminarUsuario`
 - CRUD: `getRoles`, `crearRol`, `actualizarRol`, `eliminarRol`
 - `getPermisos()`: catálogo completo
-- `cambiarPassword(userId, actual, nueva)`: verifica actual antes de cambiar
+- `cambiarPassword(perfil, actual, nueva)`: verifica la actual con un `signInWithPassword` (`updateUser` no la pide), cambia la de Auth y **borra el `password_hash` viejo**. Devuelve `ResultadoCambioPassword` y no un bool: "la actual está mal" y "tu cuenta todavía no existe" se arreglan distinto
+- `Usuario.authId` es de **lectura**: lo escribe el SQL del vínculo, no la app, y **no está en `toMap()`** a propósito — Gestión de Usuarios arma un `Usuario` nuevo con los campos del formulario, así que si estuviera, guardar a alguien para cambiarle el rol le borraría el vínculo en silencio. Cubierto por `test/auth_identidad_test.dart`
 
 ## CAMBIOS PENDIENTES
 
+- **Auth — Fase 1: correr la migración y migrar las 6 cuentas.** `supabase_migration_auth_identidad.sql` está escrita y sin correr. El paso a paso (y el rollback de cada paso) está en `auth_fase1_runbook.md`. Hacerlo **lunes, martes o miércoles**: el deploy cambia el login de todos y jueves/viernes/sábado son reparto.
+- **Auth — Fase 2: las políticas de RLS.** La matriz rol × tabla ya está escrita en `auth_fase1_diseno.md` (punto 5), sale del catálogo de 14 permisos que ya existe. **Tres cosas hay que arreglar ANTES de encender nada** (punto 6 del diseño):
+  1. **`cargarDatos()` tiene que distinguir "sin permiso" de "sin datos".** Bajo RLS una tabla denegada vuelve **vacía, no con error**: con `pagos` vacío, `saldo = remitos − pagos` se convierte en "saldo = todo lo remitido" y **todos los saldos se muestran inflados** con cara de dato correcto. Ya pasó parecido en v18.22 con el límite de 1000 filas de PostgREST, pero esta vez sería sistemático y por rol — el Encargado de Depósito, que por la matriz no lee `pagos`, es el caso exacto. Un número que depende de una tabla no disponible **no se muestra** (mismo criterio que `mediasSinPesar` en el depósito).
+  2. **`soportes` no tiene con qué identificar al dueño del ticket**: `reportado_por` es TEXT con el nombre, y hay dos "Rocio" en el sistema. Hace falta `reportado_por_id` antes de la política "cada uno ve lo suyo".
+  3. **Apagar `permitirLoginLegacy`** y deployar.
+  Encender RLS **tabla por tabla**, nunca un día de reparto.
+- **Auth — Fase 3**: borrar `usuarios.password_hash` y `hashPassword`; alta de usuarios en un paso con una Edge Function que tenga la service key; pasar `resolver-maps` y `parse-reparto` al JWT de sesión (hoy van con la publishable key hardcodeada, así que cualquiera con la key las puede llamar y `parse-reparto` consume la ANTHROPIC_API_KEY); decidir si la cuenta de prueba `mili` se da de baja.
+- **Staging**: hoy no hay y la app local pega contra producción. La recomendación concreta (segundo proyecto de Supabase con datos inventados + ensayo en transacción contra producción, con costos) está en `auth_fase1_staging.md`. **Es condición de entrada de la Fase 2.** Prerequisito práctico: pasar la URL y la key de Supabase de `main.dart` a `AppConfig` con `--dart-define`, porque hoy están hardcodeadas y no hay forma de apuntar la app a otra base sin editar código.
 - **Soporte — mejoras no implementadas**: badge con la cantidad de tickets abiertos en el item del FAB (requiere sumar la query a `AppProvider.cargarDatos`); aviso push/mail en vez del WhatsApp manual.
 - **Lista de reparto — Fase 2 (audio)**: cargar la lista por audio de WhatsApp (audio → transcripción Whisper/Gemini → parseo estructurado con Claude). Diferido explícitamente por el usuario.
 - **Ejecutar `supabase_migration_indices.sql`** en Supabase Dashboard → SQL Editor (una sola vez). Agrega 6 índices para acelerar la carga inicial.

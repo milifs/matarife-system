@@ -112,9 +112,20 @@ class _GestionUsuariosScreenState extends State<GestionUsuariosScreen>
                       style: const TextStyle(
                           fontSize: 14, fontWeight: FontWeight.w500)),
                   subtitle: Text(
-                    '${u.usuario} · ${u.rol?.nombre ?? "Sin rol"}${!u.activo ? " · INACTIVO" : ""}',
-                    style: const TextStyle(
-                        fontSize: 12, color: AppTheme.textSecondary),
+                    '${u.usuario} · ${u.rol?.nombre ?? "Sin rol"}'
+                    '${!u.activo ? " · INACTIVO" : ""}'
+                    // La cuenta de acceso se crea en el dashboard de Supabase
+                    // (necesita la service key, que no puede viajar en la
+                    // app). Mientras no esté vinculada, este usuario entra
+                    // con la contraseña vieja — y cuando se encienda RLS no
+                    // va a poder entrar. Por eso se avisa acá.
+                    '${u.tieneCuentaDeAuth ? "" : " · SIN CUENTA"}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: u.tieneCuentaDeAuth
+                          ? AppTheme.textSecondary
+                          : AppTheme.warning,
+                    ),
                   ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -346,7 +357,6 @@ class _UsuarioEditor extends StatefulWidget {
 class _UsuarioEditorState extends State<_UsuarioEditor> {
   final _nombreCtrl = TextEditingController();
   final _usuarioCtrl = TextEditingController();
-  final _passwordCtrl = TextEditingController();
   String? _rolId;
   bool _activo = true;
 
@@ -365,7 +375,6 @@ class _UsuarioEditorState extends State<_UsuarioEditor> {
   void dispose() {
     _nombreCtrl.dispose();
     _usuarioCtrl.dispose();
-    _passwordCtrl.dispose();
     super.dispose();
   }
 
@@ -403,17 +412,12 @@ class _UsuarioEditorState extends State<_UsuarioEditor> {
                   labelText: 'Usuario (para login)'),
               autocorrect: false,
               enableSuggestions: false,
+              // El aviso de abajo muestra el mail de la cuenta, que se arma
+              // con este nombre: tiene que seguirlo mientras se tipea.
+              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _passwordCtrl,
-              decoration: InputDecoration(
-                labelText: widget.existente != null
-                    ? 'Nueva contraseña (dejar vacío para no cambiar)'
-                    : 'Contraseña',
-              ),
-              obscureText: true,
-            ),
+            _avisoCuentaDeAcceso(),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               value: _rolId,
@@ -460,6 +464,50 @@ class _UsuarioEditorState extends State<_UsuarioEditor> {
     );
   }
 
+  /// Desde la migración a Supabase Auth, esta pantalla ya no define
+  /// contraseñas: crear una identidad de Auth necesita la service key, y una
+  /// service key dentro de un bundle web sería una llave maestra pública.
+  ///
+  /// Así que el alta queda en dos pasos y acá se dice cuáles son, con el mail
+  /// exacto a la vista, para que no haya que adivinarlo ni buscarlo en la
+  /// documentación.
+  Widget _avisoCuentaDeAcceso() {
+    final nombre = _usuarioCtrl.text.trim().toLowerCase();
+    final mail = nombre.isEmpty
+        ? 'usuario@${AuthService.dominioSintetico}'
+        : AuthService.mailDe(nombre);
+    final yaTiene = widget.existente?.tieneCuentaDeAuth ?? false;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: (yaTiene ? AppTheme.info : AppTheme.warning).withOpacity(0.08),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(yaTiene ? Icons.verified_user : Icons.key,
+              size: 18, color: yaTiene ? AppTheme.info : AppTheme.warning),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              yaTiene
+                  ? 'Cuenta de acceso: $mail\n'
+                      'La contraseña la cambia el propio usuario desde '
+                      '"Cambiar contraseña".'
+                  : 'Sin cuenta de acceso todavía. Hay que crearla en '
+                      'Supabase → Authentication con el mail $mail y después '
+                      'vincularla (ver el runbook de auth).',
+              style: const TextStyle(
+                  fontSize: 11.5, color: AppTheme.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _guardar() {
     if (_nombreCtrl.text.trim().isEmpty ||
         _usuarioCtrl.text.trim().isEmpty ||
@@ -473,24 +521,13 @@ class _UsuarioEditorState extends State<_UsuarioEditor> {
       return;
     }
 
-    if (widget.existente == null && _passwordCtrl.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('La contraseña es obligatoria'),
-          backgroundColor: AppTheme.danger,
-        ),
-      );
-      return;
-    }
-
-    final passwordHash = _passwordCtrl.text.isNotEmpty
-        ? AuthService.hashPassword(_passwordCtrl.text)
-        : widget.existente!.passwordHash;
-
     final usuario = Usuario(
       id: widget.existente?.id,
       usuario: _usuarioCtrl.text.trim().toLowerCase(),
-      passwordHash: passwordHash,
+      // Un usuario nuevo nace sin hash viejo: su contraseña va a vivir en
+      // Supabase Auth. Uno existente conserva el que tenga, hasta que cambie
+      // su contraseña y `cambiarPassword` lo borre.
+      passwordHash: widget.existente?.passwordHash ?? '',
       rolId: _rolId!,
       nombreCompleto: _nombreCtrl.text.trim(),
       activo: _activo,
