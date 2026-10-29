@@ -118,6 +118,7 @@ don_chacho/lib/
 │   └── bandeja_soporte_screen.dart    # Bandeja de soporte (v18.36, solo admin): 3 tabs Abiertos / En revisión / Resueltos con contadores. Detalle con foto (link firmado), campo de respuesta y botones de estado
 └── utils/
     ├── app_config.dart                # Config por deploy vía --dart-define (v18.36): version, clienteNombre, soporteWhatsapp
+    ├── lectura_permitida.dart         # Qué tablas puede leer un rol (Fase 2 de auth). Decisión PURA y testeable, como version_check.dart. **Espejo de las políticas SQL**
     ├── formatters.dart                # formatPesos, formatKg, formatPorcentaje, formatFecha, formatFechaHora, formatRangoSemana, MilesInputFormatter/parseNumero/textoMiles
     └── theme.dart                     # AppTheme + StatusPill widget + StatusType enum
 ```
@@ -179,6 +180,8 @@ don_chacho/lib/
 21. `supabase_migration_reparto_sabado_tipo.sql` — el día `'sabado'` en el CHECK de `reparto_listas` y la columna `tipo` en `reparto_items`, con el backfill que parte en dos las filas que traían carne y cerdo juntos (v19.11, en raíz del repo). **Prerequisito del deploy de v19.11**: desde v19.11 `RepartoItem.toMap()` manda siempre `tipo` y la pantalla guarda el sábado, así que sin la migración guardar el reparto falla.
 22. `supabase_migration_reparto_columnas_extra.sql` — `columnas_extra` JSONB en `reparto_listas` y `extras` JSONB en `reparto_items` (v19.13, en raíz del repo). **Prerequisito del deploy de v19.13**: desde v19.13 el `toMap()` de los dos manda siempre esas columnas.
 23. `supabase_migration_auth_identidad.sql` — **NO CORRIDA TODAVÍA**. Fase 1 de auth: `usuarios.auth_id` + índice UNIQUE + `es_admin()` + `tiene_permiso(text)`, el vínculo perfil ↔ cuenta por el mail sintético, y las policies del bucket `soporte-adjuntos` ampliadas a `authenticated`. **No se corre de una**: tiene bloques que van antes y después de crear las cuentas a mano en el dashboard. El orden exacto está en `auth_fase1_runbook.md`. **No habilita RLS.**
+24. `supabase_migration_soporte_reportado_por_id.sql` — **NO CORRIDA TODAVÍA**. Fase 2: columna `reportado_por_id UUID REFERENCES usuarios(id)` en `soportes` + índice + backfill por nombre completo **solo cuando el nombre identifica a una sola persona**. Prerequisito de la política `soportes_select`: el dueño del ticket no puede ser un campo de texto que la gente edita.
+25. `supabase_migration_rls_politicas.sql` — **NO CORRIDA TODAVÍA**. Fase 2: las políticas de las 29 tablas (la matriz del punto 5 de `auth_fase1_diseno.md`) más las funciones `es_usuario_activo()` y `puede_ver_saldo()`. **Crea las políticas y NO enciende RLS**: en Postgres una política sobre una tabla con RLS apagado existe y se ignora, así que se puede dejar todo creado, ensayarlo y encender después. Los `ENABLE` están **comentados** al final, en cuatro grupos por riesgo.
 
 ### Tablas Depósito (v19.5)
 - `deposito_config` (id UUID PK, **unica BOOLEAN UNIQUE CHECK (unica)**, fecha_inicio DATE, medias_novillo NUMERIC(12,4), medias_cerdo NUMERIC(12,4), **kg_novillo / kg_cerdo NUMERIC(12,2) DEFAULT 0** (v19.9), registrado_por, actualizado_en) — RLS off. **Una sola fila**, garantizado por el truco de `unica`: es UNIQUE y el CHECK la obliga a ser TRUE, así que un segundo INSERT rebota. El upsert va `onConflict: 'unica'`.
@@ -723,13 +726,15 @@ Deployada desde la rama `feat/soporte`, **ya mergeada a `master`** (PR #1, merge
 
 Deployada el 22/09/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`. Salió de la rama `feat/reparto-precarga` (que acumulaba v18.30 + v18.31); **esa rama ya está mergeada a `master`** — en su momento no lo estaba y la doc quedó desactualizada hasta el 20/10/2026.
 
-> **v19.16 junta dos cambios que se mergearon por separado y salen en UN SOLO deploy**: la
-> identidad de Auth (PR #19) y el depósito sin reconciliación (PR #20). Las dos ramas habían
+> **v19.16 junta tres cambios que se mergearon por separado y salen en UN SOLO deploy**: la
+> identidad de Auth (PR #19), el depósito sin reconciliación (PR #20) y las políticas de RLS
+> sin encender (PR #21, ver "CAMBIOS PENDIENTES → Auth — Fase 2"). Las tres ramas habían
 > subido la versión a `v19.16` por su cuenta; como ninguna llegó a producción, no hace falta
 > un número para cada una — en producción sigue corriendo `v19.15`, así que un solo `v19.16`
 > ya le dispara el aviso de versión nueva a todo el mundo. Lo que sí importa es que **el
-> deploy de v19.16 lleva las dos cosas**: no se puede deployar el depósito sin llevarse la
-> Fase 1 de auth, y por eso el orden del `auth_fase1_runbook.md` manda.
+> deploy de v19.16 lleva las tres cosas**: no se puede deployar el depósito sin llevarse la
+> Fase 1 de auth, y por eso el orden del `auth_fase1_runbook.md` manda. De la PR #21 no sale
+> ningún cambio de comportamiento: `AppProvider.rlsEncendido` está en `false`.
 
 ### Cambios v19.16 — Identidad de Supabase Auth (Fase 1 de auth) · **SIN DEPLOYAR**
 
@@ -1226,12 +1231,17 @@ URL: `https://web-six-indol-svg13avcfl.vercel.app`
 ## CAMBIOS PENDIENTES
 
 - **Auth — Fase 1: correr la migración y migrar las 6 cuentas.** `supabase_migration_auth_identidad.sql` está escrita y sin correr. El paso a paso (y el rollback de cada paso) está en `auth_fase1_runbook.md`. Hacerlo **lunes, martes o miércoles**: el deploy cambia el login de todos y jueves/viernes/sábado son reparto.
-- **Auth — Fase 2: las políticas de RLS.** La matriz rol × tabla ya está escrita en `auth_fase1_diseno.md` (punto 5), sale del catálogo de 14 permisos que ya existe. **Cuatro cosas hay que arreglar ANTES de encender nada** (punto 6 del diseño):
-  1. **`cargarDatos()` tiene que distinguir "sin permiso" de "sin datos".** Bajo RLS una tabla denegada vuelve **vacía, no con error**: con `pagos` vacío, `saldo = remitos − pagos` se convierte en "saldo = todo lo remitido" y **todos los saldos se muestran inflados** con cara de dato correcto. Ya pasó parecido en v18.22 con el límite de 1000 filas de PostgREST, pero esta vez sería sistemático y por rol. Un número que depende de una tabla no disponible **no se muestra** (mismo criterio que `mediasSinPesar` en el depósito). **Con los roles de hoy no se vería**: al único que la matriz le niega `pagos` (Encargado de Depósito) no le queda ninguna pantalla con saldo, porque desde v19.14 Inicio sin ser admin no tiene plata. El peligro es que está a **un tilde de distancia** — un `ver_consultas` de más, o un rol nuevo, y los números salen mal sin señal.
-  2. **Regla del saldo** (punto 5.1 del diseño): todo permiso que abra una pantalla con un saldo tiene que dar lectura sobre `remitos`, `pagos` **y** `notas_credito_debito`. Hoy son cuatro: `ver_consultas`, `crear_pago`, **`gestionar_clientes`** y **`gestionar_vendedores`** — los dos últimos no son obvios y son los gates de las pestañas Clientes y Vendedores, que muestran saldo en pesos. Los roles son configurables, así que la política se escribe para los roles que el admin **puede** armar, no para los que hay.
-  3. **`soportes` no tiene con qué identificar al dueño del ticket**: `reportado_por` es TEXT con el nombre completo (`soporte_form_screen.dart:63` filtra por `nombreCompleto`). Hoy anda porque los 6 nombres son distintos, pero `nombre_completo` no es único, renombrar a alguien le borra su historia de tickets y el match depende de tildes y mayúsculas (`"soledad Alcalá"`). Hace falta `reportado_por_id` antes de la política "cada uno ve lo suyo".
-  4. **Apagar `permitirLoginLegacy`** y deployar.
-  Encender RLS **tabla por tabla**, nunca un día de reparto.
+- **Auth — Fase 2: las políticas de RLS. EN CURSO**, ya en `master` (PR #21, mergeada el 29/10/2026). Están escritas y **sin correr**: `supabase_migration_rls_politicas.sql` (las 29 tablas, con los `ENABLE` comentados) y `supabase_migration_soporte_reportado_por_id.sql`. Y en la app, `utils/lectura_permitida.dart` + el recorte de `cargarDatos()`. Nada de esto cambia el comportamiento todavía: `AppProvider.rlsEncendido` está en `false` y ninguna tabla tiene RLS. **Lo que queda de la fase**:
+  1. **Wirear las pantallas a `AppProvider.saldosConfiables`**: son las 8 que muestran un saldo. Hoy, si esa bandera es false, los saldos quedan en 0 (subestima, que es el lado seguro) pero la pantalla no dice "no disponible".
+  2. **Un trigger en `usuarios`** que impida cambiarse el propio `rol_id`, `activo` o `auth_id`. La política de UPDATE de la fila propia es necesaria (`cambiarPassword` borra su hash viejo) pero no puede comparar contra el valor anterior de otra columna, así que hoy deja una escalada de privilegios por la API REST. Está anotado al pie de la sección 6 de la migración.
+  3. **Encender RLS tabla por tabla**, en los cuatro grupos de la sección 7, con el ensayo en transacción primero y **nunca** un día de reparto.
+  **Lo que esta rama ya resolvió** de los prerequisitos del punto 6 del diseño:
+  - **`cargarDatos()` distingue "sin permiso" de "sin datos"** (`utils/lectura_permitida.dart`): lo que el rol no puede leer **no se pide**, y si falta una de las tres tablas del saldo `_recalcularSaldos` no calcula nada. Bajo RLS una tabla denegada vuelve **vacía, no con error**, y con `pagos` vacío `saldo = remitos − pagos` se convierte en "saldo = todo lo remitido": saldos inflados con cara de dato correcto (ya pasó parecido en v18.22 con el límite de 1000 filas de PostgREST). Los saldos quedan en 0, que **subestima en vez de inflar** — el lado seguro — y `saldosConfiables` es lo que la pantalla tiene que mirar.
+  - **El interruptor es `AppProvider.rlsEncendido`**, hoy en `false`: mientras ninguna tabla tenga RLS, la app sigue trayendo todo como siempre. Se pone en `true` al encender la primera tabla; es un cambio de una línea a propósito.
+  - **La regla del saldo** quedó en los dos lados: `puede_ver_saldo()` en SQL y `LecturaPermitida.puedeVerSaldo` en Dart. **Son dos fuentes de verdad**, y `test/lectura_permitida_test.dart` es lo que hace que se note cuando una se mueve sin la otra.
+  - **`soportes.reportado_por_id`**: la migración está escrita. Falta que la app la escriba al crear el ticket y filtre por ella (hoy filtra por `nombreCompleto`).
+
+  **El único prerequisito de la Fase 1 que sigue abierto**: apagar `permitirLoginLegacy` y deployar. Un login legacy no abre sesión de Supabase, así que `auth.uid()` queda NULL y bajo RLS ese usuario vería todas las tablas vacías.
 - **Auth — Fase 3**: borrar `usuarios.password_hash` y `hashPassword`; alta de usuarios en un paso con una Edge Function que tenga la service key; pasar `resolver-maps` y `parse-reparto` al JWT de sesión (hoy van con la publishable key hardcodeada, así que cualquiera con la key las puede llamar y `parse-reparto` consume la ANTHROPIC_API_KEY); decidir si la cuenta de prueba `mili` se da de baja.
 - **Staging**: hoy no hay y la app local pega contra producción. La recomendación concreta (segundo proyecto de Supabase con datos inventados + ensayo en transacción contra producción, con costos) está en `auth_fase1_staging.md`. **Es condición de entrada de la Fase 2.** Prerequisito práctico: pasar la URL y la key de Supabase de `main.dart` a `AppConfig` con `--dart-define`, porque hoy están hardcodeadas y no hay forma de apuntar la app a otra base sin editar código.
 - **Soporte — mejoras no implementadas**: badge con la cantidad de tickets abiertos en el item del FAB (requiere sumar la query a `AppProvider.cargarDatos`); aviso push/mail en vez del WhatsApp manual.
