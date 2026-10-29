@@ -515,7 +515,7 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 
 ## ESTADO ACTUAL (v19.13) — EN PRODUCCIÓN
 
-Deployada el 28/10/2026 desde la rama `feat/reparto-columnas-extra`, **todavía sin mergear a `master`**: producción va adelante de master. Deploy `web-eovr0ripg`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
+Deployada el 28/10/2026 desde la rama `feat/reparto-columnas-extra`, **ya mergeada a `master`** por el **PR #16** (merge commit `82db63d`) — master y producción coinciden. Deploy `web-eovr0ripg`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
 
 Verificado contra producción: **mismo sha256** que el build (`e2d9029b…`), `app_version.json` dice `v19.13`, los headers son los que espera el aviso de versión y las cadenas de la feature están en el bundle ("Agregar columna", "Ej: Pierna, Grasa").
 
