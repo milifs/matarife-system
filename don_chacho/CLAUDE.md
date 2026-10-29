@@ -56,6 +56,12 @@ ALTER TABLE permisos DISABLE ROW LEVEL SECURITY;
 - **`gestionar_proveedores` (v19)** habilita la tab Proveedores (compra de animales vivos + pagos al proveedor). Es el permiso de la cajera.
 - **`gestionar_deposito` (v19.5)** habilita Depósito (stock de medias reses) en el menú del FAB. La migración lo asigna a los roles admin **y** a los que ya tenían `gestionar_proveedores`: es la misma persona, la cajera carga la compra y es la que saca la carne de la cámara.
 
+### Qué tapa cada gate (v19.14)
+- **El dashboard entero** (`home_screen`) pide `esAdmin`. No es por permiso sino por rol, igual que los tabs de plata de Consultas (v19.2/v19.3): es la plata del negocio de conjunto.
+- **La Nota de crédito / débito** pide `crear_pago`. Mueve el saldo de un cliente igual que un pago y la pantalla muestra el saldo actual; estaba **sin ningún gate** desde v18.21. `crear_pago` la deja donde estaba (admin, Secretaria, Cobrador) y la saca del Encargado de Depósito.
+- **La Lista de reparto y Soporte siguen sin gate**, a propósito: la primera es logística sin plata y la segunda tiene que estar para todos, que es justamente de lo que se quejaría el que no puede trabajar.
+- **Ojo: todos estos gates son de UI.** Las tablas tienen RLS deshabilitado y la app se conecta con la publishable key, así que los datos igual viajan al navegador y cualquiera con la key los puede leer por la API REST. El gate frena al usuario común, no a alguien que quiera mirar. Cerrar eso de verdad es RLS + auth de Supabase, que es otro proyecto.
+
 ### Roles
 - Flexibles: el admin puede crear roles personalizados con permisos a la carta
 - Default: **Administrador** (es_admin=true, todos los permisos) y **Secretaria** (crear_remito + ver_consultas — ver_consultas se asigna manualmente desde Gestión de Usuarios)
@@ -272,6 +278,7 @@ diferencia = teórico al momento del recuento − recuento
 - Badge del FAB incluye remitos pendientes + NDPs pendientes
 
 ### Dashboard (home_screen)
+- **Es del dueño y nada más (v19.14).** Un rol que no sea admin ve un Inicio sin plata: saludo con su nombre y su rol, y a lo suyo por las pestañas o por el botón +. Antes el **saldo total a cobrar** y la **deuda de cada vendedor** los veía cualquier rol, incluido el **Encargado de Depósito**, cuyo rol tiene un solo permiso (`gestionar_deposito`) y para quien Inicio era la única pantalla a la que entraba.
 - KPIs de la semana: kg vendidos (novillo/cerdo), venta bruta, ganancia neta
 - Cards de kg por tipo muestran también la cantidad de medias reses ("N medias")
 - **Las dos cards de kg son tocables (v19.10)**: abren `DetalleKgSemanaScreen` con el desglose de esa semana y ese tipo — clientes ordenados de mayor a menor kg, con medias, kg e importe, y los remitos de cada uno al desplegarlos. Arrastran el estado del ojo (si los valores están ofuscados en el dashboard, también lo están en el desglose)
@@ -485,6 +492,8 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 | v18.14 (01/07) | **Ruta de cobranza (1ª versión)**: embebida en Consultas → Directorio, combo box (Clientes que deben / Solo remitos vencidos) + botón "Armar". Nuevo `ruta_cobranza_service.dart` (GPS, extracción de coords, orden por cercanía, URL Google Maps). Reemplazada por la tab "Ruta" en v18.15. |
 | v18.15 (01/07) | **Ruta de cobranza movida a tab propia "Ruta"** en Consultas (9 tabs). Filtros: cliente (búsqueda), vendedor (dropdown), "Con saldo pendiente" y "Solo vencidos" (FilterChips). Lista con checkboxes para **seleccionar clientes** (los sin ubicación quedan deshabilitados) + "Todos/Ninguno". Botón "Armar recorrido (N)" que calcula la ruta con los elegidos (GPS + orden por cercanía) y abre el panel de paradas → Google Maps. Se quitó el bloque de ruta del Directorio. |
 | v18.16 (02/07) | **Fix ubicaciones de la ruta + editar ubicación desde Directorio**: (1) `_parseCoords` reconoce ahora el formato **DMS** (`24°59'04.1"S`). (2) Nueva **Edge Function `resolver-maps`** (runtime nuevo, `withSupabase` con auth `["publishable","secret"]`) que resuelve del lado del servidor los **links cortos** `maps.app.goo.gl` (el navegador no puede por CORS): sigue el redirect y devuelve `lat/lng`, o si el link es un "compartir lugar" sin coords, devuelve la **dirección/nombre** (`q=…`). `RutaCobranzaService.construirParadas()` llama la función en lote para los clientes sin coords locales. `ParadaRuta` gana `direccionResuelta` y usa ese texto como punto ruteable. (3) En **Directorio**, botón de editar ubicación por tarjeta → bottom sheet para cargar/corregir Dirección + Link Maps (guarda con `editarCliente`). |
+| v19.14 (28/10) | **El dashboard es solo del dueño**, más dos arreglos del reparto que reportó el usuario: la celda de una columna extra **no se dejaba escribir** en un cliente agregado después de crear la columna (la fila nacía sin esos campos), y el botón volvió a decir **"Agregar cliente"** en vez de "Agregar a CARNE". Y las **flechas ↑ ↓ bajan y suben de celda** en la misma columna, para cargar la lista de corrido sin que el tabulador pase por la sucursal y por la cruz de quitar. |
+| v19.14 (28/10) | **El dashboard es solo del dueño.** La Encargada de Depósito entraba a la app y la pantalla de Inicio le mostraba el **saldo total a cobrar** del negocio (122 millones) y la **deuda de cada vendedor**. Su rol tiene un solo permiso (`gestionar_deposito`), así que Inicio era su única pantalla y le mostraba justo lo que no tiene que ver. Ahora un rol que no es admin ve un Inicio sin plata. En la misma pasada se tapó un agujero más grave: la **Nota de crédito / débito** estaba en el menú del + **sin ningún gate** desde v18.21, así que ese mismo rol podía ver el saldo de cualquier cliente **y modificarlo**; ahora pide `crear_pago`. Sin migración: ningún rol cambia, cambia lo que la app muestra. |
 | v19.13 (28/10) | **Columnas a medida en la lista de reparto.** Cada tabla tiene ahora un **+** que le suma hasta **dos columnas más al final**, con el encabezado escrito a mano: para cuando Joaco vende algo que no es una media (una pierna, grasa, lo que aparezca esa semana) y antes no tenía dónde anotarlo por cliente. Se tocan para renombrarlas o sacarlas, y si tienen cantidades cargadas avisa antes de borrarlas. Salen también en el PDF del repartidor. **No tienen total a mano ni sobrante**: la fila TOTAL muestra la suma de lo repartido, porque no hay stock contra el cual contarlas. Migración `supabase_migration_reparto_columnas_extra.sql` (dos columnas JSONB), prerequisito del deploy. |
 | v19.12 (28/10) | **Las dos tablas del reparto, cada una en lo suyo, y la grilla que se lee.** Correcciones sobre v19.11: **líneas de grilla visibles** (horizontales y verticales, de punta a punta) y el renglón **se pinta al pasar el mouse**, con el nombre del cliente en rojo — en una lista larga es lo que dice qué renglón se está por tocar. Además, la carne y el cerdo dejaron de verse apiladas en la misma pantalla y ahora se eligen con un **selector propio**, con el mismo gesto que el día. Y el PDF pasó a ser **uno por tabla** (menú "PDF de CARNE" / "PDF de CERDO"), porque la carne y el cerdo los reparte gente distinta y cada uno se lleva su hoja; el tipo va en el nombre del archivo para distinguirlos en el celular. Las **notas son del día**, así que se ven y se editan desde las dos tablas y salen en los dos PDF. Vuelve el FAB "Agregar a CARNE/CERDO" (con una sola tabla a la vista ya no es ambiguo a cuál se agrega). Sin migración. |
 | v19.11 (28/10) | **Lista de reparto: dos tablas, sábado y el día por comando en el asistente.** (1) La pantalla dejó de ser una grilla con dos columnas: ahora son **dos tablas por día**, una de CARNE (novillo) y otra de CERDO, cada una con su TOTAL MEDIAS, sus clientes y su SOBRANTE DEPÓSITO. El PDF del repartidor y la vista del asistente también. (2) El número de medias quedó **alineado con el nombre del cliente** (antes el campo flotaba más arriba por el renglón de la sucursal). (3) Se agregó el **sábado** a los días de reparto. (4) En el chatbot **se quitó el selector Jue/Vie**: el día va por comando y **por pedido**, así una sola frase puede cargar carne para el jueves y cerdo para el sábado ("agregar para Perico 3 medias de carne para el jueves y 5 medias de cerdo para el sábado"); si el comando no dice el día, el asistente lo pregunta antes de guardar en vez de adivinarlo. Columna `tipo` en `reparto_items` + `'sabado'` en el CHECK de `reparto_listas` (`supabase_migration_reparto_sabado_tipo.sql`, prerequisito del deploy). **Hay que redeployar la Edge Function `parse-reparto`.** |
@@ -513,9 +522,19 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v19.13) — EN PRODUCCIÓN
+## ESTADO ACTUAL (v19.14) — EN PRODUCCIÓN
 
-Deployada el 28/10/2026 desde la rama `feat/reparto-columnas-extra`, **ya mergeada a `master`** por el **PR #16** (merge commit `82db63d`) — master y producción coinciden. Deploy `web-eovr0ripg`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
+Deployada el 28/10/2026 desde la rama `fix/dashboard-solo-admin` (**PR #17**, todavía sin mergear: producción va adelante de master). Deploy `web-7a18z6zzl`, que tomó el alias solo. **Sin migración.**
+
+Verificado contra producción: el alias responde 200, **mismo sha256** que el build (`a218830e…`), `app_version.json` dice `v19.14` y los headers son los que espera el aviso de versión. El bundle trae el botón "Agregar cliente" (y **ya no** "Agregar a CARNE") y la pantalla de Inicio sin plata.
+
+Trae el **gate del dashboard y de la Nota de crédito / débito**, el arreglo de la **celda muerta** de las columnas extra, el texto del botón y las **flechas ↑ ↓** entre celdas (ver "Cambios v19.14"). **Sin pasada visual del desarrollador.**
+
+**El deploy lo corre el usuario**: el modo automático del agente bloquea `vercel --prod`. El agente deja el build hecho con su `.vercel/project.json` restaurado y pasa el comando. Este deploy salió dos veces del **mismo** build (mismo `buildeado` y mismo sha256): la segunda fue al pedo pero inofensiva, solo cambió el id del deployment.
+
+### v19.13 — deployada el 28/10/2026
+
+Deployada el 28/10/2026 desde la rama `feat/reparto-columnas-extra`, **ya mergeada a `master`** por el **PR #16** (merge commit `82db63d`). Deploy `web-eovr0ripg`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
 
 Verificado contra producción: **mismo sha256** que el build (`e2d9029b…`), `app_version.json` dice `v19.13`, los headers son los que espera el aviso de versión y las cadenas de la feature están en el bundle ("Agregar columna", "Ej: Pierna, Grasa").
 
@@ -682,6 +701,27 @@ Deployada desde la rama `feat/soporte`, **ya mergeada a `master`** (PR #1, merge
 ### v18.31 — deployada el 22/09/2026
 
 Deployada el 22/09/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`. Salió de la rama `feat/reparto-precarga` (que acumulaba v18.30 + v18.31); **esa rama ya está mergeada a `master`** — en su momento no lo estaba y la doc quedó desactualizada hasta el 20/10/2026.
+
+### Cambios v19.14 (28/10/2026) — El dashboard es solo del dueño
+
+Lo reportó el usuario con una captura: la Encargada de Depósito, entrando con su usuario, veía el saldo total a cobrar y la lista de vendedores con su deuda.
+
+1. **`lib/screens/home_screen.dart`**: `if (!app.esAdmin) return _inicioSinPlata(app);` **antes de calcular nada**. El corte va arriba de todo y no card por card: así no queda ninguna tarjeta suelta sin gate, ni ahora ni cuando se agregue la próxima. Los `if (app.esAdmin)` que había adentro quedaron redundantes.
+2. **`_inicioSinPlata`**: saludo con el nombre y el rol, y una línea que manda a las pestañas o al botón +. Para la Encargada de Depósito, Inicio es la única pestaña que tiene.
+3. **`lib/main.dart`**: la **Nota de crédito / débito** pasó a pedir `crear_pago`. Es el agujero más grave de los dos, porque no era solo mirar: desde ahí se le puede **cambiar el saldo a cualquier cliente**. `crear_pago` la deja donde ya estaba (admin, Secretaria, Cobrador) y la saca del Encargado de Depósito, sin migración ni permiso nuevo.
+4. **Por qué `esAdmin` y no un permiso nuevo**: es el mismo criterio de v19.2/v19.3 con Ganancias, Cobranzas, Comisiones y Reporte. Un permiso nuevo habría que acordarse de no dárselo a nadie.
+5. **Lo que NO cambió, a propósito**: la Lista de reparto y Soporte siguen sin gate (logística sin plata, y el soporte tiene que estar para todos). Consultas ya estaba gateada por `ver_consultas`, que este rol no tiene.
+6. **`test/permisos_home_test.dart`** (nuevo, 4 casos): que el Encargado de Depósito no sea admin, que tenga un solo permiso, que no tenga `crear_pago`, y —la otra mitad del gate— que Secretaria, Cobrador y admin **sí** lo tengan, para que tapar a uno no se lo saque a los que la usan. **160 tests en verde**.
+7. **Los roles de producción quedaron como estaban**: esto no toca la base. Verificado por REST al diagnosticar (`roles`, `rol_permisos`, `usuarios`).
+8. **Sigue siendo un gate de UI.** Las tablas tienen RLS off y la app usa la publishable key: los datos viajan igual al navegador. Ver "Qué tapa cada gate".
+
+**Arreglos del reparto que entraron en la misma versión:**
+
+9. **BUG: la celda de una columna extra no se dejaba escribir.** Agregar columna → agregar cliente → la celda nueva aparecía vacía y muerta. `_agregarCliente` creaba el `_Fila` **sin pasarle `columnas`**, así que nacía sin esos controllers y la grilla dibujaba un hueco. Cubierto por test.
+10. **El botón dice "Agregar cliente"** y no "Agregar a CARNE": con una sola tabla a la vista, a cuál se agrega ya se ve arriba.
+11. **Flechas ↑ ↓ entre celdas** (`_moverFoco`): bajan y suben en la **misma columna**, que es como se carga una planilla. El tabulador no servía porque pasa por el campo de sucursal y por la cruz de quitar. El salto usa **el mismo orden A→Z que la grilla** (`_filasOrdenadas`, compartido): con otro orden, la flecha bajaría a una fila que no es la de abajo. Al llegar, el número queda **seleccionado**, para tipear encima sin borrar antes.
+12. **Deploy**: 28/10/2026 desde la rama `fix/dashboard-solo-admin` (commits `d4117f4` y `ae0c1b1`). Deploy `web-7a18z6zzl`, que tomó el alias solo. Sin migración.
+13. **El `Focus` de la flecha va ARRIBA del campo**: la tecla sube desde el que tiene el foco hacia sus padres, así que llega ahí antes que a los atajos de edición de texto de Flutter. En un campo de una línea la flecha vertical no hace nada útil, así que no se le saca nada al usuario. Va con `canRequestFocus: false` para no meterse en el recorrido del tabulador.
 
 ### Cambios v19.13 (28/10/2026) — Columnas a medida en el reparto
 

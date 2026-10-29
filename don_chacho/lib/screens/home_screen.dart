@@ -95,6 +95,12 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           }
 
+          // El dashboard es del dueño: el saldo total a cobrar y la deuda
+          // de cada vendedor son la plata del negocio de conjunto. Lo veía
+          // cualquier rol, incluido el Encargado de Depósito, que no tiene
+          // ninguna otra pantalla con plata.
+          if (!app.esAdmin) return _inicioSinPlata(app);
+
           final vencidos = app.clientesConSaldoVencido();
           final kgPorTipo = app.kgVendidosSemanasPorTipo(_semanaRef);
           final mediasPorTipo = app.mediasVendidasSemanasPorTipo(_semanaRef);
@@ -160,7 +166,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 10),
 
-                if (app.esAdmin) ...[
+                // (Desde acá abajo siempre es el admin: el resto no llega.)
+                ...[
                   // ── Kg vendidos por tipo ──
                   Row(
                     children: [
@@ -329,6 +336,44 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// Inicio de los roles que no son el dueño. No muestra plata: cada uno
+  /// entra a lo suyo por las pestañas de abajo o por el botón +.
+  Widget _inicioSinPlata(AppProvider app) {
+    final usuario = app.usuarioActual;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.storefront_outlined,
+                size: 56, color: AppTheme.textHint),
+            const SizedBox(height: 16),
+            Text(
+              'Hola, ${usuario?.nombreCompleto ?? ''}'.trim(),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 20, fontWeight: FontWeight.w600),
+            ),
+            if (usuario?.rol != null) ...[
+              const SizedBox(height: 4),
+              Text(usuario!.rol!.nombre,
+                  style: const TextStyle(
+                      fontSize: 13, color: AppTheme.textSecondary)),
+            ],
+            const SizedBox(height: 20),
+            const Text(
+              'Entrá a lo tuyo por las pestañas de abajo '
+              'o por el botón +.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+            ),
+          ],
+        ),
       ),
     );
   }

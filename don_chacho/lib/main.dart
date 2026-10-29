@@ -486,25 +486,31 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
                   },
                 ),
               ],
-              // Nota de crédito / débito: disponible para todos los usuarios
-              const Divider(height: 1),
-              ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: AppTheme.info.withOpacity(0.12),
-                  child: const Icon(Icons.swap_vert,
-                      color: AppTheme.info),
+              // Nota de crédito / débito: mueve el saldo de un cliente igual
+              // que un pago, y la pantalla muestra el saldo actual. Va con
+              // `crear_pago` y no suelta: sin gate la veía cualquier rol,
+              // incluido el Encargado de Depósito, que no tiene por qué ver
+              // ni tocar la deuda de nadie.
+              if (tiene('crear_pago')) ...[
+                const Divider(height: 1),
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: AppTheme.info.withOpacity(0.12),
+                    child: const Icon(Icons.swap_vert,
+                        color: AppTheme.info),
+                  ),
+                  title: const Text('Nota de crédito / débito'),
+                  subtitle: const Text('Ajustar saldo de cliente'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const NotaCdFormScreen()),
+                    );
+                  },
                 ),
-                title: const Text('Nota de crédito / débito'),
-                subtitle: const Text('Ajustar saldo de cliente'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const NotaCdFormScreen()),
-                  );
-                },
-              ),
+              ],
               // Lista de reparto: logística semanal, disponible para todos
               const Divider(height: 1),
               ListTile(
