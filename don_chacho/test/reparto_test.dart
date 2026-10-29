@@ -61,6 +61,21 @@ void main() {
       expect(map['medias_carne'], 0);
     });
 
+    test('si el tipo y las medias se contradicen, mandan las medias', () {
+      // La deja una versión vieja de la app: guarda sin `tipo` y se come el
+      // DEFAULT 'carne' de la tabla, aunque las medias sean de cerdo. Leerla
+      // como fila de carne en cero haría desaparecer esas 3 medias.
+      final leido = RepartoItem.desdeMap({
+        'cliente_id': 'c1',
+        'tipo': 'carne',
+        'medias_carne': 0,
+        'medias_cerdo': 3,
+      });
+      expect(leido, hasLength(1));
+      expect(leido.first.tipo, tipoRepartoCerdo);
+      expect(leido.first.medias, 3);
+    });
+
     test('una fila sin medias todavía sabe de qué tabla es', () {
       // Es el cliente recién agregado: las medias se cargan después, y al
       // releer la lista tiene que seguir en la tabla donde se lo puso.

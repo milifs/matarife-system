@@ -973,10 +973,19 @@ class RepartoItem {
         );
 
     if (tipoRaw == tipoRepartoCarne || tipoRaw == tipoRepartoCerdo) {
-      final tipo = tipoRaw;
-      return [
-        armar(tipo, tipo == tipoRepartoCerdo ? cerdo : carne, id: map['id'])
-      ];
+      final propia = tipoRaw == tipoRepartoCerdo ? cerdo : carne;
+      final ajena = tipoRaw == tipoRepartoCerdo ? carne : cerdo;
+      // Una fila donde el `tipo` dice una cosa y las medias están en la otra
+      // columna no la escribe esta versión: la deja una versión vieja de la
+      // app, que guarda sin `tipo` y se come el DEFAULT 'carne' de la tabla.
+      // Mandan las medias, que es el dato que el usuario cargó: si no, la
+      // fila se leería en cero y esas medias desaparecerían de la pantalla.
+      if (propia == 0 && ajena > 0) {
+        final real =
+            tipoRaw == tipoRepartoCerdo ? tipoRepartoCarne : tipoRepartoCerdo;
+        return [armar(real, ajena, id: map['id'])];
+      }
+      return [armar(tipoRaw, propia, id: map['id'])];
     }
 
     // Sin columna `tipo` (base todavía sin migrar).
