@@ -290,6 +290,54 @@ void main() {
     });
   });
 
+  group('la fecha del reparto', () {
+    // `semanaInicio` es el LUNES de la semana, que no es el día en que sale
+    // el camión. El PDF salía llamándose con el lunes y se leía como una
+    // fecha equivocada: el jueves de la semana del 26/10 se reparte el 29.
+    final lunes = DateTime(2026, 10, 26);
+
+    test('cada día cae donde tiene que caer', () {
+      expect(RepartoLista(semanaInicio: lunes, dia: 'jueves').fecha,
+          DateTime(2026, 10, 29));
+      expect(RepartoLista(semanaInicio: lunes, dia: 'viernes').fecha,
+          DateTime(2026, 10, 30));
+      expect(RepartoLista(semanaInicio: lunes, dia: 'sabado').fecha,
+          DateTime(2026, 10, 31));
+    });
+
+    test('nunca es el lunes de la semana', () {
+      for (final d in diasReparto) {
+        expect(RepartoLista(semanaInicio: lunes, dia: d).fecha,
+            isNot(lunes));
+      }
+    });
+
+    test('cruza bien el fin de mes', () {
+      // Semana del lunes 30/11/2026: el sábado cae en diciembre.
+      final lista =
+          RepartoLista(semanaInicio: DateTime(2026, 11, 30), dia: 'sabado');
+      expect(lista.fecha, DateTime(2026, 12, 5));
+    });
+
+    test('cruza bien el fin de año', () {
+      // Semana del lunes 28/12/2026: el jueves ya es 2027.
+      final lista =
+          RepartoLista(semanaInicio: DateTime(2026, 12, 28), dia: 'jueves');
+      expect(lista.fecha, DateTime(2026, 12, 31));
+      final sabado =
+          RepartoLista(semanaInicio: DateTime(2026, 12, 28), dia: 'sabado');
+      expect(sabado.fecha, DateTime(2027, 1, 2));
+    });
+
+    test('el offset sale del orden de los días', () {
+      expect(offsetDiaReparto('jueves'), 3);
+      expect(offsetDiaReparto('viernes'), 4);
+      expect(offsetDiaReparto('sabado'), 5);
+      // Un día que no existe cae en jueves, que es el primero.
+      expect(offsetDiaReparto('lunes'), 3);
+    });
+  });
+
   _pdf();
   _filasNuevas();
 }

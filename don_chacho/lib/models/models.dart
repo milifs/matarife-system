@@ -819,6 +819,13 @@ class NotaCreditoDebito {
 /// Se guardan sin acento: la columna `dia` es toda minúscula sin tildes.
 const List<String> diasReparto = ['jueves', 'viernes', 'sabado'];
 
+/// A cuántos días del lunes cae cada día de reparto: jueves 3, viernes 4,
+/// sábado 5. Sale del orden de [diasReparto], que arranca en jueves.
+int offsetDiaReparto(String dia) {
+  final i = diasReparto.indexOf(dia);
+  return i < 0 ? 3 : 3 + i;
+}
+
 /// Nombre del día para mostrar ('sabado' -> 'Sábado').
 String labelDiaReparto(String dia) {
   if (dia == 'sabado') return 'Sábado';
@@ -902,6 +909,16 @@ class RepartoLista {
         creadoEn = creadoEn ?? DateTime.now();
 
   String get diaLabel => labelDiaReparto(dia);
+
+  /// La fecha en la que se reparte esta lista. `semanaInicio` es el LUNES de
+  /// la semana, que no es el día en que sale el camión: la lista del jueves
+  /// de la semana del 26/10 se reparte el 29/10. Es la fecha que va en el
+  /// PDF y en el nombre del archivo.
+  DateTime get fecha => DateTime(
+        semanaInicio.year,
+        semanaInicio.month,
+        semanaInicio.day + offsetDiaReparto(dia),
+      );
 
   /// Las filas de una sola mercadería, que es lo que muestra cada tabla.
   List<RepartoItem> itemsDe(String tipo) =>
