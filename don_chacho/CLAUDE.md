@@ -524,7 +524,7 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 
 ## ESTADO ACTUAL (v19.14) — EN PRODUCCIÓN
 
-Deployada el 28/10/2026 desde la rama `fix/dashboard-solo-admin` (**PR #17**, todavía sin mergear: producción va adelante de master). Deploy `web-7a18z6zzl`, que tomó el alias solo. **Sin migración.**
+Deployada el 28/10/2026 desde la rama `fix/dashboard-solo-admin`, **ya mergeada a `master`** por el **PR #17** (merge commit `dd0c0cd`) — master y producción coinciden. Deploy `web-7a18z6zzl`, que tomó el alias solo. **Sin migración.**
 
 Verificado contra producción: el alias responde 200, **mismo sha256** que el build (`a218830e…`), `app_version.json` dice `v19.14` y los headers son los que espera el aviso de versión. El bundle trae el botón "Agregar cliente" (y **ya no** "Agregar a CARNE") y la pantalla de Inicio sin plata.
 
