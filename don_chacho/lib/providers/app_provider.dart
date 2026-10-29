@@ -1480,8 +1480,9 @@ class AppProvider extends ChangeNotifier {
   Future<void> cargarDeposito({bool forzar = false}) async {
     if (_depositoCargado && !forzar) return;
     try {
-      // El stock sale de las cargas de proveedores, que son lazy.
-      await cargarProveedores(forzar: forzar);
+      // Desde v19.16 el stock sale solo del arranque y de los movimientos, así
+      // que ya no hace falta precargar proveedores (eran dos queries de más en
+      // cada apertura de la pantalla).
       final results = await Future.wait([
         _db.getDepositoConfig(),
         _db.getDepositoMovimientos(),
@@ -1519,35 +1520,27 @@ class AppProvider extends ChangeNotifier {
     return StockDeposito(
       tipo: tipo,
       inicial: hoy.inicial,
-      compradas: hoy.compradas,
       entradas: hoy.entradas,
-      remitidas: hoy.remitidas,
-      salidasPendientes: hoy.salidasPendientes,
-      salidasDefinitivas: hoy.salidasDefinitivas,
+      salidas: hoy.salidas,
       recuento: recuento?.medias,
       fechaRecuento: recuento?.fecha,
       kgRecuento: recuento?.totalKg ?? 0,
       teoricoAlRecuento: teoricoAlRecuento,
-      pendientes: hoy.pendientes,
       kgInicial: hoy.kgInicial,
-      kgComprados: hoy.kgComprados,
       kgEntradas: hoy.kgEntradas,
-      kgRemitidos: hoy.kgRemitidos,
-      kgSalidasPendientes: hoy.kgSalidasPendientes,
-      kgSalidasDefinitivas: hoy.kgSalidasDefinitivas,
+      kgSalidas: hoy.kgSalidas,
       mediasSinPesar: hoy.mediasSinPesar,
-      cortes: hoy.cortes,
     );
   }
 
   StockDeposito get stockNovillo => stockDeposito(Proveedor.tipoNovillo);
   StockDeposito get stockCerdo => stockDeposito(Proveedor.tipoCerdo);
 
-  /// true si hay algo que mirar: medias que faltan en la cámara o salidas sin
-  /// remito. Es el disparador del aviso en la pantalla del depósito.
+  /// true si hay algo que mirar: el último recuento dio menos de lo que el
+  /// libro decía. Es el disparador del aviso en la pantalla del depósito.
   bool get hayAlertaDeposito {
     for (final s in [stockNovillo, stockCerdo]) {
-      if (s.faltan || s.hayPendientes) return true;
+      if (s.faltan) return true;
     }
     return false;
   }
@@ -1556,210 +1549,58 @@ class AppProvider extends ChangeNotifier {
   ///
   /// [hasta] filtra por `creado_en` (cuándo se cargó en el sistema, no la
   /// fecha tipeada): null es "ahora". El recuento usa este corte para
-  /// comparar contra el teórico que correspondía cuando se contó.
+  /// comparar contra lo que el libro decía cuando se contó.
   ///
   /// Los campos de recuento del resultado van vacíos: acá solo se arman los
   /// componentes y el getter `teorico` ya los suma.
+  ///
+  /// Desde v19.16 esto mira UNA sola tabla —`deposito_movimientos`— más el
+  /// arranque. Ni cargas de proveedores ni remitos.
   StockDeposito _componentesDeposito(String tipo, DateTime? hasta) {
     final config = _depositoConfig!;
     final desde = _soloFecha(config.fechaInicio);
-    bool yaEstaba(DateTime creadoEn) =>
-        hasta == null || !creadoEn.isAfter(hasta);
 
-    // ── Compras al proveedor: cada animal en pie son dos medias ──
-    // El tipo lo decide el PROVEEDOR (novillo/cerdo), que es donde vive esa
-    // información: a propósito no se congela en la carga.
-    var compradas = 0.0;
-    var kgComprados = 0.0;
+    var entradas = 0.0;
+    var kgEntradas = 0.0;
+    var salidas = 0.0;
+    var kgSalidas = 0.0;
     // Medias de esta cuenta que nadie pesó: el kilaje se muestra igual, pero
     // avisando que está incompleto (los kg son opcionales en todo el módulo).
     var sinPesar = 0.0;
-    for (final carga in _cargas) {
-      if (_soloFecha(carga.fecha).isBefore(desde)) continue;
-      if (!yaEstaba(carga.creadoEn)) continue;
-      final proveedor = proveedorPorId(carga.proveedorId);
-      final tipoProveedor = proveedor?.tipo ?? Proveedor.tipoNovillo;
-      if (tipoProveedor != tipo) continue;
-      final mediasCarga = carga.cantidadAnimales * mediasPorAnimal;
-      compradas += mediasCarga;
-      // El kg de media res se carga DESPUÉS de la faena: hasta entonces la
-      // carga suma medias pero todavía no suma kilos.
-      if (carga.kgMediaRes != null) {
-        kgComprados += carga.kgMediaRes!;
-      } else {
-        sinPesar += mediasCarga;
-      }
-    }
 
-    // ── Medias distribuidas a clientes ──
-    // Solo remitos CONFIRMADOS, igual que los saldos: una nota de pedido
-    // pendiente no sacó carne de la cámara todavía.
-    // Cada item se convierte por la tabla de equivalencias, porque el campo
-    // "Medias" del formulario cuenta unidades del corte elegido: 3 piernas
-    // son 1 media, no 3.
-    var remitidas = 0.0;
-    var kgRemitidos = 0.0;
-    // Los cortes que se llevaron, para saber qué quedó suelto en la cámara:
-    // una pierna remitida deja un octavo y una plancha de asado disponibles.
-    var piernas = 0;
-    var octavos = 0;
-    var planchas = 0;
-    for (final remito in _remitos) {
-      if (!remito.esConfirmado) continue;
-      if (_soloFecha(remito.fecha).isBefore(desde)) continue;
-      if (!yaEstaba(remito.creadoEn)) continue;
-      for (final item in (_remitoItems[remito.id] ?? const <RemitoItem>[])) {
-        if (stockDeTipoCarne(item.tipoCarne) != tipo) continue;
-        final mediasItem =
-            item.cantidadMedias * equivalenciaEnMedias(item.tipoCarne);
-        remitidas += mediasItem;
-        if (item.kgTotal > 0) {
-          kgRemitidos += item.kgTotal;
-        } else {
-          sinPesar += mediasItem;
-        }
-        for (final parte in partesDeCorte(item.tipoCarne)) {
-          switch (parte) {
-            case partePierna:
-              piernas += item.cantidadMedias;
-            case parteOctavo:
-              octavos += item.cantidadMedias;
-            case partePlancha:
-              planchas += item.cantidadMedias;
-          }
-        }
-      }
-    }
-
-    // ── Movimientos cargados a mano ──
-    var entradas = 0.0;
-    var kgEntradas = 0.0;
-    var salidasDefinitivas = 0.0;
-    var kgSalidasDefinitivas = 0.0;
     for (final mov in _depositoMovimientos) {
       if (mov.tipo != tipo) continue;
       if (_soloFecha(mov.fecha).isBefore(desde)) continue;
-      if (!yaEstaba(mov.creadoEn)) continue;
+      if (hasta != null && mov.creadoEn.isAfter(hasta)) continue;
       if (mov.esEntrada) {
         entradas += mov.medias;
         kgEntradas += mov.totalKg;
         sinPesar += mov.mediasSinPesar;
-      }
-      if (mov.esSalidaDefinitiva) {
-        salidasDefinitivas += mov.medias;
-        kgSalidasDefinitivas += mov.totalKg;
+      } else if (mov.esSalida) {
+        // Todas las salidas descuentan igual: el motivo queda en la
+        // observación, no cambia la cuenta.
+        salidas += mov.medias;
+        kgSalidas += mov.totalKg;
         sinPesar += mov.mediasSinPesar;
       }
+      // Los recuentos no mueven nada: son la foto contra la cual comparar.
     }
 
-    final pendientes = _salidasPendientes(tipo, hasta);
-
-    // Los kilos de las salidas que todavía esperan remito van a prorrata: una
-    // salida cubierta a medias por un remito descuenta medias a medias, así
-    // que sus kilos tienen que descontar igual.
-    final mediasAbiertas =
-        pendientes.movimientos.fold<double>(0, (t, m) => t + m.medias);
-    final kgAbiertas =
-        pendientes.movimientos.fold<double>(0, (t, m) => t + m.totalKg);
-    final kgSalidasPendientes = mediasAbiertas <= 0
-        ? 0.0
-        : kgAbiertas * (pendientes.medias / mediasAbiertas);
-    for (final mov in pendientes.movimientos) {
-      sinPesar += mov.mediasSinPesar;
-    }
-
-    // El arranque también se pesa (v19.9). Si se contó sin balanza, esas
-    // medias entran a la cuenta de lo que falta pesar.
+    // El arranque también se pesa. Si se contó sin balanza, esas medias entran
+    // a la cuenta de lo que falta pesar.
     final kgInicial = config.kgInicialDe(tipo);
     if (kgInicial <= 0) sinPesar += config.inicialDe(tipo);
 
     return StockDeposito(
       tipo: tipo,
       inicial: config.inicialDe(tipo),
-      compradas: compradas,
       entradas: entradas,
-      remitidas: remitidas,
-      salidasPendientes: pendientes.medias,
-      salidasDefinitivas: salidasDefinitivas,
-      pendientes: pendientes.movimientos,
+      salidas: salidas,
       kgInicial: kgInicial,
-      kgComprados: kgComprados,
       kgEntradas: kgEntradas,
-      kgRemitidos: kgRemitidos,
-      kgSalidasPendientes: kgSalidasPendientes,
-      kgSalidasDefinitivas: kgSalidasDefinitivas,
+      kgSalidas: kgSalidas,
       mediasSinPesar: sinPesar,
-      cortes: CortesVendidos(
-        piernas: piernas,
-        octavos: octavos,
-        planchas: planchas,
-      ),
     );
-  }
-
-  /// Las salidas que todavía esperan su remito, cerrando por FIFO.
-  ///
-  /// Una salida se registra justamente porque el remito no está cargado
-  /// todavía, así que la cierra cualquier remito de ese tipo cargado DESPUÉS
-  /// de ella, y la salida más vieja se cierra primero. Las ventanas están
-  /// anidadas (los remitos posteriores a una salida nueva son un subconjunto
-  /// de los posteriores a una vieja), así que alcanza con descontar lo que ya
-  /// consumieron las salidas anteriores.
-  ///
-  /// `medias` es el pendiente exacto, incluidas las salidas cubiertas a
-  /// medias; `movimientos` son las salidas con algo todavía abierto.
-  ({List<DepositoMovimiento> movimientos, double medias}) _salidasPendientes(
-      String tipo, DateTime? hasta) {
-    final config = _depositoConfig!;
-    final desde = _soloFecha(config.fechaInicio);
-
-    final salidas = _depositoMovimientos
-        .where((m) =>
-            m.tipo == tipo &&
-            m.esSalidaPendienteDeRemito &&
-            !_soloFecha(m.fecha).isBefore(desde) &&
-            (hasta == null || !m.creadoEn.isAfter(hasta)))
-        .toList()
-      ..sort((a, b) => a.creadoEn.compareTo(b.creadoEn));
-
-    final abiertas = <DepositoMovimiento>[];
-    var pendiente = 0.0;
-    var consumido = 0.0; // medias de remito ya usadas por salidas anteriores
-
-    for (final salida in salidas) {
-      final disponible =
-          _remitidasCargadasDespuesDe(tipo, salida.creadoEn, hasta) - consumido;
-      if (disponible >= salida.medias - toleranciaMedias) {
-        // Ya apareció el remito: la salida se cierra y deja de descontar
-        // (ahora descuenta el remito, así que no se cuenta dos veces).
-        consumido += salida.medias;
-        continue;
-      }
-      final cubierto = disponible > 0 ? disponible : 0.0;
-      consumido += cubierto;
-      pendiente += salida.medias - cubierto;
-      abiertas.add(salida);
-    }
-
-    return (movimientos: abiertas, medias: pendiente);
-  }
-
-  /// Medias remitidas de un tipo cargadas al sistema después de [creadoEn].
-  double _remitidasCargadasDespuesDe(
-      String tipo, DateTime creadoEn, DateTime? hasta) {
-    final desde = _soloFecha(_depositoConfig!.fechaInicio);
-    var total = 0.0;
-    for (final remito in _remitos) {
-      if (!remito.esConfirmado) continue;
-      if (_soloFecha(remito.fecha).isBefore(desde)) continue;
-      if (!remito.creadoEn.isAfter(creadoEn)) continue;
-      if (hasta != null && remito.creadoEn.isAfter(hasta)) continue;
-      for (final item in (_remitoItems[remito.id] ?? const <RemitoItem>[])) {
-        if (stockDeTipoCarne(item.tipoCarne) != tipo) continue;
-        total += item.cantidadMedias * equivalenciaEnMedias(item.tipoCarne);
-      }
-    }
-    return total;
   }
 
   /// El recuento más reciente de un tipo (el que manda para comparar).

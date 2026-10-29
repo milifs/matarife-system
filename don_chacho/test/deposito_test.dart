@@ -1,149 +1,79 @@
-// Fija la aritmética del depósito, que es todo el valor del módulo: existe
-// porque sacaron dos medias de la cámara, nadie cargó el remito y no se pudo
-// saber dónde estaban.
+// Fija la aritmética del depósito, que desde v19.16 es deliberadamente
+// chica: el módulo es el LIBRO de lo que hay en la cámara y nada más.
+//
+//   lo que debería haber = arranque + entradas - salidas
 //
 // Lo que se protege acá:
-//   1. La tabla de equivalencias. El campo del remito se llama "Medias" pero
-//      cuenta unidades del CORTE elegido: 3 piernas son 1 media, no 3. La
-//      media de novillo se parte en tres (pierna + octavo + plancha de asado)
-//      y el "1/4 delantero" son dos de esos tercios.
-//   2. Que los tercios cierren EXACTO. Con 0,33 en vez de la fracción, tres
-//      cortes darían 0,99 y el sistema inventaría un faltante fantasma.
+//   1. Que la cuenta sea esa y solo esa. Hasta v19.15 el stock también sumaba
+//      las cargas de proveedores (animales × 2) y restaba los remitos
+//      confirmados, con tabla de equivalencias de cortes y cierre por FIFO de
+//      las salidas que esperaban remito. Todo eso se sacó: el depósito
+//      registra lo que hay, no lo reconcilia con lo comprado ni lo facturado.
+//   2. Que el recuento NO mueva el stock: es la foto contra la cual comparar.
 //   3. Los dos stocks separados: una media de cerdo no puede tapar un
 //      faltante de novillo.
 //   4. El veredicto: faltan / sobran / dan redondos, con su tolerancia.
+//   5. Que los kilos sigan siendo informativos y sepan decir cuándo están
+//      incompletos.
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:don_chacho_matarife/models/models.dart';
 import 'package:don_chacho_matarife/utils/formatters.dart';
 
 void main() {
-  group('tabla de equivalencias', () {
-    test('una media entera vale 1, sea novillo o cerdo', () {
-      expect(equivalenciaEnMedias('Novillo'), 1);
-      expect(equivalenciaEnMedias('Cerdo'), 1);
-    });
-
-    test('los tres cortes de la media valen un tercio cada uno', () {
-      expect(equivalenciaEnMedias('Pierna mocha'), closeTo(1 / 3, 1e-12));
-      expect(equivalenciaEnMedias('Pierna pistola'), closeTo(1 / 3, 1e-12));
-      expect(equivalenciaEnMedias('Plancha de asado'), closeTo(1 / 3, 1e-12));
-      expect(equivalenciaEnMedias('Octavo'), closeTo(1 / 3, 1e-12));
-    });
-
-    test('el 1/4 delantero son dos tercios (octavo + plancha de asado)', () {
-      expect(equivalenciaEnMedias('1/4 delantero'), closeTo(2 / 3, 1e-12));
-      expect(
-        equivalenciaEnMedias('1/4 delantero'),
-        closeTo(
-          equivalenciaEnMedias('Octavo') +
-              equivalenciaEnMedias('Plancha de asado'),
-          1e-12,
-        ),
-      );
-    });
-
-    test('pierna + octavo + plancha de asado dan una media justa', () {
-      // La razón de usar la fracción exacta y no 0,33: con 0,33 esto daría
-      // 0,99 y cada media despostada inventaría 0,01 de faltante.
-      final total = equivalenciaEnMedias('Pierna mocha') +
-          equivalenciaEnMedias('Octavo') +
-          equivalenciaEnMedias('Plancha de asado');
-      expect(total, closeTo(1, toleranciaMedias));
-    });
-
-    test('es tolerante a mayúsculas y espacios de más', () {
-      expect(equivalenciaEnMedias('  octavo '), closeTo(1 / 3, 1e-12));
-      expect(equivalenciaEnMedias('NOVILLO'), 1);
-    });
-
-    test('un tipo desconocido cuenta como una media entera', () {
-      // Criterio conservador y el que dice el campo del formulario. No se
-      // usa en la práctica: el stock arranca en la fecha configurada y los
-      // tipos salen de un dropdown fijo desde v18.17.
-      expect(equivalenciaEnMedias('media res'), 1);
-      expect(equivalenciaEnMedias(''), 1);
-    });
-
-    test('todo el catálogo de tipos de carne tiene equivalencia', () {
-      // El catálogo del dropdown de remito y de nota de pedido.
-      const catalogo = [
-        'Novillo',
-        'Cerdo',
-        'Pierna mocha',
-        'Pierna pistola',
-        'Plancha de asado',
-        'Octavo',
-        '1/4 delantero',
-      ];
-      for (final tipo in catalogo) {
-        expect(equivalenciasMedia.containsKey(tipo), isTrue,
-            reason: 'falta $tipo en la tabla de equivalencias');
-      }
-      expect(equivalenciasMedia.length, catalogo.length);
-    });
-  });
-
-  group('a qué stock le pega cada tipo', () {
-    test('solo Cerdo es cerdo', () {
-      expect(stockDeTipoCarne('Cerdo'), Proveedor.tipoCerdo);
-      expect(stockDeTipoCarne('cerdo'), Proveedor.tipoCerdo);
-    });
-
-    test('novillo y sus cinco cortes son novillo', () {
-      for (final tipo in [
-        'Novillo',
-        'Pierna mocha',
-        'Pierna pistola',
-        'Plancha de asado',
-        'Octavo',
-        '1/4 delantero',
-      ]) {
-        expect(stockDeTipoCarne(tipo), Proveedor.tipoNovillo,
-            reason: '$tipo debería descontar del stock de novillo');
-      }
-    });
-  });
-
-  group('animales a medias', () {
-    test('cada animal en pie son dos medias', () {
-      expect(mediasPorAnimal, 2);
-      // El caso del circuito: se compran 100 vacas, existen 200 medias.
-      expect(100 * mediasPorAnimal, 200);
-    });
-  });
-
-  group('la ecuación del stock', () {
-    test('el teórico suma entradas y resta todo lo que salió', () {
+  group('la cuenta del stock', () {
+    test('el teórico es arranque + entradas - salidas', () {
       const stock = StockDeposito(
         tipo: Proveedor.tipoNovillo,
         inicial: 10,
-        compradas: 200,
-        entradas: 1,
-        remitidas: 180,
-        salidasPendientes: 2,
-        salidasDefinitivas: 1,
+        entradas: 6,
+        salidas: 4,
       );
-      // 10 + 200 + 1 - 180 - 2 - 1
-      expect(stock.teorico, 28);
+      expect(stock.teorico, 12);
     });
 
-    test('una compra nueva se suma a lo que quedó sin vender', () {
-      // "Cuando se hace una nueva compra se le debe sumar al total la
-      // cantidad de medias que hay en depósito."
+    test('sin movimientos, el stock es el arranque', () {
       const stock = StockDeposito(
         tipo: Proveedor.tipoNovillo,
-        inicial: 15,
-        compradas: 200,
+        inicial: 8,
       );
-      expect(stock.totalDisponible, 215);
-      expect(stock.teorico, 215);
+      expect(stock.teorico, 8);
+    });
+
+    test('un arranque en cero sin movimientos da cero', () {
+      // El caso que disparó la reescritura: con el arranque en 0 el módulo
+      // mostraba −10 porque le restaba un remito del día. Ahora no mira
+      // remitos, así que un libro vacío da 0 y no un negativo inexplicable.
+      const stock = StockDeposito(tipo: Proveedor.tipoNovillo);
+      expect(stock.teorico, 0);
+    });
+
+    test('el stock puede quedar negativo y se muestra como tal', () {
+      // Físicamente imposible, pero es lo honesto: significa que se cargó
+      // una salida sin su entrada. Taparlo con un cero esconde el error de
+      // carga, que es justo lo que hay que ver.
+      const stock = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        inicial: 2,
+        salidas: 5,
+      );
+      expect(stock.teorico, -3);
+    });
+
+    test('las medias con decimales no se redondean', () {
+      const stock = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        inicial: 3.5,
+        entradas: 0.25,
+        salidas: 1,
+      );
+      expect(stock.teorico, closeTo(2.75, 1e-12));
     });
 
     test('sin recuento no hay con qué comparar', () {
       const stock = StockDeposito(
         tipo: Proveedor.tipoNovillo,
-        inicial: 20,
+        inicial: 10,
       );
       expect(stock.tieneRecuento, isFalse);
       expect(stock.diferencia, isNull);
@@ -151,32 +81,47 @@ void main() {
       expect(stock.faltan, isFalse);
       expect(stock.sobran, isFalse);
     });
+
+    test('la etiqueta del tipo', () {
+      expect(
+        const StockDeposito(tipo: Proveedor.tipoNovillo).tipoLabel,
+        'Novillo',
+      );
+      expect(
+        const StockDeposito(tipo: Proveedor.tipoCerdo).tipoLabel,
+        'Cerdo',
+      );
+    });
   });
 
   group('el veredicto', () {
-    // El caso que motivó el módulo: el sistema cuenta 20 y en la cámara hay
-    // 15, así que 5 medias salieron sin que nadie cargara el remito.
+    // El recuento se compara contra lo que el libro decía EN SU MOMENTO
+    // (`teoricoAlRecuento`), no contra el de hoy: si no, un movimiento
+    // posterior al último recuento aparecería como una diferencia.
+
     test('faltan medias cuando el recuento es menor que el teórico', () {
       const stock = StockDeposito(
         tipo: Proveedor.tipoNovillo,
-        compradas: 200,
-        remitidas: 180,
-        recuento: 15,
-        teoricoAlRecuento: 20,
+        inicial: 10,
+        teoricoAlRecuento: 10,
+        recuento: 8,
       );
+      expect(stock.diferencia, 2);
       expect(stock.faltan, isTrue);
       expect(stock.sobran, isFalse);
       expect(stock.cierra, isFalse);
-      expect(stock.faltantes, 5);
+      expect(stock.faltantes, 2);
       expect(stock.sobrantes, 0);
     });
 
     test('sobran medias cuando el recuento es mayor que el teórico', () {
       const stock = StockDeposito(
         tipo: Proveedor.tipoNovillo,
-        recuento: 12,
+        inicial: 10,
         teoricoAlRecuento: 10,
+        recuento: 12,
       );
+      expect(stock.diferencia, -2);
       expect(stock.sobran, isTrue);
       expect(stock.faltan, isFalse);
       expect(stock.sobrantes, 2);
@@ -186,8 +131,9 @@ void main() {
     test('los números dan redondos cuando coinciden', () {
       const stock = StockDeposito(
         tipo: Proveedor.tipoNovillo,
-        recuento: 8,
-        teoricoAlRecuento: 8,
+        inicial: 10,
+        teoricoAlRecuento: 10,
+        recuento: 10,
       );
       expect(stock.cierra, isTrue);
       expect(stock.faltan, isFalse);
@@ -196,80 +142,160 @@ void main() {
     });
 
     test('un resto de coma flotante no enciende la alerta', () {
-      // Tres cortes de un tercio sumados dan 0,99999...: sin tolerancia el
-      // sistema gritaría por una diezmilésima de media.
-      final teorico = 10 - (1 / 3 + 1 / 3 + 1 / 3);
-      final stock = StockDeposito(
+      const stock = StockDeposito(
         tipo: Proveedor.tipoNovillo,
-        recuento: 9,
-        teoricoAlRecuento: teorico,
+        teoricoAlRecuento: 10.000000001,
+        recuento: 10,
       );
-      expect(stock.cierra, isTrue, reason: 'teórico fue $teorico');
+      expect(stock.cierra, isTrue);
+      expect(stock.faltan, isFalse);
     });
 
     test('media media de diferencia sí enciende la alerta', () {
       const stock = StockDeposito(
         tipo: Proveedor.tipoNovillo,
-        recuento: 9.5,
         teoricoAlRecuento: 10,
+        recuento: 9.5,
       );
       expect(stock.cierra, isFalse);
       expect(stock.faltan, isTrue);
       expect(stock.faltantes, closeTo(0.5, 1e-12));
     });
-  });
 
-  group('el circuito completo de Rocío', () {
-    // "En Depósito quedaron 10 medias. Rocío presiona Salida > 2 medias >
-    // deben quedar 8 en depósito. Pero todavía está pendiente la carga de ese
-    // remito por esas 2 medias. Una vez que se registre ese remito ya dan los
-    // números redondos."
-    test('la salida sin remito deja 8 en la cámara y queda avisando', () {
-      final salida = DepositoMovimiento(
-        clase: DepositoMovimiento.claseSalida,
-        medias: 2,
-      );
-      final stock = StockDeposito(
-        tipo: Proveedor.tipoNovillo,
-        inicial: 10,
-        salidasPendientes: 2,
-        pendientes: [salida],
-        recuento: 8,
-        teoricoAlRecuento: 8,
-      );
-      expect(stock.teorico, 8);
-      expect(stock.cierra, isTrue, reason: 'la salida ya explica las 2');
-      expect(stock.hayPendientes, isTrue,
-          reason: 'pero el remito todavía falta');
-      expect(salida.esSalidaPendienteDeRemito, isTrue);
-      expect(salida.esSalidaDefinitiva, isFalse);
-    });
-
-    test('cargado el remito, la salida se cierra y el total no se duplica',
-        () {
-      // La salida deja de descontar (ya descuenta el remito), así que las 2
-      // medias se cuentan una sola vez: 10 - 2 = 8, no 6.
+    test('el recuento de hoy no se compara contra el teórico de hoy', () {
+      // Se contaron 10 y después entraron 200. El libro de hoy dice 210,
+      // pero el veredicto mira el de aquel momento: los números dan.
       const stock = StockDeposito(
         tipo: Proveedor.tipoNovillo,
         inicial: 10,
-        remitidas: 2,
-        salidasPendientes: 0,
-        recuento: 8,
-        teoricoAlRecuento: 8,
+        entradas: 200,
+        teoricoAlRecuento: 10,
+        recuento: 10,
+      );
+      expect(stock.teorico, 210);
+      expect(stock.cierra, isTrue);
+      expect(stock.faltan, isFalse);
+    });
+
+    test('un recuento sin teórico de su momento no alcanza para comparar', () {
+      const stock = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        recuento: 10,
+      );
+      expect(stock.tieneRecuento, isFalse);
+      expect(stock.diferencia, isNull);
+    });
+  });
+
+  group('el circuito de Rocío', () {
+    // Entra la carne, sale la carne, se cuenta la cámara. Los tres pasos se
+    // cargan a mano: el módulo no se enteró de ninguna compra ni de ningún
+    // remito, y no tiene por qué.
+
+    test('una entrada de 10 y una salida de 2 dejan 8 en la cámara', () {
+      final entrada = DepositoMovimiento(
+        tipo: Proveedor.tipoNovillo,
+        clase: DepositoMovimiento.claseEntrada,
+        medias: 10,
+        observacion: 'Llegó la faena',
+      );
+      final salida = DepositoMovimiento(
+        tipo: Proveedor.tipoNovillo,
+        clase: DepositoMovimiento.claseSalida,
+        medias: 2,
+        observacion: 'Se las llevó Firme',
+      );
+
+      expect(entrada.esEntrada, isTrue);
+      expect(salida.esSalida, isTrue);
+
+      final stock = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        entradas: entrada.medias,
+        salidas: salida.medias,
       );
       expect(stock.teorico, 8);
-      expect(stock.hayPendientes, isFalse);
+    });
+
+    test('todas las salidas descuentan igual, sea el motivo que sea', () {
+      // Hasta v19.15 una salida podía ser "pendiente de remito" o
+      // "definitiva" y la cuenta las trataba distinto. Ahora no: el motivo
+      // vive en la observación y no cambia el número.
+      final seLaLlevoUnCliente = DepositoMovimiento(
+        tipo: Proveedor.tipoNovillo,
+        clase: DepositoMovimiento.claseSalida,
+        medias: 2,
+        observacion: 'Se las llevó Firme',
+      );
+      final merma = DepositoMovimiento(
+        tipo: Proveedor.tipoNovillo,
+        clase: DepositoMovimiento.claseSalida,
+        medias: 1,
+        observacion: 'Merma',
+      );
+      expect(seLaLlevoUnCliente.esSalida, isTrue);
+      expect(merma.esSalida, isTrue);
+
+      final stock = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        inicial: 10,
+        salidas: seLaLlevoUnCliente.medias + merma.medias,
+      );
+      expect(stock.teorico, 7);
+    });
+
+    test('el recuento no mueve el stock: es solo la foto', () {
+      final recuento = DepositoMovimiento(
+        tipo: Proveedor.tipoNovillo,
+        clase: DepositoMovimiento.claseRecuento,
+        medias: 8,
+      );
+      expect(recuento.esRecuento, isTrue);
+      expect(recuento.esEntrada, isFalse);
+      expect(recuento.esSalida, isFalse);
+
+      // El recuento entra por `recuento`, nunca por entradas ni salidas.
+      final stock = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        inicial: 10,
+        salidas: 2,
+        teoricoAlRecuento: 8,
+        recuento: recuento.medias,
+      );
+      expect(stock.teorico, 8);
       expect(stock.cierra, isTrue);
     });
 
-    test('una salida definitiva descuenta para siempre', () {
-      final merma = DepositoMovimiento(
-        clase: DepositoMovimiento.claseSalida,
-        medias: 1,
-        esperaRemito: false,
+    test('la media que salió sin registrarse aparece en el recuento', () {
+      // El agujero original, que este módulo sigue tapando sin mirar remitos:
+      // el libro dice 10, en la cámara hay 8.
+      const stock = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        inicial: 10,
+        teoricoAlRecuento: 10,
+        recuento: 8,
       );
-      expect(merma.esSalidaDefinitiva, isTrue);
-      expect(merma.esSalidaPendienteDeRemito, isFalse);
+      expect(stock.faltantes, 2);
+    });
+
+    test('novillo y cerdo se cuentan aparte', () {
+      const novillo = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        inicial: 10,
+        salidas: 4,
+        teoricoAlRecuento: 6,
+        recuento: 4,
+      );
+      const cerdo = StockDeposito(
+        tipo: Proveedor.tipoCerdo,
+        inicial: 5,
+        teoricoAlRecuento: 5,
+        recuento: 5,
+      );
+      // El cerdo cierra y el novillo no: el sobrante de uno no tapa al otro.
+      expect(cerdo.cierra, isTrue);
+      expect(novillo.faltan, isTrue);
+      expect(novillo.faltantes, 2);
     });
   });
 
@@ -277,11 +303,11 @@ void main() {
     test('el número se formatea D-0001 y no se manda si no existe', () {
       final mov = DepositoMovimiento(
         clase: DepositoMovimiento.claseEntrada,
-        medias: 3,
+        medias: 1,
       );
+      // Lo asigna la secuencia de Postgres, no la app.
       expect(mov.numero, 0);
-      expect(mov.toMap().containsKey('numero'), isFalse,
-          reason: 'lo asigna la secuencia de Postgres');
+      expect(mov.toMap().containsKey('numero'), isFalse);
 
       mov.numero = 7;
       expect(mov.numeroFormateado, 'D-0007');
@@ -289,71 +315,91 @@ void main() {
     });
 
     test('las etiquetas de clase y tipo', () {
-      expect(
-        DepositoMovimiento(clase: DepositoMovimiento.claseEntrada).claseLabel,
-        'Entrada',
+      final entrada = DepositoMovimiento(
+        clase: DepositoMovimiento.claseEntrada,
+        tipo: Proveedor.tipoNovillo,
       );
-      expect(
-        DepositoMovimiento(clase: DepositoMovimiento.claseSalida).claseLabel,
-        'Salida',
+      final salida = DepositoMovimiento(
+        clase: DepositoMovimiento.claseSalida,
+        tipo: Proveedor.tipoCerdo,
       );
-      expect(
-        DepositoMovimiento(clase: DepositoMovimiento.claseRecuento).claseLabel,
-        'Recuento',
+      final recuento = DepositoMovimiento(
+        clase: DepositoMovimiento.claseRecuento,
       );
-      expect(
-        DepositoMovimiento(
-          clase: DepositoMovimiento.claseEntrada,
-          tipo: Proveedor.tipoCerdo,
-        ).tipoLabel,
-        'Cerdo',
-      );
+      expect(entrada.claseLabel, 'Entrada');
+      expect(salida.claseLabel, 'Salida');
+      expect(recuento.claseLabel, 'Recuento');
+      expect(entrada.tipoLabel, 'Novillo');
+      expect(salida.tipoLabel, 'Cerdo');
     });
 
     test('fromMap cae en novillo si el tipo viene raro', () {
       final mov = DepositoMovimiento.fromMap({
-        'id': 'm1',
-        'clase': 'entrada',
-        'medias': 2,
-        'tipo': null,
+        'clase': DepositoMovimiento.claseEntrada,
+        'medias': 3,
+        'tipo': 'cualquier cosa',
       });
       expect(mov.tipo, Proveedor.tipoNovillo);
+      expect(mov.medias, 3);
+    });
+
+    test('toMap ya no manda espera_remito', () {
+      // La columna sigue en la tabla con su DEFAULT, así que no hizo falta
+      // migración; lo que se fue es la distinción, que colgaba de los remitos.
+      final mov = DepositoMovimiento(
+        clase: DepositoMovimiento.claseSalida,
+        medias: 2,
+      );
+      expect(mov.toMap().containsKey('espera_remito'), isFalse);
+    });
+
+    test('fromMap ignora espera_remito si la fila vieja lo trae', () {
+      final mov = DepositoMovimiento.fromMap({
+        'clase': DepositoMovimiento.claseSalida,
+        'medias': 2,
+        'espera_remito': true,
+      });
+      expect(mov.esSalida, isTrue);
       expect(mov.medias, 2);
     });
 
     test('la baja arrastra el motivo y los datos del movimiento', () {
       final mov = DepositoMovimiento(
-        numero: 4,
+        numero: 12,
+        tipo: Proveedor.tipoCerdo,
         clase: DepositoMovimiento.claseSalida,
         medias: 2,
-        observacion: 'se la llevó el flete',
+        observacion: 'Para La Florida',
       );
       final baja = DepositoMovimientoEliminado.desde(
         mov,
-        observacion: 'cargada dos veces',
-        eliminadoPor: 'Rocío',
+        observacion: 'Me equivoqué de tipo',
+        eliminadoPor: 'Rocio',
       );
       expect(baja.movimientoId, mov.id);
-      expect(baja.movimientoNumero, 4);
+      expect(baja.movimientoNumero, 12);
+      expect(baja.tipo, Proveedor.tipoCerdo);
+      expect(baja.clase, DepositoMovimiento.claseSalida);
       expect(baja.medias, 2);
-      expect(baja.observacionOriginal, 'se la llevó el flete');
-      expect(baja.observacion, 'cargada dos veces');
-      expect(baja.eliminadoPor, 'Rocío');
+      expect(baja.observacionOriginal, 'Para La Florida');
+      expect(baja.observacion, 'Me equivoqué de tipo');
+      expect(baja.eliminadoPor, 'Rocio');
+      expect(baja.toMap().containsKey('espera_remito'), isFalse);
     });
   });
 
-  group('kg por media (v19.6)', () {
-    // Los kilos son INFORMATIVOS: la ecuación cierra por medias. Y son
-    // OPCIONALES, porque un campo obligatorio que frena a la cajera sin
-    // balanza a mano reabre el agujero que el módulo vino a tapar.
+  group('kg por media', () {
+    // Un kilo por cada media (no un total): dos medias pueden diferenciarse
+    // en 40 kg. Son OPCIONALES — si el campo frenara el registro cuando no
+    // hay balanza a mano, la salida no se registraría.
 
     test('el total es la suma de los kg cargados', () {
       final mov = DepositoMovimiento(
-        clase: DepositoMovimiento.claseSalida,
-        medias: 2,
-        kgsPorMedia: [118.5, 121],
+        clase: DepositoMovimiento.claseEntrada,
+        medias: 3,
+        kgsPorMedia: [118, 95, 102.5],
       );
-      expect(mov.totalKg, closeTo(239.5, 1e-9));
+      expect(mov.totalKg, closeTo(315.5, 1e-9));
       expect(mov.tieneKg, isTrue);
       expect(mov.mediasSinPesar, 0);
     });
@@ -363,7 +409,6 @@ void main() {
         clase: DepositoMovimiento.claseSalida,
         medias: 2,
       );
-      expect(mov.kgsPorMedia, isEmpty);
       expect(mov.totalKg, 0);
       expect(mov.tieneKg, isFalse);
       expect(mov.mediasSinPesar, 2);
@@ -371,17 +416,17 @@ void main() {
 
     test('avisa cuántas medias quedaron sin pesar', () {
       final mov = DepositoMovimiento(
-        clase: DepositoMovimiento.claseRecuento,
-        medias: 5,
-        kgsPorMedia: [120, 118],
+        clase: DepositoMovimiento.claseEntrada,
+        medias: 4,
+        kgsPorMedia: [110, 108],
       );
-      expect(mov.mediasSinPesar, 3);
+      expect(mov.mediasSinPesar, 2);
     });
 
-    test('con un corte, la media fraccionada cuenta como una a pesar', () {
+    test('una media fraccionada cuenta como una a pesar', () {
       final mov = DepositoMovimiento(
         clase: DepositoMovimiento.claseSalida,
-        medias: 1 / 3,
+        medias: 0.5,
       );
       expect(mov.mediasSinPesar, 1);
     });
@@ -390,7 +435,7 @@ void main() {
       final mov = DepositoMovimiento(
         clase: DepositoMovimiento.claseEntrada,
         medias: 1,
-        kgsPorMedia: [120, 118],
+        kgsPorMedia: [100, 105, 98],
       );
       expect(mov.mediasSinPesar, 0);
     });
@@ -399,16 +444,14 @@ void main() {
       final mov = DepositoMovimiento(
         clase: DepositoMovimiento.claseEntrada,
         medias: 2,
-        kgsPorMedia: [100, 110],
+        kgsPorMedia: [118, 95],
       );
-      expect(mov.toMap()['kgs_por_media'], [100, 110]);
+      expect(mov.toMap()['kgs_por_media'], [118, 95]);
     });
 
-    test('fromMap tolera que la columna no exista todavía', () {
-      // La columna se agregó en v19.6, con el módulo ya en producción.
+    test('fromMap tolera que la columna no exista', () {
       final mov = DepositoMovimiento.fromMap({
-        'id': 'm1',
-        'clase': 'salida',
+        'clase': DepositoMovimiento.claseEntrada,
         'medias': 2,
       });
       expect(mov.kgsPorMedia, isEmpty);
@@ -417,229 +460,55 @@ void main() {
 
     test('fromMap descarta basura en vez de romper la pantalla', () {
       final mov = DepositoMovimiento.fromMap({
-        'id': 'm1',
-        'clase': 'salida',
+        'clase': DepositoMovimiento.claseEntrada,
         'medias': 3,
-        'kgs_por_media': [120, 'ochenta', null, 95],
+        'kgs_por_media': [118, 'ochenta', null, 95],
       });
-      expect(mov.kgsPorMedia, [120, 95]);
-      expect(mov.totalKg, 215);
+      expect(mov.kgsPorMedia, [118, 95]);
+      expect(mov.totalKg, 213);
     });
 
     test('la baja se lleva los kg para poder reconstruir el movimiento', () {
       final mov = DepositoMovimiento(
-        numero: 3,
         clase: DepositoMovimiento.claseSalida,
         medias: 2,
-        kgsPorMedia: [118, 121],
+        kgsPorMedia: [118, 95],
       );
       final baja = DepositoMovimientoEliminado.desde(
         mov,
-        observacion: 'cargada dos veces',
+        observacion: 'Duplicada',
       );
-      expect(baja.kgsPorMedia, [118, 121]);
-      expect(baja.toMap()['kgs_por_media'], [118, 121]);
-    });
-
-    test('los kg NO entran en la ecuación: el veredicto es por medias', () {
-      // Mismo stock, un recuento con kg y otro sin: el veredicto no cambia.
-      const conKg = StockDeposito(
-        tipo: Proveedor.tipoNovillo,
-        inicial: 10,
-        recuento: 8,
-        teoricoAlRecuento: 8,
-        kgRecuento: 952,
-      );
-      const sinKg = StockDeposito(
-        tipo: Proveedor.tipoNovillo,
-        inicial: 10,
-        recuento: 8,
-        teoricoAlRecuento: 8,
-      );
-      expect(conKg.cierra, isTrue);
-      expect(sinKg.cierra, isTrue);
-      expect(conKg.teorico, sinKg.teorico);
-    });
-
-    test('el stock suma los kg de las salidas sin remito', () {
-      final salidas = [
-        DepositoMovimiento(
-          clase: DepositoMovimiento.claseSalida,
-          medias: 1,
-          kgsPorMedia: [118],
-        ),
-        DepositoMovimiento(
-          clase: DepositoMovimiento.claseSalida,
-          medias: 1,
-          kgsPorMedia: [122],
-        ),
-      ];
-      final stock = StockDeposito(
-        tipo: Proveedor.tipoNovillo,
-        inicial: 10,
-        salidasPendientes: 2,
-        pendientes: salidas,
-      );
-      expect(stock.kgPendientes, 240);
-      expect(stock.teorico, 8);
+      expect(baja.kgsPorMedia, [118, 95]);
+      expect(baja.toMap()['kgs_por_media'], [118, 95]);
     });
   });
-
-  group('DepositoConfig', () {
-    test('devuelve el inicial de cada stock por separado', () {
-      final config = DepositoConfig(mediasNovillo: 12, mediasCerdo: 3);
-      expect(config.inicialDe(Proveedor.tipoNovillo), 12);
-      expect(config.inicialDe(Proveedor.tipoCerdo), 3);
-    });
-
-    test('toMap manda `unica` para que el upsert tenga por dónde agarrar', () {
-      expect(DepositoConfig().toMap()['unica'], true);
-    });
-
-    test('devuelve los kg del arranque de cada stock (v19.9)', () {
-      final config = DepositoConfig(kgNovillo: 1200, kgCerdo: 180);
-      expect(config.kgInicialDe(Proveedor.tipoNovillo), 1200);
-      expect(config.kgInicialDe(Proveedor.tipoCerdo), 180);
-    });
-
-    test('un arranque sin pesar queda en cero, no rompe', () {
-      final config = DepositoConfig(mediasNovillo: 3);
-      expect(config.kgInicialDe(Proveedor.tipoNovillo), 0);
-      expect(config.toMap()['kg_novillo'], 0);
-    });
-  });
-
-
-  // ══════════════════════════════════════════
-  // v19.9 — qué pedazo quedó en la cámara
-  // ══════════════════════════════════════════
-  // La tabla de equivalencias dice cuánta media vale un corte; esto dice QUÉ
-  // PEDAZO es. Sin esto el stock sabe que quedan 1,67 medias pero nadie sabe
-  // qué puede vender.
-
-  group('las partes de la media', () {
-    test('una media entera no abre nada', () {
-      expect(partesDeCorte('Novillo'), isEmpty);
-      expect(partesDeCorte('Cerdo'), isEmpty);
-    });
-
-    test('cada corte se lleva su parte', () {
-      expect(partesDeCorte('Pierna mocha'), [partePierna]);
-      expect(partesDeCorte('Pierna pistola'), [partePierna]);
-      expect(partesDeCorte('Octavo'), [parteOctavo]);
-      expect(partesDeCorte('Plancha de asado'), [partePlancha]);
-    });
-
-    test('el 1/4 delantero se lleva dos partes de la misma media', () {
-      expect(partesDeCorte('1/4 delantero'), [parteOctavo, partePlancha]);
-    });
-
-    test('el nombre se ajusta a la cantidad', () {
-      expect(labelParte(parteOctavo, 1), 'octavo');
-      expect(labelParte(parteOctavo, 2), 'octavos');
-      expect(labelParte(partePlancha, 1), 'plancha de asado');
-      expect(labelParte(partePierna, 3), 'piernas');
-    });
-  });
-
-  group('lo que queda suelto', () {
-    test('remitir una pierna deja un octavo y una plancha de asado', () {
-      // El caso textual del usuario: se carga 1 pierna (un tercio de la
-      // media) y lo que queda para vender es un octavo y una plancha.
-      const cortes = CortesVendidos(piernas: 1);
-      expect(cortes.mediasAbiertas, 1);
-      expect(cortes.piernasSueltas, 0);
-      expect(cortes.octavosSueltos, 1);
-      expect(cortes.planchasSueltas, 1);
-      expect(cortes.sueltasEnMedias, closeTo(2 / 3, 1e-12));
-    });
-
-    test('el 1/4 delantero deja la pierna', () {
-      const cortes = CortesVendidos(octavos: 1, planchas: 1);
-      expect(cortes.mediasAbiertas, 1);
-      expect(cortes.piernasSueltas, 1);
-      expect(cortes.octavosSueltos, 0);
-      expect(cortes.planchasSueltas, 0);
-    });
-
-    test('tres piernas abren tres medias, no una', () {
-      // Físicamente no salen tres piernas de una media: hay que abrir tres y
-      // quedan tres octavos y tres planchas dando vueltas.
-      const cortes = CortesVendidos(piernas: 3);
-      expect(cortes.mediasAbiertas, 3);
-      expect(cortes.octavosSueltos, 3);
-      expect(cortes.planchasSueltas, 3);
-      expect(cortes.sueltasEnMedias, closeTo(2, 1e-12));
-    });
-
-    test('una media servida entera, de a pedazos, no deja nada suelto', () {
-      const cortes = CortesVendidos(piernas: 1, octavos: 1, planchas: 1);
-      expect(cortes.mediasAbiertas, 1);
-      expect(cortes.haySueltas, isFalse);
-      expect(cortes.sueltasEnMedias, 0);
-    });
-
-    test('sin cortes no hay nada abierto', () {
-      const cortes = CortesVendidos();
-      expect(cortes.mediasAbiertas, 0);
-      expect(cortes.haySueltas, isFalse);
-    });
-
-    test('enteras + sueltas dan exactamente el stock', () {
-      // La cuenta nueva no puede contradecir a la vieja: el caso real de
-      // producción, 3 al arranque + 3 de entrada − 3 novillos − 1 novillo −
-      // 1 pierna = 1,67 medias, que son 1 entera + 1 octavo + 1 plancha.
-      const stock = StockDeposito(
-        tipo: Proveedor.tipoNovillo,
-        inicial: 3,
-        entradas: 3,
-        remitidas: 4 + 1 / 3,
-        cortes: CortesVendidos(piernas: 1),
-      );
-      expect(stock.teorico, closeTo(1 + 2 / 3, 1e-12));
-      expect(stock.mediasEnteras, closeTo(1, 1e-12));
-      expect(stock.mediasSueltas, closeTo(2 / 3, 1e-12));
-      expect(
-        stock.mediasEnteras + stock.mediasSueltas,
-        closeTo(stock.teorico, 1e-12),
-      );
-      expect(stock.hayPartesSueltas, isTrue);
-    });
-
-    test('el cerdo nunca se fracciona', () {
-      const stock = StockDeposito(tipo: Proveedor.tipoCerdo, inicial: 3);
-      expect(stock.hayPartesSueltas, isFalse);
-      expect(stock.mediasEnteras, 3);
-    });
-  });
-
-  // ══════════════════════════════════════════
-  // v19.9 — los kilos de lo que hay en la cámara
-  // ══════════════════════════════════════════
-  // Misma ecuación que las medias pero en peso. Siguen siendo informativos:
-  // el veredicto de faltantes NO los mira.
 
   group('los kilos del stock', () {
-    test('el kg teórico sigue la misma ecuación que las medias', () {
+    test('el kg teórico sigue la misma cuenta que las medias', () {
       const stock = StockDeposito(
         tipo: Proveedor.tipoNovillo,
-        kgInicial: 375,
-        kgComprados: 8097,
-        kgEntradas: 120,
-        kgRemitidos: 5000,
-        kgSalidasPendientes: 240,
-        kgSalidasDefinitivas: 100,
+        inicial: 4,
+        entradas: 2,
+        salidas: 1,
+        kgInicial: 440,
+        kgEntradas: 220,
+        kgSalidas: 110,
       );
-      // 375 + 8097 + 120 - 5000 - 240 - 100
-      expect(stock.kgTeorico, 3252);
+      expect(stock.teorico, 5);
+      expect(stock.kgTeorico, 550);
       expect(stock.tieneKg, isTrue);
+      expect(stock.kgIncompleto, isFalse);
     });
 
     test('nunca da negativo: sería lo que falta pesar, no un faltante', () {
+      // Salió carne pesada de una entrada que nadie pesó. El kilaje queda
+      // incompleto, y un negativo haría pensar en un faltante que no existe.
       const stock = StockDeposito(
         tipo: Proveedor.tipoNovillo,
-        kgRemitidos: 523.9,
-        mediasSinPesar: 3,
+        inicial: 10,
+        salidas: 2,
+        kgSalidas: 230,
+        mediasSinPesar: 10,
       );
       expect(stock.kgTeorico, 0);
       expect(stock.tieneKg, isFalse);
@@ -647,31 +516,76 @@ void main() {
     });
 
     test('avisa cuando hay medias sin pesar', () {
-      const completo = StockDeposito(
+      const stock = StockDeposito(
         tipo: Proveedor.tipoNovillo,
-        kgInicial: 375,
-      );
-      expect(completo.kgIncompleto, isFalse);
-
-      const aMedias = StockDeposito(
-        tipo: Proveedor.tipoNovillo,
-        kgInicial: 375,
+        inicial: 4,
+        entradas: 2,
+        kgInicial: 440,
         mediasSinPesar: 2,
       );
-      expect(aMedias.kgIncompleto, isTrue);
+      expect(stock.kgTeorico, 440);
+      expect(stock.tieneKg, isTrue);
+      expect(stock.kgIncompleto, isTrue);
     });
 
     test('los kilos no cambian el veredicto, que es por medias', () {
-      const stock = StockDeposito(
+      // Mismo stock en medias, kilajes distintos: el veredicto es el mismo.
+      const sinKg = StockDeposito(
         tipo: Proveedor.tipoNovillo,
         inicial: 10,
-        kgInicial: 1200,
-        kgRemitidos: 9999,
-        recuento: 10,
         teoricoAlRecuento: 10,
+        recuento: 8,
       );
-      expect(stock.cierra, isTrue);
-      expect(stock.faltan, isFalse);
+      const conKg = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        inicial: 10,
+        kgInicial: 1100,
+        kgRecuento: 880,
+        teoricoAlRecuento: 10,
+        recuento: 8,
+      );
+      expect(sinKg.faltantes, 2);
+      expect(conKg.faltantes, 2);
+      expect(conKg.cierra, sinKg.cierra);
+    });
+
+    test('un kilaje incompleto se mide con la tolerancia de medias', () {
+      const nada = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        kgInicial: 100,
+        mediasSinPesar: 0,
+      );
+      const resto = StockDeposito(
+        tipo: Proveedor.tipoNovillo,
+        kgInicial: 100,
+        mediasSinPesar: 0.001,
+      );
+      expect(nada.kgIncompleto, isFalse);
+      expect(resto.kgIncompleto, isFalse);
+    });
+  });
+
+  group('DepositoConfig', () {
+    test('devuelve el inicial de cada stock por separado', () {
+      final config = DepositoConfig(mediasNovillo: 10, mediasCerdo: 4);
+      expect(config.inicialDe(Proveedor.tipoNovillo), 10);
+      expect(config.inicialDe(Proveedor.tipoCerdo), 4);
+    });
+
+    test('toMap manda `unica` para que el upsert tenga por dónde agarrar', () {
+      expect(DepositoConfig().toMap()['unica'], isTrue);
+    });
+
+    test('devuelve los kg del arranque de cada stock', () {
+      final config = DepositoConfig(kgNovillo: 1100, kgCerdo: 320);
+      expect(config.kgInicialDe(Proveedor.tipoNovillo), 1100);
+      expect(config.kgInicialDe(Proveedor.tipoCerdo), 320);
+    });
+
+    test('un arranque sin pesar queda en cero, no rompe', () {
+      final config = DepositoConfig(mediasNovillo: 8);
+      expect(config.kgInicialDe(Proveedor.tipoNovillo), 0);
+      expect(config.kgInicialDe(Proveedor.tipoCerdo), 0);
     });
   });
 
@@ -681,8 +595,8 @@ void main() {
       expect(formatMedias(200), '200');
     });
 
-    test('hasta dos decimales cuando hay cortes', () {
-      expect(formatMedias(1 / 3), '0,33');
+    test('hasta dos decimales cuando hay fracciones', () {
+      expect(formatMedias(0.5), '0,5');
       expect(formatMedias(10.5), '10,5');
     });
 
