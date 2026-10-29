@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
 import '../utils/formatters.dart';
+import '../utils/lectura_permitida.dart';
 
 class AppProvider extends ChangeNotifier {
   final DatabaseService _db = DatabaseService();
@@ -134,6 +135,75 @@ class AppProvider extends ChangeNotifier {
   }
 
   // ═══════════════════════════════════════════
+  // QUÉ PUEDE LEER ESTE ROL
+  // ═══════════════════════════════════════════
+  // Bajo RLS, una tabla denegada vuelve **vacía, no con error**. Y el saldo es
+  // `remitos − pagos ± notas`, así que un `pagos` vacío por falta de permiso
+  // no da un saldo incompleto: da un saldo **más alto que el real**, que es el
+  // que hace que alguien salga a cobrar plata que ya cobró.
+  //
+  // Por eso el provider resuelve de antemano qué puede leer, no se lo pregunta
+  // a los resultados. La decisión vive en `utils/lectura_permitida.dart`.
+
+  LecturaPermitida _lectura = LecturaPermitida.todo;
+
+  /// Qué tablas puede leer el usuario actual.
+  LecturaPermitida get lectura => _lectura;
+
+  /// Si las tablas que hacen al saldo están todas disponibles.
+  ///
+  /// Cuando es false, **los saldos no se calculan** y todos los getters
+  /// devuelven 0. No es que el saldo sea 0: es que no se sabe. Una pantalla
+  /// que muestre un saldo tiene que consultar esto antes y decir "no
+  /// disponible" en vez de un número — mismo criterio que `mediasSinPesar` en
+  /// el depósito, donde un número que parece exacto y no lo es es peor que no
+  /// mostrarlo.
+  ///
+  /// Hoy ningún rol que llegue a una pantalla con saldo cae acá, porque la
+  /// regla del saldo le da lectura sobre las tres tablas justamente a los
+  /// permisos que abren esas pantallas. Esto es la red para el día que eso
+  /// deje de ser cierto (un permiso nuevo, un rol armado a mano).
+  bool get saldosConfiables => _lectura.saldosConfiables;
+
+  /// Si una tabla que el provider necesitaba quedó sin leer por permisos.
+  bool tablaDisponible(String tabla) => _lectura.puedeLeer(tabla);
+
+  /// Lo que puede leer el usuario logueado.
+  ///
+  /// **Mientras RLS esté apagado en todas las tablas, devuelve `todo`.** La
+  /// base hoy no niega nada, así que recortar las queries por permiso no
+  /// protegería nada y solo cambiaría el comportamiento de la app antes de
+  /// tiempo. El día que se encienda la primera tabla, esto pasa a derivar de
+  /// los permisos del rol — y es un cambio de una línea, a propósito.
+  LecturaPermitida _lecturaDelUsuario() {
+    if (!rlsEncendido) return LecturaPermitida.todo;
+
+    final u = _usuarioActual;
+    if (u == null) return LecturaPermitida.nada;
+    return LecturaPermitida(
+      permisos: u.rol?.permisoIds.toSet() ?? const {},
+      esAdmin: u.esAdmin,
+    );
+  }
+
+  /// **El interruptor de la Fase 2.** Se pone en `true` recién cuando se
+  /// enciende RLS en producción (ver el punto 7 de
+  /// `supabase_migration_rls_politicas.sql`).
+  ///
+  /// Está como constante y no como consulta a la base a propósito: preguntarle
+  /// a Postgres qué tablas tienen RLS sería una query más en cada login para
+  /// un dato que cambia una vez en la vida del sistema.
+  static const rlsEncendido = false;
+
+  /// Corre [query] solo si el rol puede leer [tabla]; si no, devuelve [vacio]
+  /// sin ir a la red.
+  Future<T> _siPuede<T>(
+      String tabla, Future<T> Function() query, T vacio) async {
+    if (!_lectura.puedeLeer(tabla)) return vacio;
+    return query();
+  }
+
+  // ═══════════════════════════════════════════
   // CARGA INICIAL
   // ═══════════════════════════════════════════
 
@@ -143,19 +213,33 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Carga de datos en paralelo para reducir el tiempo de espera inicial
+      // Qué puede leer este rol. Se resuelve ANTES de preguntar, no después:
+      // bajo RLS una tabla denegada vuelve vacía y no hay forma de saber a
+      // posteriori si vino vacía por falta de permiso o porque no hay datos.
+      _lectura = _lecturaDelUsuario();
+
+      // Carga de datos en paralelo para reducir el tiempo de espera inicial.
+      // Lo que el rol no puede leer **no se pide**: es una query menos y,
+      // sobre todo, deja registrado que esa tabla no está disponible.
       final results = await Future.wait([
         _db.getVendedores(),
         _db.getClientes(),
-        _db.getRemitos(),
-        _db.getPagos(),
-        _db.getPagosEliminados(),
-        _db.getRemitoEliminados(),
-        _db.getNotasPedido(),
-        _db.getNotasPedidoEliminadas(),
-        _db.getCostoSemana(DateTime.now()),
-        _db.getAllCostosSemana(),
-        _db.getNotasCreditoDebito(),
+        _siPuede(TablaLectura.remitos, _db.getRemitos, const <Remito>[]),
+        _siPuede(TablaLectura.pagos, _db.getPagos, const <Pago>[]),
+        _siPuede(TablaLectura.pagosEliminados, _db.getPagosEliminados,
+            const <PagoEliminado>[]),
+        _siPuede(TablaLectura.remitosEliminados, _db.getRemitoEliminados,
+            const <RemitoEliminado>[]),
+        _siPuede(
+            TablaLectura.notasPedido, _db.getNotasPedido, const <NotaPedido>[]),
+        _siPuede(TablaLectura.notasPedidoEliminadas,
+            _db.getNotasPedidoEliminadas, const <NotaPedidoEliminada>[]),
+        _siPuede(TablaLectura.costosSemana,
+            () => _db.getCostoSemana(DateTime.now()), null),
+        _siPuede(TablaLectura.costosSemana, _db.getAllCostosSemana,
+            const <CostoSemanal>[]),
+        _siPuede(TablaLectura.notasCreditoDebito, _db.getNotasCreditoDebito,
+            const <NotaCreditoDebito>[]),
       ]);
       _vendedores = results[0] as List<Vendedor>;
       _ordenarVendedores();
@@ -173,7 +257,9 @@ class AppProvider extends ChangeNotifier {
 
       // Items de remito en una sola query, agrupados en memoria
       _remitoItems.clear();
-      final allItems = await _db.getAllRemitoItems();
+      final allItems = await _siPuede(
+          TablaLectura.remitoItems, _db.getAllRemitoItems,
+          const <RemitoItem>[]);
       for (final item in allItems) {
         _remitoItems.putIfAbsent(item.remitoId, () => []).add(item);
       }
@@ -193,6 +279,13 @@ class AppProvider extends ChangeNotifier {
   Future<void> _recalcularSaldos() async {
     _saldosClientes.clear();
     _saldosVendedores.clear();
+
+    // Sin una de las tres tablas del saldo, la cuenta daría **de más**, no de
+    // menos: `remitos − pagos` con `pagos` denegado es "todo lo remitido".
+    // Así que no se calcula. Los getters quedan en 0, que subestima en vez de
+    // inflar — el lado seguro del error — y `saldosConfiables` es lo que la
+    // pantalla tiene que mirar para no mostrar ese 0 como si fuera un saldo.
+    if (!_lectura.saldosConfiables) return;
 
     for (final cliente in _clientes) {
       // Solo remitos CONFIRMADOS cuentan para el saldo

@@ -246,8 +246,8 @@ Permisos de cada rol, tal como están en `rol_permisos` hoy:
 |---|---|---|---|---|---|
 | `vendedores` | L+AMB | L+AMB | L+AMB | L | Lectura: cualquier usuario (los nombres salen en filtros y en el reparto). Escritura: `gestionar_vendedores` |
 | `clientes` | L+AMB | L+AMB | L+AMB | L | Lectura: cualquier usuario (la Lista de reparto es para todos y necesita los nombres). Escritura: `gestionar_clientes` |
-| `remitos` | L+AMB | L+AM | L | L | Lectura: **regla del saldo** (abajo) ∨ `crear_remito` ∨ `gestionar_deposito`. Alta: `crear_remito`. Modif.: `editar_remito` ∨ `confirmar_remito`. Baja: `eliminar_remito` |
-| `remito_items` | L+AMB | L+AM | L | L | Sigue a `remitos` (los ítems no tienen vida propia) |
+| `remitos` | L+AMB | L+AM | L | **—** | Lectura: **regla del saldo** (abajo) ∨ `crear_remito`. Alta: `crear_remito` ∨ `confirmar_remito` (confirmar una NDP **crea** un remito). Modif.: `editar_remito` ∨ `confirmar_remito`. Baja: `eliminar_remito` |
+| `remito_items` | L+AMB | L+AM | L | **—** | Sigue a `remitos` (los ítems no tienen vida propia) |
 | `pagos` | L+AMB | L+A | L+AB | **—** | Lectura: **regla del saldo** (abajo). Alta: `crear_pago`. Baja: `editar_pago`. **No hay modificación: los pagos no se editan** (generaba errores de saldo) |
 | `pago_medios` | L+AMB | L+A | L+AB | **—** | Sigue a `pagos` |
 | `notas_credito_debito` | L+AMB | L+A | L+AB | **—** | Igual que `pagos`: mueve el saldo de un cliente. Lectura: **regla del saldo**. Alta: `crear_pago` (gate de la pantalla desde v19.14). Baja: `editar_pago` |
@@ -288,11 +288,25 @@ Permisos de cada rol, tal como están en `rol_permisos` hoy:
 
 | Tabla | ADM | SEC | COB | DEP | Permiso que manda |
 |---|---|---|---|---|---|
-| `proveedores` | L+AMB | L+AMB | — | **L** | Escritura: `gestionar_proveedores`. **Lectura también con `gestionar_deposito`**: el tipo novillo/cerdo de una carga se lee del proveedor, no está congelado en la carga |
-| `cargas` | L+AMB | L+AMB | — | **L** | Escritura: `gestionar_proveedores`. **Lectura también con `gestionar_deposito`**: el stock teórico se deriva de las cargas |
+| `proveedores` | L+AMB | L+AMB | — | **—** | `gestionar_proveedores`. Ver la nota de la PR #20 abajo |
+| `cargas` | L+AMB | L+AMB | — | **—** | `gestionar_proveedores`. Ver la nota de la PR #20 abajo |
 | `carga_pagos` | L+AMB | L+AMB | — | — | `gestionar_proveedores` (el depósito no mira la plata que se le paga al proveedor) |
 | `deposito_config` | L+AMB | L+AMB | — | L+AMB | `gestionar_deposito` |
 | `deposito_movimientos` | L+AMB | L+AMB | — | L+AMB | `gestionar_deposito` |
+
+> **Estas cuatro celdas dependen de la PR #20** ("el depósito es el registro de lo que hay,
+> no se reconcilia contra remitos"). Ahí `cargarDeposito` pasó a leer **solo**
+> `deposito_config` y `deposito_movimientos`: ya no lee `cargas`, ni `proveedores`, ni
+> `remitos`. Verificado en esa rama.
+>
+> Es un recorte real y bienvenido: **el Encargado de Depósito queda sin acceso a nada del
+> circuito comercial.** Su acceso completo pasa a ser `deposito_*`, `reparto_*`, `clientes`
+> y `vendedores` (para los nombres), `soportes` (los propios) y su propia fila de `usuarios`.
+>
+> **Si la PR #20 no se mergeara**, hay que devolverle la lectura de esas cuatro tablas o el
+> módulo se rompe. Los `ALTER POLICY` exactos están en el encabezado de la sección 4 de
+> `supabase_migration_rls_politicas.sql`, y `test/lectura_permitida_test.dart` tiene el caso
+> que se pone rojo si una de las dos puntas se mueve sin la otra.
 
 ### 5.3 Auditoría — se escribe una vez y no se toca nunca más
 
