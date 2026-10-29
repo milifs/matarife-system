@@ -2,10 +2,16 @@
 // ASISTENTE DE REPARTO (chatbox del robot)
 // ============================================================
 // Chat flotante para que Joaco arme el reparto por voz/texto.
-// Escribe/dicta una frase ("3 de cerdo y 2 de carne para Perico"),
-// el asistente la interpreta con Claude (Edge Function parse-reparto),
-// resuelve los nombres contra la lista de clientes y aplica los
-// cambios DIRECTO en la base (reparto_listas / reparto_items).
+// Escribe/dicta una frase ("para Perico 3 medias de carne el jueves y
+// 5 de cerdo el sábado"), el asistente la interpreta con Claude (Edge
+// Function parse-reparto), resuelve los nombres contra la lista de
+// clientes y aplica los cambios DIRECTO en la base (reparto_listas /
+// reparto_items).
+//
+// El DÍA lo dice el comando, no hay selector: una misma frase puede
+// tocar dos días distintos, y cada pedido va a la lista de su día. Si
+// un pedido no dice el día, el asistente lo pregunta en la propuesta
+// en vez de adivinarlo.
 //
 // Es autónomo: no depende de la pantalla de reparto abierta. Por eso
 // persiste con DatabaseService y NO toca el estado de RepartoScreen.
@@ -65,22 +71,41 @@ class _Mensaje {
 }
 
 /// Propuesta interpretada (una tanda de items) esperando confirmación.
+/// Los items pueden ser de días distintos: cada uno lleva el suyo.
 class _Propuesta {
-  final String dia; // 'jueves' | 'viernes' — día destino ya resuelto
   final List<_Resolucion> resoluciones;
   bool aplicada = false;
 
-  _Propuesta({required this.dia, required this.resoluciones});
+  _Propuesta({required this.resoluciones});
 
-  bool get hayAplicables =>
-      !aplicada && resoluciones.any((r) => r.incluir && r.clienteId != null);
+  bool get hayAplicables => !aplicada && resoluciones.any((r) => r.aplicable);
+
+  /// Los días que toca esta propuesta, en el orden de la semana.
+  List<String> get dias => diasReparto
+      .where((d) => resoluciones.any((r) => r.aplicable && r.dia == d))
+      .toList();
 }
 
 class _Resolucion {
   final RepartoParseItem item;
   String? clienteId;
+
+  /// Día destino de ESTE pedido. Arranca con el que dijo el comando y el
+  /// usuario lo puede elegir si no lo dijo.
+  String? dia;
+
   bool incluir = true;
-  _Resolucion({required this.item, required this.clienteId});
+
+  _Resolucion({required this.item, required this.clienteId})
+      : dia = item.dia;
+
+  /// Una carga sin medias no dice a qué tabla va (carne o cerdo), así que
+  /// no se puede aplicar: hay que decir cuántas.
+  bool get tieneCantidad =>
+      item.esBorrar || item.carne > 0 || item.cerdo > 0;
+
+  bool get aplicable =>
+      incluir && clienteId != null && dia != null && tieneCantidad;
 }
 
 // ─────────────────────────────────────────────
@@ -99,7 +124,6 @@ class _AsistenteRepartoSheetState extends State<_AsistenteRepartoSheet> {
   final _scrollCtrl = ScrollController();
 
   final List<_Mensaje> _mensajes = [];
-  String _dia = 'jueves'; // día destino por defecto
   bool _procesando = false;
 
   late final DateTime _semana; // lunes de esta semana
@@ -111,9 +135,10 @@ class _AsistenteRepartoSheetState extends State<_AsistenteRepartoSheet> {
     final lunes = hoy.subtract(Duration(days: hoy.weekday - 1));
     _semana = DateTime(lunes.year, lunes.month, lunes.day);
     _mensajes.add(_Mensaje.bot(
-      'Hola Joaco. Decime qué cargar en el reparto. Por ejemplo: '
-      '"3 medias de cerdo y 2 de carne para Perico". '
-      'Podés nombrar el día (jueves o viernes) o dejar el que está elegido acá arriba.',
+      'Hola Joaco. Decime qué cargar en el reparto y para qué día. '
+      'Por ejemplo: "agregar para Perico 3 medias de carne para el jueves '
+      'y 5 medias de cerdo para el sábado". '
+      'Si no decís el día, te lo pregunto antes de guardar.',
     ));
   }
 
@@ -154,7 +179,6 @@ class _AsistenteRepartoSheetState extends State<_AsistenteRepartoSheet> {
     try {
       result = await RepartoIaService.interpretar(
         texto: texto,
-        diaActual: _dia,
         clientes: app.clientes.map((c) => c.nombreRazonSocial).toList(),
       );
     } catch (e) {
@@ -182,8 +206,6 @@ class _AsistenteRepartoSheetState extends State<_AsistenteRepartoSheet> {
       return;
     }
 
-    // Día destino: el que detectó la IA, o el elegido en la barra.
-    final diaDestino = result.dia ?? _dia;
     final resoluciones = result.items.map((it) {
       final matches = _matchClientes(it.cliente, app.clientes);
       return _Resolucion(
@@ -192,26 +214,27 @@ class _AsistenteRepartoSheetState extends State<_AsistenteRepartoSheet> {
       );
     }).toList();
 
+    final faltaDia = resoluciones.any((r) => r.dia == null);
     setState(() {
-      _dia = diaDestino;
       _procesando = false;
       _mensajes.add(_Mensaje.bot(
-        'Entendí esto para el ${_cap(diaDestino)}. Revisá y confirmá:',
-        propuesta:
-            _Propuesta(dia: diaDestino, resoluciones: resoluciones),
+        faltaDia
+            ? 'Entendí esto, pero falta el día en alguno. Elegilo y confirmá:'
+            : 'Entendí esto. Revisá y confirmá:',
+        propuesta: _Propuesta(resoluciones: resoluciones),
       ));
     });
     _scrollAbajo();
   }
 
-  /// Muestra la lista de reparto actual del día elegido (para revisar sobre
-  /// qué se está trabajando antes o después de dictar cambios).
-  Future<void> _verLista() async {
+  /// Muestra la lista de reparto actual de un día (para revisar sobre qué
+  /// se está trabajando antes o después de dictar cambios).
+  Future<void> _verLista(String dia) async {
     final app = context.read<AppProvider>();
     setState(() => _procesando = true);
     ({RepartoLista lista, bool precargado}) res;
     try {
-      res = await _db.getRepartoListaOPlantilla(_semana, _dia);
+      res = await _db.getRepartoListaOPlantilla(_semana, dia);
     } catch (_) {
       if (!mounted) return;
       setState(() => _procesando = false);
@@ -226,7 +249,7 @@ class _AsistenteRepartoSheetState extends State<_AsistenteRepartoSheet> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => _VistaLista(
-        dia: _dia,
+        dia: dia,
         lista: res.lista,
         precargado: res.precargado,
         nombre: (id) =>
@@ -253,54 +276,69 @@ class _AsistenteRepartoSheetState extends State<_AsistenteRepartoSheet> {
   Future<void> _aplicar(_Propuesta prop) async {
     setState(() => _procesando = true);
 
-    final aplicables = prop.resoluciones
-        .where((r) => r.incluir && r.clienteId != null)
-        .toList();
+    final aplicables = prop.resoluciones.where((r) => r.aplicable).toList();
 
     try {
-      // Cargar la lista del día destino en la semana actual. Si todavía no
-      // existe, viene sembrada con la de la semana anterior, así el update /
-      // insert / delete se hace sobre esa base (los clientes que repiten).
-      final lista =
-          (await _db.getRepartoListaOPlantilla(_semana, prop.dia)).lista;
-      final items = List<RepartoItem>.from(lista.items);
+      final resumenes = <String>[];
+      // Un pedido por día: cada día es una lista aparte en la base.
+      for (final dia in prop.dias) {
+        // Cargar la lista del día en la semana actual. Si todavía no existe,
+        // viene sembrada con la de la semana anterior, así el update /
+        // insert / delete se hace sobre esa base (los clientes que repiten).
+        final lista = (await _db.getRepartoListaOPlantilla(_semana, dia)).lista;
+        final items = List<RepartoItem>.from(lista.items);
 
-      var cargados = 0;
-      var borrados = 0;
-      for (final r in aplicables) {
-        if (r.item.esBorrar) {
-          final antes = items.length;
-          items.removeWhere((it) => it.clienteId == r.clienteId);
-          if (items.length < antes) borrados++;
-        } else {
-          final idx = items.indexWhere((it) => it.clienteId == r.clienteId);
-          if (idx >= 0) {
-            final it = items[idx];
-            if (r.item.carne > 0) it.mediasCarne = r.item.carne;
-            if (r.item.cerdo > 0) it.mediasCerdo = r.item.cerdo;
-            if (r.item.sucursal.isNotEmpty) it.sucursal = r.item.sucursal;
-          } else {
-            items.add(RepartoItem(
-              clienteId: r.clienteId!,
-              mediasCarne: r.item.carne,
-              mediasCerdo: r.item.cerdo,
-              sucursal: r.item.sucursal,
-              orden: items.length,
-            ));
+        var cargados = 0;
+        var borrados = 0;
+        for (final r in aplicables.where((r) => r.dia == dia)) {
+          if (r.item.esBorrar) {
+            // Sacar al cliente lo saca de las dos tablas de ese día.
+            final antes = items.length;
+            items.removeWhere((it) => it.clienteId == r.clienteId);
+            if (items.length < antes) borrados++;
+            continue;
           }
+          // Una fila por mercadería: solo se toca la que el pedido menciona,
+          // para no pisar en cero lo que ya tenía cargado en la otra tabla.
+          final pedido = {
+            tipoRepartoCarne: r.item.carne,
+            tipoRepartoCerdo: r.item.cerdo,
+          };
+          pedido.forEach((tipo, medias) {
+            if (medias <= 0) return;
+            final idx = items.indexWhere(
+                (it) => it.clienteId == r.clienteId && it.tipo == tipo);
+            if (idx >= 0) {
+              items[idx].medias = medias;
+              if (r.item.sucursal.isNotEmpty) {
+                items[idx].sucursal = r.item.sucursal;
+              }
+            } else {
+              items.add(RepartoItem(
+                clienteId: r.clienteId!,
+                tipo: tipo,
+                medias: medias,
+                sucursal: r.item.sucursal,
+                orden: items.length,
+              ));
+            }
+          });
           cargados++;
         }
-      }
 
-      lista.items = items;
-      await _db.guardarReparto(lista);
+        lista.items = items;
+        await _db.guardarReparto(lista);
+        resumenes.add(
+            '${labelDiaReparto(dia)}: ${_resumenAplicado(cargados, borrados)}');
+      }
 
       if (!mounted) return;
       setState(() {
         prop.aplicada = true;
         _procesando = false;
-        _mensajes.add(_Mensaje.bot(
-            '${_resumenAplicado(cargados, borrados)} en el ${_cap(prop.dia)}.'));
+        _mensajes.add(_Mensaje.bot(resumenes.isEmpty
+            ? 'No hubo cambios para aplicar.'
+            : resumenes.join('\n')));
       });
       _scrollAbajo();
     } catch (e) {
@@ -314,21 +352,18 @@ class _AsistenteRepartoSheetState extends State<_AsistenteRepartoSheet> {
     }
   }
 
+  /// Fragmento en minúscula: se compone con el día ("Jueves: cargué 2…").
   String _resumenAplicado(int cargados, int borrados) {
     final partes = <String>[];
     if (cargados > 0) {
-      partes.add('Cargué $cargados ${cargados == 1 ? "cliente" : "clientes"}');
+      partes.add('cargué $cargados ${cargados == 1 ? "cliente" : "clientes"}');
     }
     if (borrados > 0) {
       partes.add('saqué $borrados ${borrados == 1 ? "cliente" : "clientes"}');
     }
-    if (partes.isEmpty) return 'No hubo cambios';
-    final txt = partes.join(' y ');
-    return '${txt[0].toUpperCase()}${txt.substring(1)}';
+    if (partes.isEmpty) return 'no hubo cambios';
+    return partes.join(' y ');
   }
-
-  String _cap(String s) =>
-      s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
 
   @override
   Widget build(BuildContext context) {
@@ -382,29 +417,24 @@ class _AsistenteRepartoSheetState extends State<_AsistenteRepartoSheet> {
                 Text('Asistente de reparto',
                     style:
                         TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                Text('Cargá el reparto hablando',
+                Text('Decí el pedido y el día',
                     style: TextStyle(
                         fontSize: 12, color: AppTheme.textSecondary)),
               ],
             ),
           ),
-          // Selector de día destino
-          SegmentedButton<String>(
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            segments: const [
-              ButtonSegment(value: 'jueves', label: Text('Jue')),
-              ButtonSegment(value: 'viernes', label: Text('Vie')),
-            ],
-            selected: {_dia},
-            onSelectionChanged: (s) => setState(() => _dia = s.first),
-          ),
-          IconButton(
-            tooltip: 'Ver lista del día',
-            onPressed: _procesando ? null : _verLista,
+          // Ya no hay día elegido: el día lo dice el comando, así que
+          // para mirar una lista hay que decir cuál.
+          PopupMenuButton<String>(
+            tooltip: 'Ver la lista de un día',
+            enabled: !_procesando,
             icon: const Icon(Icons.receipt_long),
+            onSelected: _verLista,
+            itemBuilder: (_) => [
+              for (final d in diasReparto)
+                PopupMenuItem(
+                    value: d, child: Text('Ver el ${labelDiaReparto(d)}')),
+            ],
           ),
           IconButton(
             tooltip: 'Cerrar',
@@ -544,13 +574,22 @@ class _AsistenteRepartoSheetState extends State<_AsistenteRepartoSheet> {
                         ),
                       ),
                     ),
-                    if (!esBorrar) ...[
+                    if (!esBorrar && r.tieneCantidad) ...[
                       const SizedBox(width: 6),
-                      Text('${r.item.carne} carne · ${r.item.cerdo} cerdo',
+                      Text(_cantidades(r.item),
                           style: const TextStyle(fontSize: 12)),
                     ],
+                    const SizedBox(width: 6),
+                    _chipDia(prop, r),
                   ],
                 ),
+                if (!r.tieneCantidad)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2),
+                    child: Text('Falta decir cuántas medias',
+                        style:
+                            TextStyle(fontSize: 11, color: AppTheme.danger)),
+                  ),
                 const SizedBox(height: 4),
                 if (cliente != null)
                   InkWell(
@@ -615,6 +654,81 @@ class _AsistenteRepartoSheetState extends State<_AsistenteRepartoSheet> {
         ],
       ),
     );
+  }
+
+  /// Solo las mercaderías que el pedido nombró: si dijo únicamente carne,
+  /// mostrar "0 cerdo" al lado haría dudar de que se vaya a pisar.
+  String _cantidades(RepartoParseItem item) {
+    final partes = <String>[];
+    if (item.carne > 0) partes.add('${item.carne} carne');
+    if (item.cerdo > 0) partes.add('${item.cerdo} cerdo');
+    return partes.join(' · ');
+  }
+
+  /// Día de este pedido. Si el comando no lo dijo, queda en rojo pidiéndolo:
+  /// sin día no se puede guardar, porque cada día es una lista distinta.
+  Widget _chipDia(_Propuesta prop, _Resolucion r) {
+    final falta = r.dia == null;
+    final bloqueado = prop.aplicada;
+    final color = falta ? AppTheme.danger : AppTheme.info;
+    return InkWell(
+      onTap: bloqueado ? null : () => _elegirDia(r),
+      borderRadius: BorderRadius.circular(5),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(5),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.event, size: 12, color: color),
+            const SizedBox(width: 3),
+            Text(
+              falta ? '¿Qué día?' : labelDiaReparto(r.dia!),
+              style: TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.w600, color: color),
+            ),
+            if (!bloqueado)
+              Icon(Icons.arrow_drop_down, size: 14, color: color),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _elegirDia(_Resolucion r) async {
+    final elegido = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('¿Para qué día es?',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+              ),
+            ),
+            for (final d in diasReparto)
+              ListTile(
+                leading: const Icon(Icons.event),
+                title: Text(labelDiaReparto(d)),
+                selected: r.dia == d,
+                onTap: () => Navigator.pop(ctx, d),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (elegido != null && mounted) setState(() => r.dia = elegido);
   }
 
   Widget _burbujaEscribiendo() {
@@ -712,11 +826,6 @@ class _VistaLista extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final diaLabel = dia.isEmpty ? '' : '${dia[0].toUpperCase()}${dia.substring(1)}';
-    final items = [...lista.items]
-      ..sort((a, b) =>
-          compararNombres(nombre(a.clienteId), nombre(b.clienteId)));
-
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -731,7 +840,7 @@ class _VistaLista extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text('Reparto del $diaLabel',
+                child: Text('Reparto del ${labelDiaReparto(dia)}',
                     style: const TextStyle(
                         fontSize: 18, fontWeight: FontWeight.w600)),
               ),
@@ -749,46 +858,62 @@ class _VistaLista extends StatelessWidget {
                 style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
               ),
             ),
-          const SizedBox(height: 4),
-          _fila('CLIENTE', 'CARNE', 'CERDO', header: true),
-          _fila('TOTAL MEDIAS', '${lista.totalMediasCarne}',
-              '${lista.totalMediasCerdo}',
-              bold: true),
-          const Divider(),
-          if (items.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(
-                child: Text('Todavía no hay clientes en esta lista',
-                    style: TextStyle(color: AppTheme.textSecondary)),
-              ),
-            )
-          else
-            Flexible(
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    for (final it in items)
-                      _fila(
-                        nombre(it.clienteId) +
-                            (it.sucursal.isNotEmpty ? ' (${it.sucursal})' : ''),
-                        it.mediasCarne == 0 ? '' : '${it.mediasCarne}',
-                        it.mediasCerdo == 0 ? '' : '${it.mediasCerdo}',
-                      ),
-                  ],
-                ),
+          // Una tabla por mercadería, igual que la pantalla de reparto.
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final tipo in tiposReparto) _tabla(tipo),
+                ],
               ),
             ),
-          const Divider(),
-          _fila('SOBRANTE DEPÓSITO', '${lista.sobranteCarne}',
-              '${lista.sobranteCerdo}',
-              bold: true),
+          ),
         ],
       ),
     );
   }
 
-  Widget _fila(String cliente, String carne, String cerdo,
+  Widget _tabla(String tipo) {
+    final items = [...lista.itemsDe(tipo)]
+      ..sort((a, b) =>
+          compararNombres(nombre(a.clienteId), nombre(b.clienteId)));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 10),
+        Text(
+          tipo == tipoRepartoCerdo ? 'CERDO' : 'CARNE (NOVILLO)',
+          style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.primary),
+        ),
+        const SizedBox(height: 2),
+        _fila('CLIENTE', 'MEDIAS', header: true),
+        _fila('TOTAL MEDIAS', '${lista.totalDe(tipo)}', bold: true),
+        const Divider(height: 12),
+        if (items.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('Todavía no hay clientes acá',
+                style: TextStyle(color: AppTheme.textSecondary)),
+          )
+        else
+          for (final it in items)
+            _fila(
+              nombre(it.clienteId) +
+                  (it.sucursal.isNotEmpty ? ' (${it.sucursal})' : ''),
+              it.medias == 0 ? '' : '${it.medias}',
+            ),
+        const Divider(height: 12),
+        _fila('SOBRANTE DEPÓSITO', '${lista.sobranteDe(tipo)}', bold: true),
+      ],
+    );
+  }
+
+  Widget _fila(String cliente, String medias,
       {bool header = false, bool bold = false}) {
     final estilo = TextStyle(
       fontSize: header ? 12 : 14,
@@ -801,10 +926,7 @@ class _VistaLista extends StatelessWidget {
           Expanded(child: Text(cliente, style: estilo)),
           SizedBox(
               width: 56,
-              child: Text(carne, textAlign: TextAlign.center, style: estilo)),
-          SizedBox(
-              width: 56,
-              child: Text(cerdo, textAlign: TextAlign.center, style: estilo)),
+              child: Text(medias, textAlign: TextAlign.center, style: estilo)),
         ],
       ),
     );

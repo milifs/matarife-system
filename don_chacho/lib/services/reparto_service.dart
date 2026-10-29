@@ -1,9 +1,14 @@
 // ============================================================
 // SERVICIO DE REPARTO - PDF para el repartidor
 // ============================================================
-// Genera un PDF con la lista de reparto de una semana/día:
-// tabla de clientes × CARNE (novillo) / CERDO, con TOTAL MEDIAS,
-// SOBRANTE DEPÓSITO y las notas sueltas. No involucra plata.
+// Genera el PDF de UNA de las dos tablas de un día: la de CARNE
+// (novillo) o la de CERDO, con su TOTAL MEDIAS, sus clientes y su
+// SOBRANTE DEPÓSITO, más las notas sueltas del día.
+//
+// Son dos PDF separados a propósito: la carne y el cerdo los reparte
+// gente distinta, y cada uno se lleva su hoja. Las notas del día van en
+// los dos, porque son del reparto, no de la mercadería.
+// No involucra plata.
 // ============================================================
 
 import 'package:flutter/services.dart';
@@ -22,21 +27,28 @@ class RepartoService {
   static Future<void> generarYCompartir({
     required RepartoLista lista,
     required List<Cliente> clientes,
+    required String tipo,
   }) async {
     final logo = await _loadLogo();
-    final pdf = _generarPdf(lista: lista, clientes: clientes, logo: logo);
+    final pdf =
+        generarPdf(lista: lista, clientes: clientes, logo: logo, tipo: tipo);
     final bytes = await pdf.save();
+    final semana = formatFecha(lista.semanaInicio).replaceAll('/', '-');
     await Printing.sharePdf(
       bytes: bytes,
-      filename:
-          'reparto_${lista.dia}_${formatFecha(lista.semanaInicio).replaceAll('/', '-')}.pdf',
+      // El tipo va en el nombre: en el celular los dos PDF del mismo día
+      // quedan uno al lado del otro y hay que poder distinguirlos.
+      filename: 'reparto_${tipo}_${lista.dia}_$semana.pdf',
     );
   }
 
-  static pw.Document _generarPdf({
+  /// Público para poder armar el documento en los tests sin pasar por
+  /// Printing: los errores de layout de dart_pdf saltan recién acá.
+  static pw.Document generarPdf({
     required RepartoLista lista,
     required List<Cliente> clientes,
     required pw.MemoryImage logo,
+    required String tipo,
   }) {
     final pdf = pw.Document();
 
@@ -79,17 +91,56 @@ class RepartoService {
           ),
         );
 
-    pw.TableRow fila(String cliente, String sucursal, int carne, int cerdo,
+    pw.TableRow fila(String cliente, String sucursal, int medias,
             {bool bold = false, PdfColor? bg}) =>
         pw.TableRow(
           decoration: bg != null ? pw.BoxDecoration(color: bg) : null,
           children: [
             celdaTexto(cliente, bold: bold),
             celdaTexto(sucursal),
-            celdaNum(carne == 0 ? '' : '$carne', bold: bold),
-            celdaNum(cerdo == 0 ? '' : '$cerdo', bold: bold),
+            celdaNum(medias == 0 ? '' : '$medias', bold: bold),
           ],
         );
+
+    final titulo = tipo == tipoRepartoCerdo ? 'CERDO' : 'CARNE (NOVILLO)';
+
+    // La tabla va como widgets sueltos y NO dentro de un Column: en un
+    // MultiPage la Table se parte sola entre páginas, un Column no, y una
+    // lista larga de clientes haría explotar el armado.
+    List<pw.Widget> tabla() {
+      final items = [...lista.itemsDe(tipo)]..sort((a, b) =>
+          compararNombres(nombre(a.clienteId), nombre(b.clienteId)));
+      return [
+        pw.Table(
+          border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+          columnWidths: const {
+            0: pw.FlexColumnWidth(2.4),
+            1: pw.FlexColumnWidth(1.8),
+            2: pw.FlexColumnWidth(0.9),
+          },
+          children: [
+            // Header de columnas
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: gris),
+              children: [
+                celdaTexto('CLIENTES', bold: true),
+                celdaTexto('SUCURSAL', bold: true),
+                celdaNum('MEDIAS', bold: true),
+              ],
+            ),
+            // TOTAL MEDIAS
+            fila('TOTAL MEDIAS', '', lista.totalDe(tipo),
+                bold: true, bg: celeste),
+            // Filas de clientes (orden alfabético por nombre)
+            for (final it in items)
+              fila(nombre(it.clienteId), it.sucursal, it.medias),
+            // SOBRANTE DEPOSITO
+            fila('SOBRANTE DEPOSITO', '', lista.sobranteDe(tipo),
+                bold: true, bg: celeste),
+          ],
+        ),
+      ];
+    }
 
     pdf.addPage(
       pw.MultiPage(
@@ -110,7 +161,7 @@ class RepartoService {
                           fontSize: 18,
                           fontWeight: pw.FontWeight.bold,
                           color: rojo)),
-                  pw.Text('Reparto del ${lista.diaLabel}',
+                  pw.Text('$titulo — Reparto del ${lista.diaLabel}',
                       style: pw.TextStyle(
                           fontSize: 13, fontWeight: pw.FontWeight.bold)),
                   pw.Text('Semana ${formatRangoSemana(lista.semanaInicio)}',
@@ -122,45 +173,12 @@ class RepartoService {
           ),
           pw.SizedBox(height: 16),
 
-          // Tabla
-          pw.Table(
-            border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
-            columnWidths: const {
-              0: pw.FlexColumnWidth(2.4),
-              1: pw.FlexColumnWidth(1.8),
-              2: pw.FlexColumnWidth(0.9),
-              3: pw.FlexColumnWidth(0.9),
-            },
-            children: [
-              // Header de columnas
-              pw.TableRow(
-                decoration: const pw.BoxDecoration(color: gris),
-                children: [
-                  celdaTexto('CLIENTES', bold: true),
-                  celdaTexto('SUCURSAL', bold: true),
-                  celdaNum('CARNE', bold: true),
-                  celdaNum('CERDO', bold: true),
-                ],
-              ),
-              // TOTAL MEDIAS
-              fila('TOTAL MEDIAS', '', lista.totalMediasCarne,
-                  lista.totalMediasCerdo,
-                  bold: true, bg: celeste),
-              // Filas de clientes (orden alfabético por nombre)
-              for (final it in ([...lista.items]..sort((a, b) =>
-                  compararNombres(nombre(a.clienteId), nombre(b.clienteId)))))
-                fila(nombre(it.clienteId), it.sucursal, it.mediasCarne,
-                    it.mediasCerdo),
-              // SOBRANTE DEPOSITO
-              fila('SOBRANTE DEPOSITO', '', lista.sobranteCarne,
-                  lista.sobranteCerdo,
-                  bold: true, bg: celeste),
-            ],
-          ),
+          // La tabla de esta mercadería
+          ...tabla(),
+          pw.SizedBox(height: 18),
 
           // Notas
-          if (lista.notas.trim().isNotEmpty) ...[
-            pw.SizedBox(height: 16),
+          if (lista.notas.trim().isNotEmpty)
             pw.Container(
               width: double.infinity,
               padding: const pw.EdgeInsets.all(10),
@@ -182,7 +200,6 @@ class RepartoService {
                 ],
               ),
             ),
-          ],
         ],
       ),
     );

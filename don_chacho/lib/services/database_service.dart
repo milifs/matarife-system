@@ -687,14 +687,17 @@ class DatabaseService {
           .select()
           .eq('lista_id', lista.id)
           .order('orden');
+      // Una fila vieja (sin columna `tipo`) puede traer carne y cerdo juntos:
+      // ahí `desdeMap` la parte en una fila por tabla.
       lista.items =
-          itemsData.map((e) => RepartoItem.fromMap(e)).toList();
-      // Colapsar filas exactamente idénticas (mismo cliente, sucursal y medias):
-      // nunca son intencionales y evita que se dupliquen en pantalla / al sembrar.
+          itemsData.expand((e) => RepartoItem.desdeMap(e)).toList();
+      // Colapsar filas exactamente idénticas (mismo cliente, tabla, sucursal y
+      // medias): nunca son intencionales y evita que se dupliquen en pantalla
+      // / al sembrar.
       final vistos = <String>{};
       lista.items = lista.items.where((it) {
         final clave =
-            '${it.clienteId}|${it.sucursal}|${it.mediasCarne}|${it.mediasCerdo}';
+            '${it.clienteId}|${it.tipo}|${it.sucursal}|${it.medias}';
         return vistos.add(clave);
       }).toList();
       return lista;
@@ -727,8 +730,8 @@ class DatabaseService {
           for (final it in previa.items)
             RepartoItem(
               clienteId: it.clienteId,
-              mediasCarne: it.mediasCarne,
-              mediasCerdo: it.mediasCerdo,
+              tipo: it.tipo,
+              medias: it.medias,
               sucursal: it.sucursal,
               orden: it.orden,
             ),
@@ -758,13 +761,19 @@ class DatabaseService {
       ..['semana_inicio'] = lunesStr;
     await _client.from('reparto_listas').upsert(payload);
 
-    // Reemplazar items (más simple que diffear).
+    // Reemplazar items (más simple que diffear). Van en un solo insert:
+    // con dos tablas por día las filas se multiplicaron y una ida y vuelta
+    // por fila se nota en el celular.
     await _client.from('reparto_items').delete().eq('lista_id', id);
     for (var i = 0; i < lista.items.length; i++) {
       final it = lista.items[i];
       it.listaId = id;
       it.orden = i;
-      await _client.from('reparto_items').insert(it.toMap());
+    }
+    if (lista.items.isNotEmpty) {
+      await _client
+          .from('reparto_items')
+          .insert(lista.items.map((it) => it.toMap()).toList());
     }
 
     return lista;

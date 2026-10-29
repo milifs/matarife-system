@@ -3,7 +3,12 @@
 // ============================================================
 // Manda la frase dictada (o escrita) por Joaco a la Edge Function
 // `parse-reparto`, que la interpreta con Claude y devuelve items
-// estructurados para la lista de reparto (Jueves/Viernes).
+// estructurados para la lista de reparto.
+//
+// El DÍA viaja en cada item (jueves / viernes / sabado): una misma frase
+// puede pedir carne para el jueves y cerdo para el sábado. Si el comando no
+// dice ningún día, el item vuelve con `dia` en null y la pantalla se lo
+// pregunta al usuario: no se adivina.
 //
 // El matcheo de nombres lo hace Claude contra la lista de clientes
 // reales; acá sólo transportamos y parseamos el JSON. La resolución
@@ -14,6 +19,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../models/models.dart';
+import '../utils/formatters.dart';
 
 /// Un item interpretado por la IA (todavía sin resolver a clienteId).
 class RepartoParseItem {
@@ -23,6 +30,9 @@ class RepartoParseItem {
   /// Nombre EXACTO de la lista de clientes que eligió Claude, o null
   /// si no pudo matchear con seguridad.
   final String? cliente;
+
+  /// 'jueves' | 'viernes' | 'sabado', o null si el comando no lo dijo.
+  String? dia;
 
   final int carne;
   final int cerdo;
@@ -34,6 +44,7 @@ class RepartoParseItem {
   RepartoParseItem({
     required this.accion,
     required this.cliente,
+    required this.dia,
     required this.carne,
     required this.cerdo,
     required this.sucursal,
@@ -55,6 +66,7 @@ class RepartoParseItem {
       cliente: (cliente is String && cliente.trim().isNotEmpty)
           ? cliente.trim()
           : null,
+      dia: _diaValido(m['dia']),
       carne: toInt(m['carne']),
       cerdo: toInt(m['cerdo']),
       sucursal: (m['sucursal'] ?? '').toString().trim(),
@@ -66,13 +78,18 @@ class RepartoParseItem {
   }
 }
 
-/// Resultado del parseo de una frase.
+/// Devuelve el día si es uno de los tres válidos; si no, null.
+/// Tolera que venga con acento o en mayúsculas ("Sábado").
+String? _diaValido(dynamic valor) {
+  final d = normalizarBusqueda('${valor ?? ''}'.trim());
+  return diasReparto.contains(d) ? d : null;
+}
+
+/// Resultado del parseo de una frase: los items ya traen su día.
 class RepartoParseResult {
-  /// 'jueves' | 'viernes' | null (si null, se usa el día en pantalla)
-  final String? dia;
   final List<RepartoParseItem> items;
 
-  RepartoParseResult({required this.dia, required this.items});
+  RepartoParseResult({required this.items});
 }
 
 class RepartoIaService {
@@ -81,13 +98,13 @@ class RepartoIaService {
   static const _publishable =
       'sb_publishable_NQBeEO7_QtErbs056UE1Wg_kJKHZjbf';
 
-  /// Interpreta [texto] en el contexto del [diaActual] seleccionado.
-  /// [clientes] es la lista de nombres reales para que la IA matchee bien.
+  /// Interpreta [texto]. [clientes] es la lista de nombres reales para que
+  /// la IA matchee bien. El día sale del propio comando, por eso no se le
+  /// manda ninguno.
   ///
   /// Lanza [Exception] si la función falla o no se puede interpretar.
   static Future<RepartoParseResult> interpretar({
     required String texto,
-    required String? diaActual,
     required List<String> clientes,
   }) async {
     final supabase = Supabase.instance.client;
@@ -103,7 +120,6 @@ class RepartoIaService {
           },
           body: jsonEncode({
             'texto': texto,
-            'dia_actual': diaActual,
             'clientes': clientes,
           }),
         )
@@ -122,8 +138,9 @@ class RepartoIaService {
       throw Exception('No pude interpretar el pedido. Probá de nuevo.');
     }
 
-    final diaRaw = (data['dia'] ?? '').toString().trim().toLowerCase();
-    final dia = (diaRaw == 'jueves' || diaRaw == 'viernes') ? diaRaw : null;
+    // Día suelto a nivel respuesta: formato viejo de la función. Se usa
+    // solo como respaldo para los items que no traigan el suyo.
+    final diaGeneral = _diaValido(data['dia']);
 
     final itemsRaw = data['items'];
     final items = <RepartoParseItem>[];
@@ -135,6 +152,9 @@ class RepartoIaService {
       }
     }
 
-    return RepartoParseResult(dia: dia, items: items);
+    for (final it in items) {
+      it.dia ??= diaGeneral;
+    }
+    return RepartoParseResult(items: items);
   }
 }

@@ -812,12 +812,35 @@ class NotaCreditoDebito {
 // ─────────────────────────────────────────────
 // REPARTO — LISTA (logística semanal, sin plata)
 // ─────────────────────────────────────────────
-// Dos listas por semana: 'jueves' y 'viernes'. TOTAL MEDIAS es manual;
-// el sobrante se calcula en la app (total - repartido).
+// Una lista por día de reparto: 'jueves', 'viernes' y 'sabado'. TOTAL MEDIAS
+// es manual; el sobrante se calcula en la app (total - repartido).
+
+/// Los días en que se reparte, en el orden en que se muestran.
+/// Se guardan sin acento: la columna `dia` es toda minúscula sin tildes.
+const List<String> diasReparto = ['jueves', 'viernes', 'sabado'];
+
+/// Nombre del día para mostrar ('sabado' -> 'Sábado').
+String labelDiaReparto(String dia) {
+  if (dia == 'sabado') return 'Sábado';
+  return dia.isEmpty ? '' : '${dia[0].toUpperCase()}${dia.substring(1)}';
+}
+
+/// Las dos mercaderías del reparto. Cada una es una tabla aparte en la
+/// pantalla y una fila de `reparto_items` pertenece a una sola.
+const String tipoRepartoCarne = 'carne';
+const String tipoRepartoCerdo = 'cerdo';
+
+/// Las dos mercaderías, en el orden en que se muestran las tablas.
+const List<String> tiposReparto = [tipoRepartoCarne, tipoRepartoCerdo];
+
+/// Encabezado de la tabla de cada mercadería.
+String labelTipoReparto(String tipo) =>
+    tipo == tipoRepartoCerdo ? 'CERDO' : 'CARNE';
+
 class RepartoLista {
   final String id;
   DateTime semanaInicio; // lunes de la semana
-  String dia; // 'jueves' | 'viernes'
+  String dia; // 'jueves' | 'viernes' | 'sabado'
   int totalMediasCarne;
   int totalMediasCerdo;
   String notas;
@@ -836,16 +859,28 @@ class RepartoLista {
   })  : id = id ?? _uuid.v4(),
         creadoEn = creadoEn ?? DateTime.now();
 
-  String get diaLabel =>
-      dia.isEmpty ? '' : '${dia[0].toUpperCase()}${dia.substring(1)}';
+  String get diaLabel => labelDiaReparto(dia);
+
+  /// Las filas de una sola mercadería, que es lo que muestra cada tabla.
+  List<RepartoItem> itemsDe(String tipo) =>
+      items.where((i) => i.tipo == tipo).toList();
 
   /// Suma de medias de carne ya asignadas a clientes
   int get repartidoCarne => items.fold(0, (s, i) => s + i.mediasCarne);
   int get repartidoCerdo => items.fold(0, (s, i) => s + i.mediasCerdo);
 
+  int repartidoDe(String tipo) =>
+      tipo == tipoRepartoCerdo ? repartidoCerdo : repartidoCarne;
+
   /// Sobrante en depósito = total cargado - repartido
   int get sobranteCarne => totalMediasCarne - repartidoCarne;
   int get sobranteCerdo => totalMediasCerdo - repartidoCerdo;
+
+  int totalDe(String tipo) =>
+      tipo == tipoRepartoCerdo ? totalMediasCerdo : totalMediasCarne;
+
+  int sobranteDe(String tipo) =>
+      tipo == tipoRepartoCerdo ? sobranteCerdo : sobranteCarne;
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -879,8 +914,15 @@ class RepartoItem {
   final String id;
   String listaId;
   String clienteId;
-  int mediasCarne;
-  int mediasCerdo;
+
+  /// De qué tabla es esta fila: 'carne' o 'cerdo'. Una fila pertenece a una
+  /// sola, así que un cliente que lleva de las dos tiene dos filas.
+  String tipo;
+
+  /// Medias de [tipo] que lleva el cliente. Puede ser 0: el cliente ya está
+  /// en la tabla y las medias se cargan después.
+  int medias;
+
   String sucursal; // texto libre (máx 40): a qué sucursal del cliente va
   int orden;
 
@@ -888,31 +930,74 @@ class RepartoItem {
     String? id,
     this.listaId = '',
     required this.clienteId,
-    this.mediasCarne = 0,
-    this.mediasCerdo = 0,
+    this.tipo = tipoRepartoCarne,
+    this.medias = 0,
     this.sucursal = '',
     this.orden = 0,
   }) : id = id ?? _uuid.v4();
+
+  bool get esCerdo => tipo == tipoRepartoCerdo;
+
+  /// Las dos columnas históricas de la tabla: la del tipo de la fila lleva
+  /// las medias y la otra va en 0.
+  int get mediasCarne => esCerdo ? 0 : medias;
+  int get mediasCerdo => esCerdo ? medias : 0;
 
   Map<String, dynamic> toMap() => {
         'id': id,
         'lista_id': listaId,
         'cliente_id': clienteId,
+        'tipo': tipo,
         'medias_carne': mediasCarne,
         'medias_cerdo': mediasCerdo,
         'sucursal': sucursal,
         'orden': orden,
       };
 
-  factory RepartoItem.fromMap(Map<String, dynamic> map) => RepartoItem(
-        id: map['id'],
-        listaId: map['lista_id'] ?? '',
-        clienteId: map['cliente_id'] ?? '',
-        mediasCarne: map['medias_carne'] ?? 0,
-        mediasCerdo: map['medias_cerdo'] ?? 0,
-        sucursal: map['sucursal'] ?? '',
-        orden: map['orden'] ?? 0,
-      );
+  /// Devuelve las filas que representa un registro de la base. Normalmente es
+  /// una sola, pero las filas viejas (anteriores a la columna `tipo`) traen
+  /// carne y cerdo juntos, y ahí se parten en dos: una por tabla.
+  static List<RepartoItem> desdeMap(Map<String, dynamic> map) {
+    final carne = (map['medias_carne'] ?? 0) as int;
+    final cerdo = (map['medias_cerdo'] ?? 0) as int;
+    final tipoRaw = '${map['tipo'] ?? ''}'.trim().toLowerCase();
+
+    RepartoItem armar(String tipo, int medias, {String? id}) => RepartoItem(
+          id: id,
+          listaId: map['lista_id'] ?? '',
+          clienteId: map['cliente_id'] ?? '',
+          tipo: tipo,
+          medias: medias,
+          sucursal: map['sucursal'] ?? '',
+          orden: map['orden'] ?? 0,
+        );
+
+    if (tipoRaw == tipoRepartoCarne || tipoRaw == tipoRepartoCerdo) {
+      final propia = tipoRaw == tipoRepartoCerdo ? cerdo : carne;
+      final ajena = tipoRaw == tipoRepartoCerdo ? carne : cerdo;
+      // Una fila donde el `tipo` dice una cosa y las medias están en la otra
+      // columna no la escribe esta versión: la deja una versión vieja de la
+      // app, que guarda sin `tipo` y se come el DEFAULT 'carne' de la tabla.
+      // Mandan las medias, que es el dato que el usuario cargó: si no, la
+      // fila se leería en cero y esas medias desaparecerían de la pantalla.
+      if (propia == 0 && ajena > 0) {
+        final real =
+            tipoRaw == tipoRepartoCerdo ? tipoRepartoCarne : tipoRepartoCerdo;
+        return [armar(real, ajena, id: map['id'])];
+      }
+      return [armar(tipoRaw, propia, id: map['id'])];
+    }
+
+    // Sin columna `tipo` (base todavía sin migrar).
+    if (carne > 0 && cerdo > 0) {
+      return [
+        armar(tipoRepartoCarne, carne, id: map['id']),
+        armar(tipoRepartoCerdo, cerdo),
+      ];
+    }
+    if (cerdo > 0) return [armar(tipoRepartoCerdo, cerdo, id: map['id'])];
+    return [armar(tipoRepartoCarne, carne, id: map['id'])];
+  }
 }
 
 // ─────────────────────────────────────────────

@@ -78,7 +78,7 @@ don_chacho/lib/
 │   ├── auth_service.dart              # Login SHA-256, sesión persistente SharedPreferences, CRUD usuarios/roles
 │   ├── database_service.dart          # CRUD Supabase para todo + confirmarNotaPedido (convierte a remito) + getRepartoLista/getRepartoListaOPlantilla/guardarReparto
 │   ├── estado_cuenta_service.dart     # PDF estado de cuenta + reporte vendedor + reporte cliente (movimientos) + PDF nota de pedido + comisión
-│   ├── reparto_service.dart           # PDF de la lista de reparto para el repartidor (tabla CARNE/CERDO, TOTAL MEDIAS, SOBRANTE DEPÓSITO, notas) — v18.24
+│   ├── reparto_service.dart           # PDF de la lista de reparto para el repartidor. **Uno por mercadería** (v19.12): se le pasa el `tipo` y arma la hoja de CARNE o la de CERDO, con TOTAL MEDIAS, SOBRANTE DEPÓSITO y las notas del día — v18.24
 │   ├── recibo_service.dart            # PDF recibo de pago con detalle deuda FIFO
 │   ├── carga_pdf_service.dart         # PDF de una carga de proveedor (v19)
 │   └── ruta_cobranza_service.dart     # Ruta de cobranza: extrae coords (incl. DMS), GPS web, resuelve links cortos vía Edge Function resolver-maps, orden vecino-cercano, URL Google Maps multi-parada (v18.14, ampliado v18.16)
@@ -98,7 +98,7 @@ don_chacho/lib/
 │   ├── costos_semana_screen.dart      # Historial costos, editar con alerta semana vieja
 │   ├── gestion_usuarios_screen.dart   # CRUD usuarios + roles con permisos checkboxes
 │   ├── bandeja_remitos_screen.dart    # 3 tabs: Notas de Pedido (1°) / Remitos pendientes / Rechazados
-│   ├── reparto_screen.dart            # Lista de reparto semanal (Jueves/Viernes): navegación semanal < >, TOTAL MEDIAS manual, clientes de la lista, SOBRANTE auto, notas, PDF. Se precarga con la lista de la semana anterior si la semana está vacía (v18.30). Módulo logístico aparte (sin plata). Accesible desde el FAB (v18.24)
+│   ├── reparto_screen.dart            # Lista de reparto semanal (Jueves/Viernes/Sábado, v19.11): navegación semanal < >, **dos tablas por día** (CARNE y CERDO) que se ven **de a una, con su propio selector** (v19.12), cada una con su TOTAL MEDIAS manual, sus clientes y su SOBRANTE auto; notas del día y **un PDF por tabla** (v19.12). Se precarga con la lista de la semana anterior si la semana está vacía (v18.30). Módulo logístico aparte (sin plata). Accesible desde el FAB (v18.24)
 │   ├── soporte_form_screen.dart       # Reportar un problema (v18.36): módulo del sistema, descripción, switch "no puedo seguir trabajando", foto adjunta. Al guardar muestra un diálogo con botón "Abrir WhatsApp" (v18.37: el launch tiene que salir de un toque, si no el navegador lo bloquea). Lista los últimos 5 reclamos propios con estado y respuesta. Accesible desde el FAB por todos los roles
 │   ├── proveedores_screen.dart        # Tab Proveedores (v19, permiso gestionar_proveedores): resumen "se le debe a proveedores", filtro por proveedor, lista de cargas PP-XXXX con A pagar / Pagado / Falta pagar. Ícono en el AppBar → ABM de proveedores. Carga los datos con lazy load (cargarProveedores)
 │   ├── gestion_proveedores_screen.dart # ABM de proveedores (v19): nombre + tipo novillo/cerdo (v19.1) + desvaste % + precio kg vivo + rinde asegurado % (los tres numéricos son los DEFAULTS que se copian a la carga; el tipo NO) + switch activo. No se puede borrar un proveedor con cargas: hay que desactivarlo
@@ -165,6 +165,7 @@ don_chacho/lib/
 18. `supabase_migration_deposito_kg.sql` — columna `kgs_por_media` JSONB en `deposito_movimientos` y en su tabla de auditoría (v19.6, en raíz del repo). **Hay que correrla ANTES de deployar v19.6**: desde v19.6 el `toMap()` manda siempre esa columna, así que sin la migración todo alta de movimiento falla.
 19. `supabase_migration_deposito_arranque_kg.sql` — columnas `kg_novillo` / `kg_cerdo` en `deposito_config` (v19.9, en raíz del repo). Ya corrida el 28/10/2026. Era **prerequisito del deploy de v19.9**: igual que la anterior, `DepositoConfig.toMap()` manda siempre esas columnas, así que sin la migración guardar el arranque falla.
 20. `supabase_reset_deposito.sql` — **no es una migración, es un reset de una sola vez** (raíz del repo): borra todos los movimientos de depósito y su auditoría y deja el arranque en 0 medias / 0 kg con fecha de hoy, para empezar la carga de nuevo. No toca remitos ni cargas: el depósito no guarda stock, lo deriva, así que mover la fecha de arranque alcanza para que lo viejo deje de contar. Se corrió DESPUÉS de la 19, el 28/10/2026.
+21. `supabase_migration_reparto_sabado_tipo.sql` — el día `'sabado'` en el CHECK de `reparto_listas` y la columna `tipo` en `reparto_items`, con el backfill que parte en dos las filas que traían carne y cerdo juntos (v19.11, en raíz del repo). **Prerequisito del deploy de v19.11**: desde v19.11 `RepartoItem.toMap()` manda siempre `tipo` y la pantalla guarda el sábado, así que sin la migración guardar el reparto falla.
 
 ### Tablas Depósito (v19.5)
 - `deposito_config` (id UUID PK, **unica BOOLEAN UNIQUE CHECK (unica)**, fecha_inicio DATE, medias_novillo NUMERIC(12,4), medias_cerdo NUMERIC(12,4), **kg_novillo / kg_cerdo NUMERIC(12,2) DEFAULT 0** (v19.9), registrado_por, actualizado_en) — RLS off. **Una sola fila**, garantizado por el truco de `unica`: es UNIQUE y el CHECK la obliga a ser TRUE, así que un segundo INSERT rebota. El upsert va `onConflict: 'unica'`.
@@ -211,10 +212,15 @@ diferencia = teórico al momento del recuento − recuento
   - **El cerdo no se fracciona**: se vende entero, así que nunca tiene partes sueltas.
 - **Solapamiento con la Lista de reparto**: `reparto_screen` pide el TOTAL MEDIAS **a mano** y calcula SOBRANTE DEPÓSITO = total − repartido. Ese número y el del depósito pueden no coincidir (el reparto es logístico y no mira remitos). Precargar el TOTAL MEDIAS desde el stock quedó pendiente.
 
-### Tablas Lista de reparto (v18.24)
-- `reparto_listas` (id UUID PK, semana_inicio DATE, dia TEXT CHECK IN ('jueves','viernes'), total_medias_carne INT, total_medias_cerdo INT, notas TEXT, creado_en, **UNIQUE (semana_inicio, dia)**) — RLS off
-- `reparto_items` (id UUID PK, lista_id UUID FK CASCADE, cliente_id UUID FK clientes, medias_carne INT, medias_cerdo INT, orden INT, creado_en) — index en lista_id, RLS off
+### Tablas Lista de reparto (v18.24, ampliada en v19.11)
+- `reparto_listas` (id UUID PK, semana_inicio DATE, dia TEXT CHECK IN ('jueves','viernes',**'sabado'**), total_medias_carne INT, total_medias_cerdo INT, notas TEXT, creado_en, **UNIQUE (semana_inicio, dia)**) — RLS off
+- `reparto_items` (id UUID PK, lista_id UUID FK CASCADE, cliente_id UUID FK clientes, **tipo TEXT CHECK IN ('carne','cerdo')** (v19.11), medias_carne INT, medias_cerdo INT, sucursal TEXT, orden INT, creado_en) — index en lista_id, RLS off
 - **Módulo 100% logístico, aparte del flujo comercial: NO toca plata, saldos ni remitos.** Solo qué carne (novillo=CARNE / cerdo=CERDO) va a cada cliente por semana.
+- **El sábado se guarda sin acento** (`'sabado'`), como el resto de los valores de la columna; el acento lo pone `labelDiaReparto` al mostrarlo.
+- **Una fila pertenece a UNA tabla** (v19.11): la de `tipo='carne'` usa `medias_carne` y deja `medias_cerdo` en 0, y al revés. Un cliente que lleva de las dos tiene **dos filas**. Las columnas viejas se mantienen para no romper lo que ya estaba guardado, pero la verdad es `tipo` + la columna que le corresponde (`RepartoItem.medias`).
+  - **Por qué hace falta la columna y no alcanza con mirar los números**: una fila recién agregada está en cero (el cliente se agrega y las medias se cargan después), y con las dos columnas en 0 al releer no se sabía de qué tabla era.
+  - La lectura (`RepartoItem.desdeMap`) **tolera que la columna no exista**: una fila vieja con carne y cerdo juntos se devuelve **partida en dos**, una por tabla. La escritura **no** es tolerante (`toMap()` manda siempre `tipo`), así que la migración es prerequisito del deploy.
+  - **Si el `tipo` y las medias se contradicen, mandan las medias.** Entre correr la migración y deployar v19.11 hay una ventana donde la app vieja sigue guardando **sin** `tipo`, y entonces una fila de cerdo se come el `DEFAULT 'carne'` de la tabla. Leerla como fila de carne en cero haría **desaparecer esas medias de la pantalla**, así que `desdeMap` corrige el tipo mirando en qué columna están las medias. Cubierto por `test/reparto_test.dart`.
 
 ### Tabla Soporte (v18.36)
 - `soportes` (id UUID PK, **numero INT GENERATED BY DEFAULT AS IDENTITY**, modulo TEXT, descripcion TEXT, bloqueante BOOLEAN, adjunto_path TEXT, estado TEXT CHECK IN ('abierto','en_revision','resuelto'), respuesta TEXT, reportado_por TEXT, rol TEXT, app_version TEXT, plataforma TEXT, creado_en, resuelto_en, resuelto_por) — índices en estado y creado_en, RLS off
@@ -473,6 +479,8 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 | v18.14 (01/07) | **Ruta de cobranza (1ª versión)**: embebida en Consultas → Directorio, combo box (Clientes que deben / Solo remitos vencidos) + botón "Armar". Nuevo `ruta_cobranza_service.dart` (GPS, extracción de coords, orden por cercanía, URL Google Maps). Reemplazada por la tab "Ruta" en v18.15. |
 | v18.15 (01/07) | **Ruta de cobranza movida a tab propia "Ruta"** en Consultas (9 tabs). Filtros: cliente (búsqueda), vendedor (dropdown), "Con saldo pendiente" y "Solo vencidos" (FilterChips). Lista con checkboxes para **seleccionar clientes** (los sin ubicación quedan deshabilitados) + "Todos/Ninguno". Botón "Armar recorrido (N)" que calcula la ruta con los elegidos (GPS + orden por cercanía) y abre el panel de paradas → Google Maps. Se quitó el bloque de ruta del Directorio. |
 | v18.16 (02/07) | **Fix ubicaciones de la ruta + editar ubicación desde Directorio**: (1) `_parseCoords` reconoce ahora el formato **DMS** (`24°59'04.1"S`). (2) Nueva **Edge Function `resolver-maps`** (runtime nuevo, `withSupabase` con auth `["publishable","secret"]`) que resuelve del lado del servidor los **links cortos** `maps.app.goo.gl` (el navegador no puede por CORS): sigue el redirect y devuelve `lat/lng`, o si el link es un "compartir lugar" sin coords, devuelve la **dirección/nombre** (`q=…`). `RutaCobranzaService.construirParadas()` llama la función en lote para los clientes sin coords locales. `ParadaRuta` gana `direccionResuelta` y usa ese texto como punto ruteable. (3) En **Directorio**, botón de editar ubicación por tarjeta → bottom sheet para cargar/corregir Dirección + Link Maps (guarda con `editarCliente`). |
+| v19.12 (28/10) | **Las dos tablas del reparto, cada una en lo suyo, y la grilla que se lee.** Correcciones sobre v19.11: **líneas de grilla visibles** (horizontales y verticales, de punta a punta) y el renglón **se pinta al pasar el mouse**, con el nombre del cliente en rojo — en una lista larga es lo que dice qué renglón se está por tocar. Además, la carne y el cerdo dejaron de verse apiladas en la misma pantalla y ahora se eligen con un **selector propio**, con el mismo gesto que el día. Y el PDF pasó a ser **uno por tabla** (menú "PDF de CARNE" / "PDF de CERDO"), porque la carne y el cerdo los reparte gente distinta y cada uno se lleva su hoja; el tipo va en el nombre del archivo para distinguirlos en el celular. Las **notas son del día**, así que se ven y se editan desde las dos tablas y salen en los dos PDF. Vuelve el FAB "Agregar a CARNE/CERDO" (con una sola tabla a la vista ya no es ambiguo a cuál se agrega). Sin migración. |
+| v19.11 (28/10) | **Lista de reparto: dos tablas, sábado y el día por comando en el asistente.** (1) La pantalla dejó de ser una grilla con dos columnas: ahora son **dos tablas por día**, una de CARNE (novillo) y otra de CERDO, cada una con su TOTAL MEDIAS, sus clientes y su SOBRANTE DEPÓSITO. El PDF del repartidor y la vista del asistente también. (2) El número de medias quedó **alineado con el nombre del cliente** (antes el campo flotaba más arriba por el renglón de la sucursal). (3) Se agregó el **sábado** a los días de reparto. (4) En el chatbot **se quitó el selector Jue/Vie**: el día va por comando y **por pedido**, así una sola frase puede cargar carne para el jueves y cerdo para el sábado ("agregar para Perico 3 medias de carne para el jueves y 5 medias de cerdo para el sábado"); si el comando no dice el día, el asistente lo pregunta antes de guardar en vez de adivinarlo. Columna `tipo` en `reparto_items` + `'sabado'` en el CHECK de `reparto_listas` (`supabase_migration_reparto_sabado_tipo.sql`, prerequisito del deploy). **Hay que redeployar la Edge Function `parse-reparto`.** |
 | v19.10 (28/10) | **Desglose de los kg de la semana en el dashboard.** Tocar "Kg novillo semana" o "Kg cerdo semana" abre el detalle de a quién se le vendió esa carne: un cliente por fila (del que más kg se llevó al que menos) con sus medias, sus kg y lo facturado, y al desplegarlo los remitos que lo componen. Los números son **solo los del tipo que se tocó**, así que la suma de la pantalla da exactamente el número de la tarjeta; en los remitos que traen novillo y cerdo juntos se muestra aparte el total de la factura. Nuevas clases `VentaRemitoSemana` / `VentaClienteSemana` / `DesgloseSemanaTipo` y el método `desgloseVentasSemana` del provider. Sin migración. |
 | v19.9 (28/10) | **Depósito: kilos a la vista, partes de la media y reset del módulo.** (1) **Kg del stock**: la tarjeta muestra los kilos de lo que debería haber en la cámara, con la misma ecuación que las medias pero en peso, y los kg de cada línea del desglose. Hasta ahora se cargaban media por media y no se mostraban nunca de vuelta. Siguen siendo **informativos** (el veredicto es por medias) y avisan cuándo están incompletos ("faltan pesar N medias"). Nuevas columnas `kg_novillo`/`kg_cerdo` en `deposito_config` para pesar el arranque (`supabase_migration_deposito_arranque_kg.sql`, prerequisito del deploy). (2) **Qué pedazo hay para vender**: la media de novillo se parte en pierna + octavo + plancha de asado, así que remitir una pierna deja un octavo y una plancha sueltos. Panel "DISPONIBLE PARA VENDER" con las medias enteras y las partes sueltas; `partesDeCorte` + `CortesVendidos` en models. El cerdo no se fracciona. (3) **Reset** del módulo a cero (`supabase_reset_deposito.sql`) para empezar la carga de nuevo. |
 | v19.4 (26/10) | **Aviso de versión nueva dentro de la app.** Barra arriba de todo con "Hay una versión nueva disponible" + Actualizar + X para posponer. Chequea al entrar, cada 30 min y al volver del fondo. `build_web.sh` escribe `app_version.json` con el mismo `AppConfig.version` del bundle; la app lo pide con cache-busting y compara. **El diagnóstico viejo era equivocado**: no era el service worker (con `--pwa-strategy=none` sale de 0 bytes y nadie lo registra) ni los headers (ya eran `no-cache`) — era que nadie recarga, porque la PWA queda abierta días. Ante la duda no se avisa. Nuevo `version_service.dart` (web-only) + `utils/version_check.dart` (puro, testeado). Ver la sección "Aviso de versión nueva". |
@@ -498,7 +506,31 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v19.10) — EN PRODUCCIÓN
+## ESTADO ACTUAL (v19.12) — EN PRODUCCIÓN
+
+Deployada el 28/10/2026 desde la rama `feat/reparto-dos-tablas-sabado` (**PR #15**, todavía sin mergear a `master`: producción va adelante de master). Deploy `web-3mo72hm3z`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
+
+Verificado contra producción: **mismo sha256** que el build (`bce8f09b…`), `app_version.json` dice `v19.12` y los headers son los que espera el aviso de versión.
+
+Trae **una tabla del reparto por vez**, **un PDF por tabla** y la **grilla con líneas + el renglón que se pinta al pasar el mouse** (ver "Cambios v19.12"). **Sin migración.** **Sin pasada visual del desarrollador**: la mira el usuario.
+
+> **Verificar el bundle por `grep` tiene dos límites** (los dos comprobados acá): dart2js **escapa los acentos** (`Sábado` queda `s\xe1bado`) y los **colores no aparecen** en ninguna forma greppable — ni `4291176488`, ni `0xffc62828`, ni `c62828`, probado contra `AppTheme.primary`, que existe desde v1. Para un cambio puramente visual, la prueba es el **sha256 igual al build**, no el grep.
+
+### v19.11 — deployada el 28/10/2026
+
+Deployada el 28/10/2026 desde la rama `feat/reparto-dos-tablas-sabado`. Deploy `web-kxhqo9t1j`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
+
+Verificado contra producción: **mismo sha256** que el build (`35f276df…`), `app_version.json` dice `v19.11`, el bundle trae el código nuevo y los headers son los que espera el aviso de versión (`app_version.json` e `index.html` `no-cache, no-store, must-revalidate`; `main.dart.js` `no-cache`).
+
+Trae la **Lista de reparto en dos tablas**, el **sábado** y el **día por comando** en el asistente (ver "Cambios v19.11"). **Sin pasada visual todavía**: se deployó antes de mirarla andando.
+
+> **Al verificar el bundle, los acentos no se buscan tal cual**: dart2js los escapa (`Sábado` queda `s\xe1bado`, `cuántas` queda `cu\xe1ntas`). Un `grep "Sábado" main.dart.js` da 0 y parece que faltara el código. Buscar el pedazo sin acento (`bado`, `ntas medias`) o el escape.
+
+Las dos dependencias de este deploy ya estaban hechas antes de subirlo:
+- `supabase_migration_reparto_sabado_tipo.sql` **corrida el 28/10/2026**. Verificado por REST: la columna `tipo` responde, no quedó ninguna fila con carne y cerdo juntos, y el backfill dejó 182 filas de carne y 85 de cerdo (267 en total), ninguna con el tipo cruzado contra la columna de medias.
+- Edge Function **`parse-reparto` redeployada** por dashboard el 28/10/2026. Verificada con llamadas reales: "3 medias de carne para el jueves y 5 de cerdo para el sábado" devuelve **dos items**, cada uno con su día; una frase sin día devuelve `dia: null`; y "sacá a Perico del sábado" devuelve el borrar con su día.
+
+### v19.10 — deployada el 28/10/2026
 
 Deployada el 28/10/2026 desde la rama `feat/desglose-kg-semana`, **ya mergeada a `master`** por el **PR #14** (merge commit `b264df2`) — master y producción coinciden. Deploy `web-5xly6g6d8`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
 
@@ -506,7 +538,7 @@ Verificado contra producción: **mismo sha256** que el build (`acad6772…`), `a
 
 Trae el **desglose de los kg de la semana** del dashboard (ver "Cambios v19.10"). **Sin migración.** **Sin pasada visual todavía**: se deployó antes de mirarla andando.
 
-La URL directa del deploy (`web-5xly6g6d8-mfsabate.vercel.app`) contesta "Protected by Vercel Authentication": es normal, la que es pública es el alias.
+La URL directa del deploy (`web-5xly6g6d8-mfsabate.vercel.app`) contesta "Protected by Vercel Authentication": es normal, la que es pública es el alias. Lo mismo vale para la de v19.11 (`web-kxhqo9t1j-mfsabate.vercel.app`).
 
 ### v19.9 — deployada el 28/10/2026
 
@@ -633,6 +665,46 @@ Deployada desde la rama `feat/soporte`, **ya mergeada a `master`** (PR #1, merge
 ### v18.31 — deployada el 22/09/2026
 
 Deployada el 22/09/2026. Login funciona con admin/admin123. Flutter 3.41.8. URL: `https://web-six-indol-svg13avcfl.vercel.app`. Salió de la rama `feat/reparto-precarga` (que acumulaba v18.30 + v18.31); **esa rama ya está mergeada a `master`** — en su momento no lo estaba y la doc quedó desactualizada hasta el 20/10/2026.
+
+### Cambios v19.12 (28/10/2026) — Una tabla a la vez y un PDF por tabla
+
+Corrección del usuario sobre v19.11: las dos tablas apiladas en la misma pantalla no servían, y el PDF tiene que ser uno por mercadería.
+
+1. **`lib/screens/reparto_screen.dart`**: nuevo `_selectorTipo()` (`SegmentedButton` Carne / Cerdo, **el mismo gesto que el selector de día**) y el campo `_tipo` con la tabla visible. El body muestra **una sola tabla**. Cambiar de tabla **no toca la base**: las dos son la misma lista del día y se guardan juntas, así que es un `setState` y nada más — a diferencia del día, que sí recarga.
+2. **Vuelve el FAB** "Agregar a CARNE/CERDO" y se fue el botón que estaba dentro de cada tabla. El botón de adentro existía porque con las dos tablas a la vista el FAB no decía a cuál agregaba; con una sola, el FAB alcanza y es más cómodo en el celular.
+3. **`lib/services/reparto_service.dart`**: `generarYCompartir` y `generarPdf` toman `tipo` y arman **una sola tabla**. El título del PDF pasa a `CARNE (NOVILLO) — Reparto del Jueves`, y el nombre del archivo lleva el tipo (`reparto_carne_jueves_26-10-2026.pdf`): en el celular los dos PDF del mismo día quedan uno al lado del otro y hay que poder distinguirlos.
+4. **Las notas son del día, no de la mercadería**: se editan desde las dos tablas (es el mismo texto, el label pasó a "Notas sueltas del día") y salen en los **dos** PDF. Una nota como "buscar morcillas de La Florida" es del reparto, no de la carne.
+5. **El PDF se elige con un menú** en el AppBar ("PDF de CARNE" / "PDF de CERDO") en vez de un botón directo: así los dos se sacan sin tener que cambiar de tabla primero.
+6. **`test/reparto_test.dart`**: los smoke tests del PDF arman **los dos** documentos de cada caso, y se sumó el de la tabla vacía — un día puede no tener cerdo y la hoja igual tiene que salir, con su TOTAL MEDIAS y su sobrante. **148 tests en verde**.
+7. **`lib/utils/app_config.dart`**: `version` de `'v19.11'` a `'v19.12'`. **Sin migración**: no cambia nada de la base.
+8. **La vista de solo lectura del asistente sigue mostrando las dos tablas juntas**, a propósito: ahí se mira de un vistazo cómo quedó el día, no se edita.
+
+**Líneas de grilla y resaltado del renglón** (segunda corrección, mismo día):
+
+9. **Todas las filas pasan por el helper `_filaGrilla`** (encabezado, TOTAL MEDIAS, clientes y SOBRANTE). Es lo que hace que las **líneas verticales queden alineadas de punta a punta**: si cada fila se dibujara por su cuenta, la columna de medias se correría y la grilla dejaría de leerse. Antes la fila de cliente tenía un `SizedBox(width: 8)` de más y el ancho lo ponía cada campo.
+10. **`IntrinsicHeight` + `CrossAxisAlignment.stretch`** en la fila: sin eso las líneas verticales salen **cortadas** en las filas más altas, que son las que tienen sucursal cargada.
+11. **La tarjeta recorta con `Clip.antiAlias`**: las líneas llegan hasta el borde y sin el recorte se pasan de las esquinas redondeadas.
+12. **`lib/utils/theme.dart`**: `gridLine` (`0xFFC9C3B9`, más marcada que `border` a propósito) y `gridHover` (`0xFFFFF3E0`).
+13. **`_FilaCliente` pasó a ser un widget con estado propio**, y no un método de la pantalla, por el hover: así el mouse repinta **un renglón** y no la lista entera en cada movimiento, que con los campos de texto adentro se notaría.
+14. **El nombre cambia de color, no de grosor**: con `FontWeight` el texto se mueve solo al pasarle el mouse por arriba.
+15. **Sin pasada visual del desarrollador**: las líneas y el hover los mira el usuario (la app local pega contra producción).
+16. **Deploy**: 28/10/2026 desde la rama `feat/reparto-dos-tablas-sabado` (commits `33ca844` y `de7cff6`). Deploy `web-3mo72hm3z`, que tomó el alias solo. Sin migración.
+
+### Cambios v19.11 (28/10/2026) — Lista de reparto: dos tablas, sábado y día por comando
+
+Cinco pedidos del usuario sobre la Lista de reparto, más lo que arrastraban en el asistente.
+
+1. **`supabase_migration_reparto_sabado_tipo.sql`** (raíz del repo): `'sabado'` en el CHECK de `reparto_listas.dia` y columna `tipo` en `reparto_items`, con el backfill que **parte en dos** las filas viejas que traían carne y cerdo juntos. **Prerequisito del deploy.**
+2. **`lib/models/models.dart`**: `diasReparto` (los tres días, en orden) + `labelDiaReparto` (`'sabado'` → `'Sábado'`), `tiposReparto` / `tipoRepartoCarne` / `tipoRepartoCerdo` + `labelTipoReparto`. `RepartoItem` pasa de `mediasCarne`/`mediasCerdo` a **`tipo` + `medias`** (las dos columnas viejas quedan como getters derivados, para seguir escribiendo lo mismo en la base). `RepartoItem.desdeMap` devuelve **una lista**: una fila vieja sin `tipo` con las dos mercaderías se lee como dos filas. `RepartoLista` gana `itemsDe` / `totalDe` / `repartidoDe` / `sobranteDe` por tabla.
+3. **`lib/screens/reparto_screen.dart`**: reescrita en **dos tablas** (CARNE y CERDO), cada una con su encabezado, su TOTAL MEDIAS, sus filas, su SOBRANTE y su propio botón "Agregar cliente a …" (el FAB único no servía: no decía a qué tabla iba el cliente). Selector de día con **tres opciones**. **La alineación**: la fila del cliente pasó a `CrossAxisAlignment.center`, así el campo de medias queda centrado contra el bloque nombre + sucursal en vez de flotar arriba.
+4. **`lib/services/reparto_service.dart`** (PDF del repartidor): dos tablas, con columnas CLIENTES / SUCURSAL / MEDIAS. `generarPdf` pasó a ser **público** para poder armar el documento en los tests. Las tablas van como **widgets sueltos del `MultiPage`, no dentro de un `Column`**: una `Table` se parte sola entre páginas, un `Column` no, y una lista larga de clientes haría explotar el armado.
+5. **`supabase_functions/parse-reparto/index.ts`**: el día pasó a ser un campo **de cada item** (`"dia": "jueves" | "viernes" | "sabado" | null`) en vez de uno solo para toda la frase, y el prompt pide explícitamente **un item por día** cuando la frase toca varios. `dia_actual` quedó aceptado por compatibilidad pero la app ya no lo manda. **Se redeploya por dashboard** (el CLI local está logueado en otra cuenta).
+6. **`lib/services/reparto_ia_service.dart`**: `RepartoParseItem.dia`, `interpretar` sin `diaActual`, y `_diaValido` que tolera "Sábado" con acento o en mayúsculas. El día suelto a nivel respuesta (formato viejo) se sigue leyendo como respaldo de los items que no traigan el suyo.
+7. **`lib/screens/asistente_reparto_sheet.dart`**: **fuera el `SegmentedButton` Jue/Vie**. Cada ítem de la propuesta muestra su día en un chip tocable; si el comando no lo dijo, el chip dice **"¿Qué día?" en rojo** y el ítem no se puede confirmar hasta elegirlo — adivinar el día mandaría carne a la lista equivocada. `_aplicar` **agrupa por día** y guarda una lista por día. Una carga sin medias tampoco es aplicable: sin cantidad no se sabe a qué tabla va ("Falta decir cuántas medias"). "Ver lista del día" pasó a ser un menú con los tres días, y la vista de solo lectura también muestra las dos tablas.
+8. **Al cargar, solo se toca la tabla que el pedido nombra**: si dice "3 de carne para Perico", la fila de cerdo de Perico queda como estaba en vez de pisarse en cero.
+9. **`test/reparto_test.dart`** (nuevo, 16 casos): los tres días y el sábado sin acento, que una fila pertenezca a una sola tabla, que una fila sin medias igual sepa cuál es la suya, el partido en dos de las filas viejas, los totales y el sobrante por tabla, y tres smoke tests del PDF (incluida una lista de 160 filas que se parte en varias páginas). El proyecto pasa a **146 tests en verde**.
+10. **`lib/utils/app_config.dart`**: `version` de `'v19.10'` a `'v19.11'`.
+11. **Deploy**: 28/10/2026 desde la rama `feat/reparto-dos-tablas-sabado` (commits `1ad1694` y `9db7e5c`), **sin mergear a `master` todavía**. `flutter clean` + `flutter pub get` + `./build_web.sh`, se recreó `build/web/.vercel/project.json` (el clean se lo lleva puesto) y `vercel --prod --yes` desde `build/web`. Deploy `web-kxhqo9t1j`, que tomó el alias solo. La migración y el redeploy de `parse-reparto` se hicieron **antes** del build.
 
 ### Cambios v19.10 (28/10/2026) — Desglose de los kg de la semana
 

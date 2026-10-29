@@ -2,10 +2,15 @@
 // SUPABASE EDGE FUNCTION - parse-reparto
 // ============================================================
 // Interpreta una frase dictada/escrita por Joaco para armar la
-// lista de reparto (Jueves/Viernes) y devuelve items estructurados.
-// Ej: "Para el jueves cargame 3 medias de cerdo y 2 de carne para Perico"
-//   -> { dia: "jueves", items: [{ accion:"cargar", cliente:"Perico",
-//         carne:2, cerdo:3, sucursal:"", confianza:"alta" }] }
+// lista de reparto (Jueves/Viernes/Sábado) y devuelve items estructurados.
+// El día va EN CADA ITEM: una misma frase puede pedir carne para el jueves
+// y cerdo para el sábado, y cada pedido va a su lista.
+// Ej: "Para Perico 3 medias de carne el jueves y 5 de cerdo el sábado"
+//   -> { items: [
+//         { accion:"cargar", cliente:"Perico", dia:"jueves",
+//           carne:3, cerdo:0, sucursal:"", confianza:"alta" },
+//         { accion:"cargar", cliente:"Perico", dia:"sabado",
+//           carne:0, cerdo:5, sucursal:"", confianza:"alta" }] }
 //
 // Es un parseo de UN solo paso (texto -> JSON), sin loop de herramientas.
 // Se usa como proxy a la API de Claude para no exponer la API key en el
@@ -65,26 +70,32 @@ serve(async (req) => {
       ? clientes.filter((c) => typeof c === "string" && c.trim()).map((c) => c.trim())
       : [];
 
-    const diaActual =
-      dia_actual === "jueves" || dia_actual === "viernes" ? dia_actual : null;
+    const DIAS = ["jueves", "viernes", "sabado"];
+    // `dia_actual` quedó por compatibilidad: desde v19.11 la app no manda
+    // ningún día elegido, lo dice el comando. Si no viene, los items sin
+    // día salen con dia:null y la app se lo pregunta al usuario.
+    const diaActual = DIAS.includes(dia_actual) ? dia_actual : null;
 
     const prompt = `Sos un asistente que interpreta pedidos de reparto de carne de una carnicería mayorista argentina y los convierte en datos estructurados.
 
 CONTEXTO:
-- El reparto se arma por día: solo "jueves" o "viernes".
+- El reparto se arma por día: solo "jueves", "viernes" o "sabado" (sábado se escribe SIN acento).
 - Hay dos tipos de mercadería: "carne" (novillo) y "cerdo". La unidad es "medias" (medias reses).
 - El usuario dicta o escribe frases informales, por ejemplo:
   - "Para el jueves cargame 3 medias de cerdo y 2 medias de carne para Perico"
-  - "2 de carne para La Florida y 3 de cerdo para el Gordo"
+  - "Agregar para Perico 3 medias de carne para el jueves y 5 medias de cerdo para el sábado"
+  - "2 de carne para La Florida el viernes y 3 de cerdo para el Gordo el sábado"
   - "sacá a Perico del viernes"
-  - "para Distribuidora Sur, sucursal Centro, 4 de carne"
+  - "para Distribuidora Sur, sucursal Centro, 4 de carne el jueves"
 
-DÍA:
-- Si menciona un día (jueves/viernes), poné ese día en "dia".
-- Si NO menciona ningún día, poné "dia": ${diaActual ? `"${diaActual}"` : "null"} (es el día que el usuario tiene abierto en pantalla).
+DÍA (campo "dia" de CADA item, es lo más importante):
+- El día lo dice el comando. Cada item lleva SU día.
+- Si una misma frase pide cosas para días distintos (por ejemplo carne el jueves y cerdo el sábado), devolvé UN ITEM POR DÍA, aunque sea el mismo cliente.
+- Si un día vale para varias cosas de la frase, repetilo en cada item.
+- Si para algún pedido NO se menciona ningún día, poné "dia": ${diaActual ? `"${diaActual}"` : "null"}. No lo adivines.
 
 ACCIONES (campo "accion"):
-- "cargar": agregar o actualizar cantidades de un cliente.
+- "cargar": agregar o actualizar cantidades de un cliente en el día indicado.
 - "borrar": quitar a un cliente del reparto (cuando dice "sacá", "borrá", "quitá", "eliminá").
 
 CANTIDADES:
@@ -104,11 +115,11 @@ SUCURSAL:
 FORMATO DE RESPUESTA:
 Respondé SOLO con un JSON válido, sin texto adicional, sin backticks, con esta estructura EXACTA:
 {
-  "dia": "jueves" | "viernes" | null,
   "items": [
     {
       "accion": "cargar" | "borrar",
       "cliente": "nombre exacto de la lista" | null,
+      "dia": "jueves" | "viernes" | "sabado" | null,
       "carne": número entero,
       "cerdo": número entero,
       "sucursal": "texto" | "",
