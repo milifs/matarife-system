@@ -438,8 +438,11 @@ class _RepartoScreenState extends State<RepartoScreen> {
       decoration: BoxDecoration(
         color: AppTheme.card,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.border),
+        border: Border.all(color: AppTheme.gridLine),
       ),
+      // Las líneas de la grilla llegan hasta el borde de la tarjeta, así que
+      // hay que recortarlas para que no se pasen de las esquinas redondeadas.
+      clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           // Título de la tabla
@@ -451,8 +454,8 @@ class _RepartoScreenState extends State<RepartoScreen> {
               color: esCerdo
                   ? AppTheme.warningBg
                   : AppTheme.primary.withValues(alpha: 0.08),
-              borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(11)),
+              border: const Border(
+                  bottom: BorderSide(color: AppTheme.gridLine)),
             ),
             child: Row(
               children: [
@@ -478,194 +481,234 @@ class _RepartoScreenState extends State<RepartoScreen> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-            child: Column(
-              children: [
-                _filaHeader(),
-                _filaTotal(tipo),
-                const SizedBox(height: 4),
-                if (filas.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
-                    child: Text(
-                      'Todavía no hay clientes en esta tabla',
-                      style: TextStyle(
-                          fontSize: 13, color: AppTheme.textSecondary),
-                    ),
-                  )
-                else
-                  for (final fila in filas) _filaCliente(app, tipo, fila),
-                const SizedBox(height: 4),
-                _filaSobrante(_sobrante(tipo)),
-              ],
-            ),
-          ),
+          _filaHeader(),
+          _filaTotal(tipo),
+          if (filas.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Text('Todavía no hay clientes en esta tabla',
+                  style: TextStyle(
+                      fontSize: 13, color: AppTheme.textSecondary)),
+            )
+          else
+            for (final fila in filas)
+              _FilaCliente(
+                key: ObjectKey(fila),
+                fila: fila,
+                nombre: app.clientePorId(fila.clienteId)?.nombreRazonSocial ??
+                    '(cliente eliminado)',
+                onCambio: () {
+                  _marcarModificado();
+                  setState(() {});
+                },
+                onQuitar: () {
+                  setState(() {
+                    fila.dispose();
+                    _filas[tipo]!.remove(fila);
+                    _precargado = false;
+                  });
+                },
+              ),
+          _filaSobrante(_sobrante(tipo)),
         ],
       ),
     );
   }
 
   Widget _filaHeader() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-      decoration: BoxDecoration(
-        color: AppTheme.background,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: const Row(
-        children: [
-          Expanded(
-            child: Text('CLIENTE',
-                style: TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.bold)),
-          ),
-          SizedBox(
-            width: 64,
-            child: Text('MEDIAS',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.bold)),
-          ),
-          SizedBox(width: 40),
-        ],
-      ),
+    return _filaGrilla(
+      fondo: AppTheme.background,
+      izquierda: const Text('CLIENTE',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+      centro: const Text('MEDIAS',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
     );
   }
 
   Widget _filaTotal(String tipo) {
-    return Container(
-      margin: const EdgeInsets.only(top: 6),
-      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-      decoration: BoxDecoration(
-        color: AppTheme.infoBg,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          const Expanded(
-            child: Text('TOTAL MEDIAS',
-                style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.bold)),
-          ),
-          _campoNumero(_totalCtrl[tipo]!),
-          const SizedBox(width: 40),
-        ],
-      ),
-    );
-  }
-
-  Widget _filaCliente(AppProvider app, String tipo, _Fila fila) {
-    final cliente = app.clientePorId(fila.clienteId);
-    final nombre = cliente?.nombreRazonSocial ?? '(cliente eliminado)';
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
-      child: Row(
-        // El número va centrado contra el bloque del cliente (nombre +
-        // sucursal): con alineación al tope quedaba más alto que el nombre.
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(nombre, style: const TextStyle(fontSize: 14)),
-                TextField(
-                  controller: fila.sucursalCtrl,
-                  maxLength: 40,
-                  onChanged: (_) {
-                    _marcarModificado();
-                    setState(() {});
-                  },
-                  style: const TextStyle(fontSize: 12),
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    counterText: '',
-                    contentPadding:
-                        EdgeInsets.symmetric(vertical: 2, horizontal: 0),
-                    hintText: 'Sucursal (opcional)',
-                    hintStyle:
-                        TextStyle(fontSize: 12, color: AppTheme.textHint),
-                    border: InputBorder.none,
-                    isCollapsed: true,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          _campoNumero(fila.mediasCtrl),
-          SizedBox(
-            width: 40,
-            child: IconButton(
-              tooltip: 'Quitar',
-              padding: EdgeInsets.zero,
-              icon: const Icon(Icons.close,
-                  size: 18, color: AppTheme.textHint),
-              onPressed: () {
-                setState(() {
-                  fila.dispose();
-                  _filas[tipo]!.remove(fila);
-                  _precargado = false;
-                });
-              },
-            ),
-          ),
-        ],
-      ),
+    return _filaGrilla(
+      fondo: AppTheme.infoBg,
+      izquierda: const Text('TOTAL MEDIAS',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+      centro: _campoNumero(_totalCtrl[tipo]!),
     );
   }
 
   Widget _filaSobrante(int valor) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-      decoration: BoxDecoration(
-        color: AppTheme.infoBg,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          const Expanded(
-            child: Text('SOBRANTE DEPÓSITO',
-                style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.bold)),
-          ),
-          SizedBox(
-            width: 64,
-            child: Text(
-              '$valor',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: valor < 0 ? AppTheme.danger : AppTheme.textPrimary,
-              ),
-            ),
-          ),
-          const SizedBox(width: 40),
-        ],
+    return _filaGrilla(
+      fondo: AppTheme.infoBg,
+      ultima: true,
+      izquierda: const Text('SOBRANTE DEPÓSITO',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+      centro: Text(
+        '$valor',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          color: valor < 0 ? AppTheme.danger : AppTheme.textPrimary,
+        ),
       ),
     );
   }
 
-  Widget _campoNumero(TextEditingController ctrl) {
-    return SizedBox(
-      width: 64,
-      child: TextField(
-        controller: ctrl,
-        textAlign: TextAlign.center,
-        keyboardType: TextInputType.number,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        onChanged: (_) {
+  Widget _campoNumero(TextEditingController ctrl) => _campoMedias(
+        ctrl: ctrl,
+        onCambio: () {
           _marcarModificado();
           setState(() {});
         },
-        decoration: const InputDecoration(
-          isDense: true,
-          contentPadding:
-              EdgeInsets.symmetric(vertical: 8, horizontal: 6),
-          hintText: '0',
+      );
+}
+
+// ─────────────────────────────────────────────
+// La grilla
+// ─────────────────────────────────────────────
+// Todas las filas (encabezado, total, clientes y sobrante) se arman con
+// este helper, que es lo que hace que las líneas verticales queden
+// alineadas de punta a punta. Si una fila se dibujara por su cuenta, la
+// columna de medias se correría y la grilla dejaría de leerse.
+
+const double _anchoMedias = 64;
+const double _anchoAccion = 40;
+
+Widget _filaGrilla({
+  required Widget izquierda,
+  required Widget centro,
+  Widget? derecha,
+  Color? fondo,
+  bool ultima = false,
+}) {
+  const linea = BorderSide(color: AppTheme.gridLine);
+  return Container(
+    decoration: BoxDecoration(
+      color: fondo,
+      border: Border(bottom: ultima ? BorderSide.none : linea),
+    ),
+    // Estira las celdas al alto de la fila: sin esto las líneas verticales
+    // salen cortadas en las filas más altas (las que tienen sucursal).
+    child: IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 10, vertical: 6),
+              child: Align(
+                  alignment: Alignment.centerLeft, child: izquierda),
+            ),
+          ),
+          Container(
+            width: _anchoMedias,
+            decoration: const BoxDecoration(border: Border(left: linea)),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            child: Center(child: centro),
+          ),
+          Container(
+            width: _anchoAccion,
+            decoration: const BoxDecoration(border: Border(left: linea)),
+            child: Center(child: derecha ?? const SizedBox.shrink()),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// El campo de medias de cualquier fila. Sin ancho propio: se lo da la
+/// celda de la grilla.
+Widget _campoMedias({
+  required TextEditingController ctrl,
+  required VoidCallback onCambio,
+}) {
+  return TextField(
+    controller: ctrl,
+    textAlign: TextAlign.center,
+    keyboardType: TextInputType.number,
+    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+    onChanged: (_) => onCambio(),
+    decoration: const InputDecoration(
+      isDense: true,
+      contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      hintText: '0',
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────
+// Fila de cliente (con resaltado al pasar el mouse)
+// ─────────────────────────────────────────────
+// Es un widget aparte y no un método de la pantalla por el hover: así el
+// mouse repinta UN renglón y no la lista entera en cada movimiento.
+class _FilaCliente extends StatefulWidget {
+  final _Fila fila;
+  final String nombre;
+  final VoidCallback onCambio;
+  final VoidCallback onQuitar;
+
+  const _FilaCliente({
+    super.key,
+    required this.fila,
+    required this.nombre,
+    required this.onCambio,
+    required this.onQuitar,
+  });
+
+  @override
+  State<_FilaCliente> createState() => _FilaClienteState();
+}
+
+class _FilaClienteState extends State<_FilaCliente> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: _filaGrilla(
+        fondo: _hover ? AppTheme.gridHover : null,
+        izquierda: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              widget.nombre,
+              style: TextStyle(
+                fontSize: 14,
+                // El nombre se pinta al señalarlo: en una lista larga es lo
+                // que dice qué renglón se está por tocar. El grosor NO
+                // cambia, para que el texto no se mueva solo.
+                color: _hover ? AppTheme.primary : AppTheme.textPrimary,
+              ),
+            ),
+            TextField(
+              controller: widget.fila.sucursalCtrl,
+              maxLength: 40,
+              onChanged: (_) => widget.onCambio(),
+              style: const TextStyle(fontSize: 12),
+              decoration: const InputDecoration(
+                isDense: true,
+                counterText: '',
+                contentPadding:
+                    EdgeInsets.symmetric(vertical: 2, horizontal: 0),
+                hintText: 'Sucursal (opcional)',
+                hintStyle:
+                    TextStyle(fontSize: 12, color: AppTheme.textHint),
+                border: InputBorder.none,
+                isCollapsed: true,
+              ),
+            ),
+          ],
+        ),
+        centro: _campoMedias(
+            ctrl: widget.fila.mediasCtrl, onCambio: widget.onCambio),
+        derecha: IconButton(
+          tooltip: 'Quitar',
+          padding: EdgeInsets.zero,
+          icon: const Icon(Icons.close, size: 18, color: AppTheme.textHint),
+          onPressed: widget.onQuitar,
         ),
       ),
     );

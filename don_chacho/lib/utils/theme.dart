@@ -33,6 +33,14 @@ class AppTheme {
   static const Color border = Color(0xFFE0DDD8);
   static const Color divider = Color(0xFFF0EDE8);
 
+  /// Línea de grilla de las pantallas tipo planilla (hoy la Lista de
+  /// reparto). Más marcada que `border` a propósito: el usuario lee la
+  /// tabla cruzando el nombre con el número y necesita ver el renglón.
+  static const Color gridLine = Color(0xFFC9C3B9);
+
+  /// Fondo del renglón que el mouse está señalando.
+  static const Color gridHover = Color(0xFFFFF3E0);
+
   // ── Tema Material ──
   static ThemeData get theme => ThemeData(
         useMaterial3: true,
