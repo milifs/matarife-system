@@ -294,17 +294,17 @@ Permisos de cada rol, tal como están en `rol_permisos` hoy:
 | `deposito_config` | L+AMB | L+AMB | — | L+AMB | `gestionar_deposito` |
 | `deposito_movimientos` | L+AMB | L+AMB | — | L+AMB | `gestionar_deposito` |
 
-> **Estas cuatro celdas dependen de la PR #20** ("el depósito es el registro de lo que hay,
-> no se reconcilia contra remitos"). Ahí `cargarDeposito` pasó a leer **solo**
-> `deposito_config` y `deposito_movimientos`: ya no lee `cargas`, ni `proveedores`, ni
-> `remitos`. Verificado en esa rama.
+> **Estas cuatro celdas salen de la PR #20** ("el depósito es el registro de lo que hay,
+> no se reconcilia contra remitos"), **mergeada a master el 29/10/2026**. Ahí
+> `cargarDeposito` pasó a leer **solo** `deposito_config` y `deposito_movimientos`: ya no
+> lee `cargas`, ni `proveedores`, ni `remitos`. Verificado sobre master.
 >
 > Es un recorte real y bienvenido: **el Encargado de Depósito queda sin acceso a nada del
 > circuito comercial.** Su acceso completo pasa a ser `deposito_*`, `reparto_*`, `clientes`
 > y `vendedores` (para los nombres), `soportes` (los propios) y su propia fila de `usuarios`.
 >
-> **Si la PR #20 no se mergeara**, hay que devolverle la lectura de esas cuatro tablas o el
-> módulo se rompe. Los `ALTER POLICY` exactos están en el encabezado de la sección 4 de
+> **Si alguna vez el depósito volviera a reconciliarse contra remitos**, hay que devolverle
+> la lectura de esas cuatro tablas o el módulo se rompe. Los `ALTER POLICY` exactos están en el encabezado de la sección 4 de
 > `supabase_migration_rls_politicas.sql`, y `test/lectura_permitida_test.dart` tiene el caso
 > que se pone rojo si una de las dos puntas se mueve sin la otra.
 

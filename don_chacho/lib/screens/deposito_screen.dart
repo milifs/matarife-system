@@ -1,19 +1,21 @@
 // ============================================================
-// DEPÓSITO — Control de stock de medias reses (v19.5)
+// DEPÓSITO — Stock de medias reses (v19.5, reescrito en v19.16)
 // ============================================================
-// Existe por un agujero real: desde la cámara sacaron dos medias para un
-// cliente, la cajera se olvidó de cargar el remito y nadie podía decir dónde
-// estaban. Plata perdida.
+// Es el libro de lo que hay en la cámara: se carga a mano lo que entra y lo
+// que sale, y la pantalla muestra el saldo DESGLOSADO, porque un número sin
+// explicación no se le cree.
 //
-// La pantalla cierra la ecuación entre lo comprado, lo distribuido a clientes
-// y lo guardado en depósito, y lo muestra DESGLOSADO: si Joaco no puede ver de
-// dónde sale cada número, no le va a creer a la alerta.
+//   lo que debería haber = arranque + entradas - salidas
 //
-//   lo que debería haber = inicial + compradas + entradas
-//                          - remitidas - salidas
+// NO CRUZA NADA con el resto del sistema. Hasta v19.15 sumaba las cargas de
+// proveedores y restaba los remitos confirmados; eso se sacó por decisión del
+// usuario. El depósito dice qué hay, no lo reconcilia con lo que se compró ni
+// con lo que se facturó.
 //
-// El recuento físico se compara contra el teórico DE SU MOMENTO, no contra el
-// de hoy (ver `stockDeposito` en app_provider).
+// Lo único que sigue siendo una comparación es el RECUENTO: lo contado a mano
+// contra lo que dice el libro, y contra el libro DE SU MOMENTO, no el de hoy
+// (ver `stockDeposito` en app_provider). Eso es lo que delata a la media que
+// salió sin que nadie la registre.
 //
 // Novillo y cerdo van separados, igual que la Lista de reparto: una media de
 // cerdo no puede tapar un faltante de novillo.
@@ -25,7 +27,6 @@ import '../models/models.dart';
 import '../providers/app_provider.dart';
 import '../utils/formatters.dart';
 import '../utils/theme.dart';
-import 'remito_form_screen.dart';
 
 /// Tope de campos de kg que se generan. Un recuento de toda la cámara puede
 /// ser grande y está bien, pero sin tope un error de tipeo ("1000" en vez de
@@ -79,9 +80,6 @@ class _DepositoScreenState extends State<DepositoScreen> {
       builder: (context, app, _) {
         final novillo = app.stockNovillo;
         final cerdo = app.stockCerdo;
-        // El atajo para cargar el remito que falta solo se ofrece si el
-        // usuario puede crearlo: la cajera no siempre tiene ese permiso.
-        final puedeCargarRemito = app.tienePermiso('crear_remito');
 
         return Scaffold(
           appBar: AppBar(
@@ -115,17 +113,11 @@ class _DepositoScreenState extends State<DepositoScreen> {
                           stock: novillo,
                           onRecuento: () =>
                               _registrarRecuento(app, novillo),
-                          onCargarRemito: puedeCargarRemito
-                              ? () => _cargarRemitoFaltante(app)
-                              : null,
                         ),
                         const SizedBox(height: 12),
                         _TarjetaStock(
                           stock: cerdo,
                           onRecuento: () => _registrarRecuento(app, cerdo),
-                          onCargarRemito: puedeCargarRemito
-                              ? () => _cargarRemitoFaltante(app)
-                              : null,
                         ),
                         const SizedBox(height: 16),
                         _BotonesMovimiento(
@@ -153,9 +145,8 @@ class _DepositoScreenState extends State<DepositoScreen> {
   }
 
   // ── Arranque: desde cuándo se cuenta y con cuántas medias ──
-  // Sin esto no hay ecuación posible: el sistema tiene remitos de hace meses
-  // pero cargas de proveedores recién desde octubre, así que contar "desde
-  // siempre" daría cualquier cosa.
+  // Es el punto de partida del libro: se cuenta la cámara una vez y de ahí en
+  // adelante manda lo que se vaya cargando.
   Future<void> _configurarArranque(AppProvider app) async {
     final actual = app.depositoConfig;
     var fecha = actual?.fechaInicio ?? DateTime.now();
@@ -186,9 +177,9 @@ class _DepositoScreenState extends State<DepositoScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Contá las medias que hay hoy en la cámara. Desde esta '
-                  'fecha en adelante el sistema cuenta las compras y los '
-                  'remitos; lo anterior no se audita.',
+                  'Contá las medias que hay en la cámara. Desde esta '
+                  'fecha en adelante manda lo que se cargue como entrada y '
+                  'salida; lo anterior no se audita.',
                   style: TextStyle(
                     fontSize: 12,
                     color: AppTheme.textSecondary,
@@ -305,7 +296,6 @@ class _DepositoScreenState extends State<DepositoScreen> {
   Future<void> _registrarMovimiento(AppProvider app, String clase) async {
     final esSalida = clase == DepositoMovimiento.claseSalida;
     var tipo = Proveedor.tipoNovillo;
-    var esperaRemito = true;
     var fecha = DateTime.now();
     final mediasCtrl = TextEditingController();
     final obsCtrl = TextEditingController();
@@ -343,10 +333,11 @@ class _DepositoScreenState extends State<DepositoScreen> {
                 const SizedBox(height: 4),
                 Text(
                   esSalida
-                      ? 'Medias que salen de la cámara.'
-                      : 'Medias que vuelven o entran sin ser una compra '
-                          '(una devolución de un cliente, por ejemplo). La '
-                          'compra al proveedor ya suma sola.',
+                      ? 'Medias que salen de la cámara, por el motivo que '
+                          'sea. El motivo va en la observación.'
+                      : 'Medias que entran a la cámara: lo que llega del '
+                          'proveedor, una devolución de un cliente, un '
+                          'ajuste.',
                   style: const TextStyle(
                     fontSize: 12,
                     color: AppTheme.textSecondary,
@@ -401,49 +392,6 @@ class _DepositoScreenState extends State<DepositoScreen> {
                     }
                   },
                 ),
-                if (esSalida) ...[
-                  const SizedBox(height: 8),
-                  // Acá está el corazón del módulo: la salida que todavía no
-                  // tiene remito queda marcada como pendiente y la pantalla
-                  // la grita hasta que el remito aparezca.
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: esperaRemito,
-                    onChanged: (v) =>
-                        setStateSheet(() => esperaRemito = v),
-                    title: const Text(
-                      'El remito se carga después',
-                      style: TextStyle(fontSize: 14),
-                    ),
-                    subtitle: Text(
-                      esperaRemito
-                          ? 'Va a quedar avisando hasta que se cargue el '
-                              'remito de estas medias.'
-                          : 'Salida definitiva: merma, consumo propio o '
-                              'rotura. No va a esperar ningún remito.',
-                      style: const TextStyle(fontSize: 11),
-                    ),
-                  ),
-                  // Trampa fácil de pisar: si el remito YA está cargado, el
-                  // remito solo ya descontó las medias. Registrar también la
-                  // salida las descontaría dos veces.
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppTheme.infoBg,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text(
-                      'Si el remito de estas medias ya está cargado, no hace '
-                      'falta registrar la salida: el remito ya las descontó.',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppTheme.textSecondary,
-                      ),
-                    ),
-                  ),
-                ],
                 const SizedBox(height: 8),
                 TextField(
                   controller: obsCtrl,
@@ -482,7 +430,6 @@ class _DepositoScreenState extends State<DepositoScreen> {
       clase: clase,
       medias: parseNumero(mediasCtrl.text),
       kgsPorMedia: _kgsCargados(kgCtrls),
-      esperaRemito: esSalida && esperaRemito,
       fecha: fecha,
       observacion: obsCtrl.text.trim(),
       registradoPor: app.usuarioActual?.nombreCompleto,
@@ -574,7 +521,6 @@ class _DepositoScreenState extends State<DepositoScreen> {
       clase: DepositoMovimiento.claseRecuento,
       medias: parseNumero(ctrl.text),
       kgsPorMedia: _kgsCargados(kgCtrls),
-      esperaRemito: false,
       observacion: 'Recuento físico',
       registradoPor: app.usuarioActual?.nombreCompleto,
     );
@@ -606,19 +552,6 @@ class _DepositoScreenState extends State<DepositoScreen> {
         ),
       ),
     );
-  }
-
-  // ── Atajo: cargar el remito que falta ──
-  // Es el agujero original: la carne salió y el remito nunca se cargó. Desde
-  // el aviso se va derecho al formulario, y al volver se recalcula el stock
-  // (la salida se cierra sola por FIFO si el remito cubre las medias).
-  Future<void> _cargarRemitoFaltante(AppProvider app) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const RemitoFormScreen()),
-    );
-    if (!mounted) return;
-    await app.cargarDeposito(forzar: true);
   }
 
   // ── Baja con motivo obligatorio ──
@@ -726,8 +659,8 @@ class _SinConfigurar extends StatelessWidget {
             const Text(
               'El depósito necesita un punto de partida: contar las medias '
               'que hay hoy en la cámara y la fecha desde la que se empieza '
-              'a contar. De ahí en adelante el sistema suma las compras, '
-              'resta los remitos y avisa si los números no dan.',
+              'a contar. De ahí en adelante el sistema suma las entradas, '
+              'resta las salidas y avisa si el recuento no da.',
               style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
             ),
             const SizedBox(height: 16),
@@ -754,14 +687,9 @@ class _TarjetaStock extends StatelessWidget {
   final StockDeposito stock;
   final VoidCallback onRecuento;
 
-  /// Null cuando el usuario no puede crear remitos: entonces el aviso avisa
-  /// pero no ofrece el atajo.
-  final VoidCallback? onCargarRemito;
-
   const _TarjetaStock({
     required this.stock,
     required this.onRecuento,
-    this.onCargarRemito,
   });
 
   @override
@@ -812,46 +740,25 @@ class _TarjetaStock extends StatelessWidget {
             // Los kilos contestan lo que las medias no pueden: cuánta carne
             // hay. Dos medias pueden diferenciarse en 40 kg.
             _KgEnCamara(stock: stock),
-            // Qué hay realmente para vender: medias enteras y las partes que
-            // quedaron de las que ya se abrieron.
-            if (stock.hayPartesSueltas) _PartesSueltas(stock: stock),
             const Divider(height: 20),
 
-            // El desglose completo: de dónde sale ese número.
+            // El desglose: de dónde sale ese número. Son tres líneas, que es
+            // todo lo que el libro sabe.
             _Fila(
               label: 'Al arranque',
               valor: formatMedias(stock.inicial),
               kg: stock.kgInicial,
             ),
             _Fila(
-              label: 'Compradas a proveedores',
-              valor: '+ ${formatMedias(stock.compradas)}',
-              kg: stock.kgComprados,
+              label: 'Entradas',
+              valor: '+ ${formatMedias(stock.entradas)}',
+              kg: stock.kgEntradas,
             ),
-            if (stock.entradas > 0)
-              _Fila(
-                label: 'Entradas (devoluciones, ajustes)',
-                valor: '+ ${formatMedias(stock.entradas)}',
-                kg: stock.kgEntradas,
-              ),
             _Fila(
-              label: 'Remitidas a clientes',
-              valor: '− ${formatMedias(stock.remitidas)}',
-              kg: stock.kgRemitidos,
+              label: 'Salidas',
+              valor: '− ${formatMedias(stock.salidas)}',
+              kg: stock.kgSalidas,
             ),
-            if (stock.salidasPendientes > 0)
-              _Fila(
-                label: 'Salidas sin remito',
-                valor: '− ${formatMedias(stock.salidasPendientes)}',
-                kg: stock.kgSalidasPendientes,
-                color: AppTheme.warning,
-              ),
-            if (stock.salidasDefinitivas > 0)
-              _Fila(
-                label: 'Salidas definitivas (merma, consumo)',
-                valor: '− ${formatMedias(stock.salidasDefinitivas)}',
-                kg: stock.kgSalidasDefinitivas,
-              ),
             const Divider(height: 20),
             _Fila(
               label: stock.tieneRecuento
@@ -862,9 +769,9 @@ class _TarjetaStock extends StatelessWidget {
                   : '—',
               destacado: true,
             ),
-            // Los kilos del recuento son el único kg "de stock" honesto: la
-            // ecuación cierra por medias, no por peso, así que no existe un
-            // kg teórico contra el cual compararlos.
+            // Los kilos del recuento son los únicos que se pesaron de
+            // verdad: el kilaje del libro puede estar incompleto, así que
+            // este es el dato duro.
             if (stock.kgRecuento > 0)
               _Fila(
                 label: 'Kg pesados en ese recuento',
@@ -872,10 +779,6 @@ class _TarjetaStock extends StatelessWidget {
               ),
             const SizedBox(height: 10),
             _Veredicto(stock: stock),
-            if (stock.hayPendientes) ...[
-              const SizedBox(height: 10),
-              _Pendientes(stock: stock, onCargarRemito: onCargarRemito),
-            ],
             const SizedBox(height: 6),
             Align(
               alignment: Alignment.centerRight,
@@ -894,13 +797,13 @@ class _TarjetaStock extends StatelessWidget {
 
 /// Los kilos de lo que debería estar en la cámara (v19.9).
 ///
-/// Hasta ahora el módulo pedía los kilos de cada media pero no los mostraba
+/// Hasta v19.8 el módulo pedía los kilos de cada media pero no los mostraba
 /// nunca de vuelta: se cargaban y desaparecían. Acá vuelven, con la misma
-/// ecuación que las medias pero en peso.
+/// cuenta que las medias pero en peso.
 ///
-/// El kilaje puede estar INCOMPLETO (una carga sin faena, una salida que
-/// nadie pesó, un arranque sin balanza) y se dice explícitamente: un número
-/// de kilos que parece exacto y no lo es es peor que no mostrarlo.
+/// El kilaje puede estar INCOMPLETO (un movimiento que nadie pesó, un
+/// arranque sin balanza) y se dice explícitamente: un número de kilos que
+/// parece exacto y no lo es es peor que no mostrarlo.
 class _KgEnCamara extends StatelessWidget {
   final StockDeposito stock;
 
@@ -932,90 +835,6 @@ class _KgEnCamara extends StatelessWidget {
   }
 }
 
-/// Qué hay realmente para vender: medias enteras y las partes que quedaron
-/// de las que ya se abrieron (v19.9).
-///
-/// La media de novillo se parte en tres —pierna, octavo y plancha de asado—
-/// así que remitir una pierna deja un octavo y una plancha disponibles. El
-/// stock en medias ya lo sabe (dice 1,67), pero "1,67 medias" no le dice a
-/// nadie qué pedazo puede vender. Esto sí.
-///
-/// Las dos cuentas son la misma: medias enteras + partes sueltas = el stock.
-class _PartesSueltas extends StatelessWidget {
-  final StockDeposito stock;
-
-  const _PartesSueltas({required this.stock});
-
-  @override
-  Widget build(BuildContext context) {
-    final cortes = stock.cortes;
-    final sueltas = <String>[
-      if (cortes.piernasSueltas > 0)
-        '${cortes.piernasSueltas} '
-            '${labelParte(partePierna, cortes.piernasSueltas)}',
-      if (cortes.octavosSueltos > 0)
-        '${cortes.octavosSueltos} '
-            '${labelParte(parteOctavo, cortes.octavosSueltos)}',
-      if (cortes.planchasSueltas > 0)
-        '${cortes.planchasSueltas} '
-            '${labelParte(partePlancha, cortes.planchasSueltas)}',
-    ];
-
-    final enteras = stock.mediasEnteras;
-    final textoEnteras = enteras < toleranciaMedias
-        ? 'Ninguna media entera'
-        : '${formatMedias(enteras)} '
-            '${(enteras - 1).abs() < toleranciaMedias ? 'media entera' : 'medias enteras'}';
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppTheme.infoBg,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'DISPONIBLE PARA VENDER',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.4,
-              color: AppTheme.info,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            textoEnteras,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          for (final parte in sueltas)
-            Text(
-              parte,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          const SizedBox(height: 6),
-          const Text(
-            'La media de novillo se parte en pierna, octavo y plancha de '
-            'asado. Lo suelto quedó de las medias que ya se abrieron para '
-            'armar un remito.',
-            style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// El cartel que responde la pregunta de Joaco: ¿dan los números?
 class _Veredicto extends StatelessWidget {
   final StockDeposito stock;
@@ -1042,7 +861,7 @@ class _Veredicto extends StatelessWidget {
         fondo: AppTheme.successBg,
         icono: Icons.check_circle_outline,
         titulo: 'Los números dan redondos',
-        detalle: 'Lo comprado, lo remitido y lo guardado cierran.',
+        detalle: 'Lo que dice el libro es lo que hay en la cámara.',
       );
     }
 
@@ -1054,9 +873,9 @@ class _Veredicto extends StatelessWidget {
         titulo:
             'Faltan ${formatMediasConUnidad(stock.faltantes)} sin registrar',
         detalle:
-            'Salieron del depósito y no hay remito que las respalde. '
-            'Cargá el remito que falta, o registralas como salida '
-            'definitiva si fue merma o consumo propio.',
+            'Se contó menos de lo que dice el libro: salieron de la cámara '
+            'y nadie las registró. Cargá la salida que falta y anotá en la '
+            'observación a dónde fueron.',
       );
     }
 
@@ -1067,83 +886,8 @@ class _Veredicto extends StatelessWidget {
       titulo:
           'Hay ${formatMediasConUnidad(stock.sobrantes)} de más en la cámara',
       detalle:
-          'El sistema cuenta menos de lo que se contó a mano. Puede faltar '
-          'cargar una compra, o sobrar un remito cargado de más.',
-    );
-  }
-}
-
-/// Las salidas que todavía esperan su remito. Es el aviso que habría evitado
-/// el problema original: dos medias afuera y ningún remito que las explique.
-class _Pendientes extends StatelessWidget {
-  final StockDeposito stock;
-  final VoidCallback? onCargarRemito;
-
-  const _Pendientes({required this.stock, this.onCargarRemito});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppTheme.warningBg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppTheme.warning.withOpacity(0.4)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.receipt_long_outlined,
-                  size: 18, color: AppTheme.warning),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'Falta el remito de '
-                  '${formatMediasConUnidad(stock.salidasPendientes)}'
-                  '${stock.kgPendientes > 0 ? ' (${formatKg(stock.kgPendientes)})' : ''}',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.warning,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          for (final mov in stock.pendientes)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                '${mov.numeroFormateado} · ${formatFecha(mov.fecha)} · '
-                '${formatMedias(mov.medias)}'
-                '${mov.tieneKg ? ' · ${formatKg(mov.totalKg)}' : ''}'
-                '${mov.observacion.trim().isEmpty ? '' : ' · ${mov.observacion.trim()}'}',
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppTheme.textSecondary,
-                ),
-              ),
-            ),
-          const SizedBox(height: 6),
-          const Text(
-            'Se cierra solo cuando se carga un remito de este tipo de carne.',
-            style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
-          ),
-          if (onCargarRemito != null)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: onCargarRemito,
-                icon: const Icon(Icons.note_add_outlined, size: 18),
-                label: const Text('Cargar el remito'),
-              ),
-            ),
-        ],
-      ),
+          'Se contó más de lo que dice el libro. Puede faltar cargar una '
+          'entrada, o sobrar una salida cargada de más.',
     );
   }
 }
@@ -1407,7 +1151,6 @@ class _Historial extends StatelessWidget {
                 ),
                 subtitle: Text(
                   '${mov.numeroFormateado} · ${formatFecha(mov.fecha)}'
-                  '${mov.esSalidaDefinitiva ? ' · definitiva' : ''}'
                   '${mov.mediasSinPesar > 0 ? ' · ${mov.mediasSinPesar} sin pesar' : ''}'
                   '${mov.observacion.trim().isEmpty ? '' : '\n${mov.observacion.trim()}'}',
                   style: const TextStyle(fontSize: 11),
@@ -1426,7 +1169,6 @@ class _Fila extends StatelessWidget {
   final String label;
   final String valor;
   final bool destacado;
-  final Color? color;
 
   /// Los kilos de esa línea. Van abajo del texto y no en una columna aparte:
   /// en el celular una tercera columna deja los números ilegibles. Cuando es
@@ -1438,7 +1180,6 @@ class _Fila extends StatelessWidget {
     required this.label,
     required this.valor,
     this.destacado = false,
-    this.color,
     this.kg = 0,
   });
 
@@ -1475,7 +1216,7 @@ class _Fila extends StatelessWidget {
             style: TextStyle(
               fontSize: 13,
               fontWeight: destacado ? FontWeight.w700 : FontWeight.w600,
-              color: color ?? AppTheme.textPrimary,
+              color: AppTheme.textPrimary,
             ),
           ),
         ],

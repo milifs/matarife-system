@@ -352,7 +352,8 @@ CREATE POLICY costos_semana_delete ON costos_semana FOR DELETE TO authenticated
 -- 4. Compras a proveedores y depósito
 -- ════════════════════════════════════════════════════════════
 -- **Estas políticas suponen el depósito de la PR #20** ("el depósito es el
--- registro de lo que hay, no se reconcilia contra remitos"). Ahí
+-- registro de lo que hay, no se reconcilia contra remitos"), **mergeada a
+-- master el 29/10/2026**. Ahí
 -- `cargarDeposito` pasó a leer solo `deposito_config` y
 -- `deposito_movimientos`: ya no lee `cargas`, ni `proveedores`, ni `remitos`.
 --
@@ -360,8 +361,9 @@ CREATE POLICY costos_semana_delete ON costos_semana FOR DELETE TO authenticated
 -- `proveedores`, `cargas`, `remitos` ni `remito_items`. Es un recorte real:
 -- el Encargado de Depósito queda sin acceso a nada del circuito comercial.
 --
--- **Si la PR #20 no se mergeara**, hay que volver a agregar esos cuatro arms,
--- o el módulo se rompe (el stock no podría leer las cargas ni los remitos):
+-- **Si alguna vez el depósito volviera a reconciliarse contra remitos**, hay
+-- que volver a agregar esos cuatro arms, o el módulo se rompe (el stock no
+-- podría leer las cargas ni los remitos):
 --   ALTER POLICY proveedores_select  ON proveedores  USING (tiene_permiso('gestionar_proveedores') OR tiene_permiso('gestionar_deposito'));
 --   ALTER POLICY cargas_select       ON cargas       USING (tiene_permiso('gestionar_proveedores') OR tiene_permiso('gestionar_deposito'));
 --   ALTER POLICY remitos_select      ON remitos      USING (puede_ver_saldo() OR tiene_permiso('crear_remito') OR tiene_permiso('gestionar_deposito'));

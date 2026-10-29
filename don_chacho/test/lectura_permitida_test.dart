@@ -133,7 +133,7 @@ void main() {
     });
 
     test('NO lee remitos ni cargas', () {
-      // Es el recorte que habilitó la PR #20: desde que el depósito es el
+      // Es el recorte que habilitó la PR #20 (mergeada): desde que el depósito es el
       // registro de lo que hay y no se reconcilia contra remitos,
       // `cargarDeposito` lee solo deposito_config y deposito_movimientos.
       // Si esto se vuelve a poner en true, la matriz quedó desactualizada.
