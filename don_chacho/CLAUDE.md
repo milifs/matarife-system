@@ -506,11 +506,19 @@ Si algún día se vuelve a Cloudflare o Netlify, hay que recrearlo — pero copi
 | v18.18 (08/07) | **Fix menú Opciones tapado en iPhone**: el `showModalBottomSheet` del FAB pasó a `isScrollControlled: true` + `SingleChildScrollView` con padding inferior de 80px, para que la última opción ("Cerrar sesión") no quede oculta detrás de la barra de URL de Safari cuando hay muchas opciones (admin). |
 | v18.17 (08/07) | **Nuevos tipos de carne + baja del OCR + tipo de carne en NDP**: (1) Catálogo de tipos de carne (remito y NDP): Novillo, Cerdo, Pierna mocha, Pierna pistola, Plancha de asado, Octavo, 1/4 delantero. (2) **OCR eliminado**: se borró `ocr_service.dart`, la sección de foto del formulario de remito y la dependencia `image_picker`. (3) NDP: la descripción libre por fila pasó a ser un **dropdown de tipo de carne**. (4) La **conversión NDP→Remito** usa el tipo elegido en la nota (fallback a la regla de 60kg solo si viene vacío). (5) Dashboard, Ganancias y Comisiones: **solo Cerdo cuenta como Cerdo; el resto (Novillo y sus cortes) computa como Novillo**. |
 
-## ESTADO ACTUAL (v19.11) — EN PRODUCCIÓN
+## ESTADO ACTUAL (v19.12) — EN PRODUCCIÓN
 
-> **v19.12 está escrita pero NO deployada todavía** (una tabla del reparto a la vez y un PDF por tabla — ver "Cambios v19.12"). **Sin migración ni Edge Function**: esta sale con un build y nada más.
+Deployada el 28/10/2026 desde la rama `feat/reparto-dos-tablas-sabado` (**PR #15**, todavía sin mergear a `master`: producción va adelante de master). Deploy `web-3mo72hm3z`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
 
-Deployada el 28/10/2026 desde la rama `feat/reparto-dos-tablas-sabado`, **todavía NO mergeada a `master`** (sin PR abierta): producción va adelante de master. Deploy `web-kxhqo9t1j`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
+Verificado contra producción: **mismo sha256** que el build (`bce8f09b…`), `app_version.json` dice `v19.12` y los headers son los que espera el aviso de versión.
+
+Trae **una tabla del reparto por vez**, **un PDF por tabla** y la **grilla con líneas + el renglón que se pinta al pasar el mouse** (ver "Cambios v19.12"). **Sin migración.** **Sin pasada visual del desarrollador**: la mira el usuario.
+
+> **Verificar el bundle por `grep` tiene dos límites** (los dos comprobados acá): dart2js **escapa los acentos** (`Sábado` queda `s\xe1bado`) y los **colores no aparecen** en ninguna forma greppable — ni `4291176488`, ni `0xffc62828`, ni `c62828`, probado contra `AppTheme.primary`, que existe desde v1. Para un cambio puramente visual, la prueba es el **sha256 igual al build**, no el grep.
+
+### v19.11 — deployada el 28/10/2026
+
+Deployada el 28/10/2026 desde la rama `feat/reparto-dos-tablas-sabado`. Deploy `web-kxhqo9t1j`, que **tomó el alias solo** (`web-six-indol-svg13avcfl.vercel.app`).
 
 Verificado contra producción: **mismo sha256** que el build (`35f276df…`), `app_version.json` dice `v19.11`, el bundle trae el código nuevo y los headers son los que espera el aviso de versión (`app_version.json` e `index.html` `no-cache, no-store, must-revalidate`; `main.dart.js` `no-cache`).
 
@@ -680,6 +688,7 @@ Corrección del usuario sobre v19.11: las dos tablas apiladas en la misma pantal
 13. **`_FilaCliente` pasó a ser un widget con estado propio**, y no un método de la pantalla, por el hover: así el mouse repinta **un renglón** y no la lista entera en cada movimiento, que con los campos de texto adentro se notaría.
 14. **El nombre cambia de color, no de grosor**: con `FontWeight` el texto se mueve solo al pasarle el mouse por arriba.
 15. **Sin pasada visual del desarrollador**: las líneas y el hover los mira el usuario (la app local pega contra producción).
+16. **Deploy**: 28/10/2026 desde la rama `feat/reparto-dos-tablas-sabado` (commits `33ca844` y `de7cff6`). Deploy `web-3mo72hm3z`, que tomó el alias solo. Sin migración.
 
 ### Cambios v19.11 (28/10/2026) — Lista de reparto: dos tablas, sábado y día por comando
 
