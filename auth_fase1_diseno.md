@@ -498,7 +498,7 @@ sesión es trabajo de la Fase 3.
 | Fase | Qué hace | Estado |
 |---|---|---|
 | **1 — Identidad** | `auth_id` + `es_admin()` + `tiene_permiso()`, login por Supabase Auth, 6 cuentas creadas y vinculadas, contraseñas temporales cambiadas, legacy apagado | mergeada (PR #19), **SQL escrita sin correr** |
-| **2 — Políticas** | Arreglar `cargarDatos()` (6.1) y `soportes.reportado_por_id` (6.2); escribir las políticas de la matriz del punto 5, **con la regla del saldo de 5.1 y no fila por fila**; el trigger que impide el autoascenso en `usuarios`; encender RLS **tabla por tabla**, empezando por las que no bloquean el reparto, nunca un jueves, viernes o sábado | **el código está** (PR #21 + la de pantallas/trigger). Falta encender RLS, y que la app escriba `soportes.reportado_por_id` |
+| **2 — Políticas** | Arreglar `cargarDatos()` (6.1) y `soportes.reportado_por_id` (6.2); escribir las políticas de la matriz del punto 5, **con la regla del saldo de 5.1 y no fila por fila**; el trigger que impide el autoascenso en `usuarios`; encender RLS **tabla por tabla**, empezando por las que no bloquean el reparto, nunca un jueves, viernes o sábado | **el código está completo y mergeado** (PR #21, #22 y #23). Falta correr las tres migraciones (24, 25 y 26) y encender RLS, grupo por grupo |
 | **3 — Cerrar lo que queda** | Borrar `password_hash` (6.3); alta de usuarios en un paso con Edge Function; Edge Functions con JWT de sesión (6.5); revisar si `mili` sigue existiendo | pendiente |
 
 **Condiciones para empezar la Fase 2** (las tres, no dos de tres):
