@@ -59,8 +59,7 @@ class _SoporteFormScreenState extends State<SoporteFormScreen> {
     final usuario = context.read<AppProvider>().usuarioActual;
     if (usuario == null) return;
     try {
-      final tickets =
-          await _db.getTicketsSoporte(reportadoPor: usuario.nombreCompleto);
+      final tickets = await _db.getTicketsSoporte(reportadoPorId: usuario.id);
       if (mounted) setState(() => _mios = tickets.take(5).toList());
     } catch (_) {
       // Sin historial el formulario sigue siendo usable.
@@ -310,8 +309,23 @@ class _SoporteFormScreenState extends State<SoporteFormScreen> {
   }
 
   Future<void> _enviar() async {
-    setState(() => _enviando = true);
     final app = context.read<AppProvider>();
+
+    // Sin perfil no hay a quién atarle el ticket, y un ticket sin dueño no lo
+    // ve de vuelta el que lo escribió. Con RLS encendido además lo rechaza la
+    // política de INSERT, que exige que el `reportado_por_id` sea el del que
+    // escribe; mejor un mensaje claro acá que un error de Postgres.
+    final usuario = app.usuarioActual;
+    if (usuario == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('No se puede registrar el reclamo: volvé a entrar a la '
+            'app para que quede a tu nombre.'),
+        backgroundColor: AppTheme.danger,
+      ));
+      return;
+    }
+
+    setState(() => _enviando = true);
 
     String? adjuntoPath;
     if (_adjuntoBytes != null) {
@@ -338,8 +352,9 @@ class _SoporteFormScreenState extends State<SoporteFormScreen> {
       descripcion: _descripcionCtrl.text.trim(),
       bloqueante: _bloqueante,
       adjuntoPath: adjuntoPath,
-      reportadoPor: app.usuarioActual?.nombreCompleto,
-      rol: app.usuarioActual?.rol?.nombre,
+      reportadoPor: usuario.nombreCompleto,
+      reportadoPorId: usuario.id,
+      rol: usuario.rol?.nombre,
       appVersion: AppConfig.version,
       plataforma: SoporteService.plataforma,
     );

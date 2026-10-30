@@ -82,6 +82,13 @@ WHERE m.cuantos = 1
 -- sigue viendo el admin en la bandeja, solo que su autor no lo ve en la lista
 -- de "mis últimos reclamos".
 --
+-- OJO, y esto hay que mirarlo de verdad: desde v19.16 la app filtra "mis
+-- últimos reclamos" por `reportado_por_id` y **ya no por el nombre**. Así que
+-- un ticket que quede sin vincular le deja la respuesta invisible a su autor,
+-- esté RLS encendido o apagado. La bandeja del admin lo marca con "(no lo ve
+-- en su lista)" al lado del nombre. **Si aparece alguno, asignarlo a mano
+-- (más abajo) antes de dar por cerrado este paso.**
+--
 --   SELECT CASE WHEN reportado_por_id IS NULL
 --               THEN 'sin vincular' ELSE 'vinculado' END AS estado,
 --          count(*)

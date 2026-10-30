@@ -442,6 +442,20 @@ La Fase 2 tiene que agregar `soportes.reportado_por_id UUID REFERENCES usuarios(
 directamente el `auth_id`), backfillear lo que se pueda por nombre y dejar la columna de
 texto para lo viejo. Es una migración chica, pero tiene que estar **antes** de la política.
 
+> **RESUELTO (30/10/2026).** `supabase_migration_soporte_reportado_por_id.sql` agrega la
+> columna (apunta al perfil y no a `auth.users`: si hay que recrear la cuenta de alguien,
+> sus reclamos siguen siendo suyos) con el backfill por nombre **solo cuando el nombre
+> identifica a una sola persona** — adivinar sería peor que dejarlo en NULL, porque le daría
+> los tickets de uno a otro, que es exactamente lo que esto viene a impedir.
+>
+> Y la app ya escribe y filtra por el id, que era la otra mitad: si la app preguntara por el
+> nombre y la base contestara por el id, un ticket podría no aparecer sin que nada avise.
+>
+> **Lo que esto cuesta, dicho:** un ticket viejo que el backfill no pueda vincular deja de
+> aparecerle a su autor en "mis últimos reclamos", aunque antes sí aparecía. No se pierde —
+> el admin lo sigue viendo y la bandeja lo marca con "(no lo ve en su lista)" — pero hay que
+> mirar la verificación de la migración y asignar a mano los que queden.
+
 ### 6.3 `usuarios.password_hash` tiene que desaparecer
 
 Mientras el login legacy exista, el hash tiene que seguir siendo legible para poder
