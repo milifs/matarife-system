@@ -186,9 +186,58 @@ Esto también **tiene que correrse antes del PASO 5**.
 
 ---
 
+## PASO 4 ter — Correr el permiso de los kg (1 min)
+
+**Solo si la PR #24 entró en este deploy.** Esta no es de auth: viene de la rama
+`feat/kg-semana-secretaria`, que sale en el mismo v19.16. Si todavía no se mergeó, el archivo
+no está en el repo y este paso se saltea. Para saberlo, desde la raíz:
+
+```bash
+ls supabase_migration_permiso_kg_semana.sql
+```
+
+SQL Editor → correr `supabase_migration_permiso_kg_semana.sql` **completa** (el permiso en el
+catálogo y sus filas de `rol_permisos`).
+
+Por qué acá: el bundle de v19.16 le muestra las dos tarjetas de kg del Inicio a un no-admin
+que tenga el permiso `ver_kg_semana`. Sin la fila en `permisos` el checkbox no aparece en
+Gestión de Usuarios, y sin las de `rol_permisos` **la secretaria sigue viendo el Inicio sin
+plata**.
+
+Verificación:
+
+```sql
+select r.nombre as rol
+from rol_permisos rp
+join roles r on r.id = rp.rol_id
+join permisos p on p.id = rp.permiso_id
+where p.nombre = 'ver_kg_semana'
+order by 1;
+```
+
+Tienen que aparecer el rol de admin y **Secretaria**. Si Secretaria no aparece, en esta
+instalación el rol está con otro nombre: la migración lo busca **por nombre** y no por su id
+fijo, a propósito, así que mirá cómo se llama y corré esa parte a mano.
+
+**Esta es la única de las tres que no rompe nada si falta**, y por eso es la más fácil de
+pasar por alto: no toca ninguna tabla de datos, nadie recibe un error y la app anda igual.
+Lo que pasa es que deployás y **el pedido de Joaquín queda sin hacer**, en silencio. Si te
+diste cuenta después del deploy, corrés la migración y listo: no hace falta buildear de nuevo.
+
+---
+
 ## PASO 5 — Deployar la app (10 min)
 
 Recién acá cambia algo para los usuarios.
+
+**Antes de buildear, que estas tres estén corridas.** Las dos primeras no son opcionales: la
+app nueva ya cuenta con ellas y sin ellas una pantalla falla.
+
+| Tiene que estar corrida | Si falta | |
+|---|---|---|
+| El **bloque 6** del PASO 4 (policies del bucket de soporte) | adjuntar una foto a un reclamo, y verla, dejan de andar | **rompe** |
+| La **24**, `soportes.reportado_por_id` (PASO 4 bis) | reportar un problema deja de andar — justo la pantalla que se usa cuando algo anda mal | **rompe** |
+| La **27**, `ver_kg_semana` (PASO 4 ter), si la PR #24 entró | la secretaria sigue viendo el Inicio sin plata | no rompe, **y no avisa** |
 
 ```bash
 cd /Users/milifernandezsabate/Projects/matarife-system/don_chacho
@@ -264,10 +313,10 @@ entrada de la Fase 2.
 
 ## Cómo volver atrás si algo falla a mitad
 
-El orden de los pasos está pensado justo para esto: **hasta el PASO 4 bis inclusive, la app
+El orden de los pasos está pensado justo para esto: **hasta el PASO 4 ter inclusive, la app
 que está en producción no se enteró de nada.** Todo lo de la base es aditivo (dos columnas
-vacías, dos índices, dos funciones nuevas, dos policies ampliadas): nada reemplaza ni borra
-nada de lo que ya andaba.
+vacías, dos índices, dos funciones nuevas, dos policies ampliadas y las filas del permiso
+nuevo): nada reemplaza ni borra nada de lo que ya andaba.
 
 | Si falla en… | Qué hacer | Qué ve el usuario |
 |---|---|---|
@@ -276,6 +325,7 @@ nada de lo que ya andaba.
 | **PASO 3** (vínculo) | Si quedó a medias, se arregla re-corriendo el bloque 5. Para desvincular todo: `update usuarios set auth_id = null;` (el perfil y la cuenta quedan intactos, solo se corta el puente). | Nada. |
 | **PASO 4** (bucket) | Para volver a como estaba: las dos policies originales están en `supabase_migration_soporte.sql`, bloque 3. Correrlas de nuevo. | Nada. |
 | **PASO 4 bis** (dueño del ticket) | Es aditivo: la columna vacía y un índice. Para volver atrás: `drop index if exists idx_soportes_reportado_por_id;` y `alter table soportes drop column if exists reportado_por_id;`. **Pero si ya deployaste, no la borres**: sin la columna el alta de tickets falla. Primero rollback del deploy. | Nada, mientras no hayas deployado. |
+| **PASO 4 ter** (permiso de los kg) | Es la más fácil de deshacer: `delete from rol_permisos where permiso_id = (select id from permisos where nombre = 'ver_kg_semana');` y después `delete from permisos where nombre = 'ver_kg_semana';`. Se puede hacer con la app nueva deployada sin romper nada — la secretaria vuelve a ver el Inicio sin plata, que es lo que ve hoy. | Nada. |
 | **PASO 5** (deploy) y la app no deja entrar a nadie | **Rollback del deploy**: Vercel → Deployments → el deployment anterior (`web-99unb7xxw`, v19.15) → **Promote to Production**. Vuelve el login viejo, que nunca dejó de funcionar porque los `password_hash` siguen ahí. | Unos minutos de login raro. Después, todo como antes. |
 | **PASO 5** y entra alguno pero no otro | **No hace falta rollback.** El que no entra, entra con su contraseña **vieja** (red del legacy). Revisar en Authentication → Users que su mail esté bien escrito y volver a correr el bloque 5. | Entra con la contraseña de siempre. |
 | **PASO 6** y alguien perdió su contraseña temporal | Authentication → Users → el usuario → **Reset password** (o Delete user y crearlo de nuevo, y volver a correr el bloque 5). | Entra con la contraseña vieja mientras tanto. |
