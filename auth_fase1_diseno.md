@@ -398,6 +398,29 @@ Lo que hay que hacer en la Fase 2, en este orden:
    Hoy `cargarDatos()` le trae pagos y notas de crédito al Encargado de Depósito, que no
    entra a ninguna pantalla que los use.
 
+> **RESUELTO (30/10/2026).** Los tres puntos están hechos:
+>
+> 1. `utils/lectura_permitida.dart` decide qué puede leer el rol **antes** de preguntar, y
+>    `cargarDatos()` envuelve cada query en `_siPuede(tabla, …)`.
+> 2. Las pantallas de saldo muestran `formatPesosSaldo(…, confiable: app.saldosConfiables)`,
+>    que dice "no disponible" en vez de un número, con la barra
+>    `AvisoSaldosNoDisponibles` arriba explicando por qué. Los dos formularios que
+>    **escriben** un saldo (`pago_form_screen`, `nota_cd_form_screen`) bloquean el guardado,
+>    porque `Pago.saldoAnterior` y `saldoNuevo` quedan en la fila y en el recibo impreso. Los
+>    PDF de estado de cuenta y de comprobante tampoco se emiten.
+> 3. Lo que el rol no puede leer no se pide.
+>
+> Y además `bucketsDeudaCliente()` corta por separado, que no estaba en la lista y hacía
+> falta: no sale del cache de saldos, se calcula en vivo, y sin los pagos **todos los
+> remitos quedarían como deuda vencida**.
+>
+> Lo que **no** cambió es el diagnóstico de arriba: el agujero sigue estando a un tilde de
+> distancia, porque los cuatro permisos que abren una pantalla con saldo son exactamente los
+> cuatro arms de la regla del saldo. Es decir: hoy esas guardas **no pueden dispararse**. Son
+> la red para el día que se cree un permiso que abra una de esas pantallas y no entre en la
+> regla. `test/saldos_confiables_test.dart` fija esa correspondencia para que, si se rompe,
+> se rompa en un test y no en un cobro.
+
 ### 6.2 `soportes` no tiene con qué identificar al dueño del ticket
 
 La política "cada uno ve sus propios tickets" necesita comparar contra algo estable, y hoy
@@ -460,8 +483,8 @@ sesión es trabajo de la Fase 3.
 
 | Fase | Qué hace | Estado |
 |---|---|---|
-| **1 — Identidad** | `auth_id` + `es_admin()` + `tiene_permiso()`, login por Supabase Auth, 6 cuentas creadas y vinculadas, contraseñas temporales cambiadas, legacy apagado | **esta PR** (SQL escrita sin correr) |
-| **2 — Políticas** | Arreglar `cargarDatos()` (6.1) y `soportes.reportado_por_id` (6.2); escribir las políticas de la matriz del punto 5, **con la regla del saldo de 5.1 y no fila por fila**; encender RLS **tabla por tabla**, empezando por las que no bloquean el reparto, nunca un jueves, viernes o sábado | pendiente |
+| **1 — Identidad** | `auth_id` + `es_admin()` + `tiene_permiso()`, login por Supabase Auth, 6 cuentas creadas y vinculadas, contraseñas temporales cambiadas, legacy apagado | mergeada (PR #19), **SQL escrita sin correr** |
+| **2 — Políticas** | Arreglar `cargarDatos()` (6.1) y `soportes.reportado_por_id` (6.2); escribir las políticas de la matriz del punto 5, **con la regla del saldo de 5.1 y no fila por fila**; el trigger que impide el autoascenso en `usuarios`; encender RLS **tabla por tabla**, empezando por las que no bloquean el reparto, nunca un jueves, viernes o sábado | **el código está** (PR #21 + la de pantallas/trigger). Falta encender RLS, y que la app escriba `soportes.reportado_por_id` |
 | **3 — Cerrar lo que queda** | Borrar `password_hash` (6.3); alta de usuarios en un paso con Edge Function; Edge Functions con JWT de sesión (6.5); revisar si `mili` sigue existiendo | pendiente |
 
 **Condiciones para empezar la Fase 2** (las tres, no dos de tres):

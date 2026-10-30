@@ -859,6 +859,10 @@ class _SaldosTabState extends State<_SaldosTab> {
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            if (!app.saldosConfiables) ...[
+              const AvisoSaldosNoDisponibles(),
+              const SizedBox(height: 12),
+            ],
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -868,13 +872,17 @@ class _SaldosTabState extends State<_SaldosTab> {
                     const Text('Saldo total a cobrar',
                         style: TextStyle(
                             fontSize: 14, fontWeight: FontWeight.w500)),
-                    Text(formatPesos(app.saldoTotal),
+                    Text(
+                        formatPesosSaldo(app.saldoTotal,
+                            confiable: app.saldosConfiables),
                         style: TextStyle(
-                          fontSize: 20,
+                          fontSize: app.saldosConfiables ? 20 : 14,
                           fontWeight: FontWeight.w600,
-                          color: app.saldoTotal > 0
-                              ? AppTheme.danger
-                              : AppTheme.success,
+                          color: !app.saldosConfiables
+                              ? AppTheme.textHint
+                              : app.saldoTotal > 0
+                                  ? AppTheme.danger
+                                  : AppTheme.success,
                         )),
                   ],
                 ),
@@ -934,13 +942,17 @@ class _SaldosTabState extends State<_SaldosTab> {
                   subtitle: Text('${clientesV.length} clientes',
                       style: const TextStyle(
                           fontSize: 12, color: AppTheme.textSecondary)),
-                  trailing: Text(formatPesos(saldoVend),
+                  trailing: Text(
+                      formatPesosSaldo(saldoVend,
+                          confiable: app.saldosConfiables),
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: app.saldosConfiables ? 15 : 12,
                         fontWeight: FontWeight.w600,
-                        color: saldoVend > 0
-                            ? AppTheme.danger
-                            : AppTheme.textPrimary,
+                        color: !app.saldosConfiables
+                            ? AppTheme.textHint
+                            : saldoVend > 0
+                                ? AppTheme.danger
+                                : AppTheme.textPrimary,
                       )),
                   children: [
                     const Divider(height: 1),
@@ -955,13 +967,17 @@ class _SaldosTabState extends State<_SaldosTab> {
                             style: const TextStyle(
                                 fontSize: 11,
                                 color: AppTheme.textSecondary)),
-                        trailing: Text(formatPesos(saldo),
+                        trailing: Text(
+                            formatPesosSaldo(saldo,
+                                confiable: app.saldosConfiables),
                             style: TextStyle(
-                              fontSize: 13,
+                              fontSize: app.saldosConfiables ? 13 : 11,
                               fontWeight: FontWeight.w500,
-                              color: saldo > 0
-                                  ? AppTheme.danger
-                                  : AppTheme.success,
+                              color: !app.saldosConfiables
+                                  ? AppTheme.textHint
+                                  : saldo > 0
+                                      ? AppTheme.danger
+                                      : AppTheme.success,
                             )),
                         onTap: saldo > 0 && app.tienePermiso('crear_pago')
                             ? () => Navigator.push(
@@ -1842,6 +1858,17 @@ class _HistorialTabState extends State<_HistorialTab> {
 
   Future<void> _descargarComprobanteNcd(
       BuildContext context, AppProvider app, NotaCreditoDebito nota) async {
+    // El comprobante lleva el saldo del cliente impreso: si no se sabe
+    // cuánto es, no se emite. Un PDF mal sobrevive a la pantalla.
+    if (!app.saldosConfiables) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('No se puede emitir el comprobante: tu rol no tiene '
+            'permiso para ver los pagos, así que el saldo del cliente no se '
+            'puede calcular.'),
+        backgroundColor: AppTheme.warning,
+      ));
+      return;
+    }
     final cliente = app.clientePorId(nota.clienteId);
     if (cliente == null) return;
     final vendedor = app.vendedorPorId(cliente.vendedorId);
@@ -2814,6 +2841,16 @@ class _RutaTabState extends State<_RutaTab> {
 
         return Column(
           children: [
+            // Los filtros de esta pantalla son "con saldo" y "vencidos", y
+            // los dos salen del saldo. Sin pagos, los dos quedan vacíos — y
+            // una lista vacía acá se lee como "no hay nada que cobrar".
+            if (!app.saldosConfiables)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: AvisoSaldosNoDisponibles(
+                    consecuencia: 'No se puede armar una ruta de cobranza'),
+              ),
+
             // ── Filtros ──
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -4281,17 +4318,24 @@ class _ReporteTabState extends State<_ReporteTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Botón exportar PDF
+          if (!app.saldosConfiables) ...[
+            const AvisoSaldosNoDisponibles(
+                consecuencia: 'No se puede exportar el estado de cuenta'),
+            const SizedBox(height: 12),
+          ],
           Align(
             alignment: Alignment.centerRight,
             child: OutlinedButton.icon(
-              onPressed: () => EstadoCuentaService.generarReporteCliente(
-                cliente: cliente,
-                vendedor: vendedor,
-                remitos: remitos,
-                pagos: pagos,
-                notasCD: notasCD,
-                saldoTotal: saldo,
-              ),
+              onPressed: !app.saldosConfiables
+                  ? null
+                  : () => EstadoCuentaService.generarReporteCliente(
+                        cliente: cliente,
+                        vendedor: vendedor,
+                        remitos: remitos,
+                        pagos: pagos,
+                        notasCD: notasCD,
+                        saldoTotal: saldo,
+                      ),
               icon: const Icon(Icons.picture_as_pdf, size: 18),
               label: const Text('Exportar PDF'),
             ),

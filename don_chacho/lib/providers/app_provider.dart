@@ -10,6 +10,7 @@ import 'dart:collection';
 import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
+import '../utils/app_config.dart';
 import '../utils/formatters.dart';
 import '../utils/lectura_permitida.dart';
 
@@ -36,6 +37,11 @@ class AppProvider extends ChangeNotifier {
 
   void setUsuario(Usuario usuario) {
     _usuarioActual = usuario;
+    // `cargarDatos()` lo vuelve a resolver, pero se hace también acá para no
+    // depender del orden de las dos llamadas: si alguna pantalla leyera
+    // `saldosConfiables` entre el login y la carga, con el `_lectura` del
+    // usuario anterior contestaría por el rol equivocado.
+    _lectura = _lecturaDelUsuario();
     notifyListeners();
   }
 
@@ -186,14 +192,16 @@ class AppProvider extends ChangeNotifier {
     );
   }
 
-  /// **El interruptor de la Fase 2.** Se pone en `true` recién cuando se
-  /// enciende RLS en producción (ver el punto 7 de
-  /// `supabase_migration_rls_politicas.sql`).
+  /// **El interruptor de la Fase 2.** Vive en `AppConfig.rlsEncendido` y se
+  /// pone en `true` recién cuando se enciende RLS en producción (ver el punto
+  /// 7 de `supabase_migration_rls_politicas.sql`).
   ///
-  /// Está como constante y no como consulta a la base a propósito: preguntarle
-  /// a Postgres qué tablas tienen RLS sería una query más en cada login para
-  /// un dato que cambia una vez en la vida del sistema.
-  static const rlsEncendido = false;
+  /// Es una constante de build y no una consulta a la base a propósito:
+  /// preguntarle a Postgres qué tablas tienen RLS sería una query más en cada
+  /// login para un dato que cambia una vez en la vida del sistema. Y como va
+  /// por `--dart-define`, el camino degradado **se puede mirar** antes de
+  /// encender nada: `flutter run -d chrome --dart-define=RLS_ENCENDIDO=true`.
+  static const rlsEncendido = AppConfig.rlsEncendido;
 
   /// Corre [query] solo si el rol puede leer [tabla]; si no, devuelve [vacio]
   /// sin ir a la red.
@@ -970,6 +978,15 @@ class AppProvider extends ChangeNotifier {
   /// aplican del más viejo al más nuevo. Cada bucket queda con su deuda
   /// pendiente y su fecha de vencimiento (fecha + plazo del cliente).
   List<DeudaBucket> bucketsDeudaCliente(Cliente cliente) {
+    // Misma razón que el corte de `_recalcularSaldos`, y hace falta aparte
+    // porque esto NO sale del cache de saldos: se calcula en vivo sobre
+    // `_remitos`, `_pagos` y `_notasCD`. Sin los pagos, los créditos que
+    // tendrían que ir cancelando los buckets no llegan, así que **todos los
+    // remitos quedarían como deuda y vencidos**. De acá salen "deuda
+    // vencida", "N remitos vencidos" y la lista de movimientos del cliente:
+    // tres lugares donde un número de más se lee como un cliente que no pagó.
+    if (!_lectura.saldosConfiables) return const [];
+
     final buckets = <DeudaBucket>[];
     for (final r
         in _remitos.where((r) => r.clienteId == cliente.id && r.esConfirmado)) {

@@ -20,6 +20,23 @@ String formatPesosCorto(double monto) {
   return formatPesos(monto);
 }
 
+/// Lo que se muestra en lugar de un saldo cuando no se puede saber cuánto es.
+const String textoSaldoNoDisponible = 'no disponible';
+
+/// Un saldo que **puede no estar disponible**.
+///
+/// Bajo RLS, un rol sin lectura sobre `pagos` no recibe un error: recibe la
+/// tabla **vacía**. Y como `saldo = remitos − pagos ± notas`, eso no da un
+/// saldo incompleto: da uno **más alto que el real**, que es el que hace que
+/// alguien salga a cobrar plata que ya cobró. El provider corta antes
+/// (`AppProvider.saldosConfiables`) y deja todos los saldos en 0; esto es
+/// para que la pantalla no muestre ese 0 como si fuera un saldo.
+///
+/// Mismo criterio que `mediasSinPesar` en el depósito: un número que parece
+/// exacto y no lo es es peor que no mostrarlo.
+String formatPesosSaldo(double saldo, {required bool confiable}) =>
+    confiable ? formatPesos(saldo) : textoSaldoNoDisponible;
+
 /// Formatea kilogramos: 1.234 kg (muestra hasta 3 decimales solo si los hay)
 String formatKg(double kg) {
   final formatter = NumberFormat('#,##0.###', 'es_AR');

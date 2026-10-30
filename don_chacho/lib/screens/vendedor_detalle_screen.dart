@@ -38,6 +38,13 @@ class VendedorDetalleScreen extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              // El saldo del vendedor es la suma de los saldos de su cartera,
+              // y la lista de abajo muestra el de cada cliente.
+              if (!app.saldosConfiables) ...[
+                const AvisoSaldosNoDisponibles(),
+                const SizedBox(height: 16),
+              ],
+
               // ── Resumen del vendedor ──
               Card(
                 child: Padding(
@@ -75,20 +82,26 @@ class VendedorDetalleScreen extends StatelessWidget {
                               value: '${clientes.length}'),
                           _Stat(
                             label: 'Saldo total',
-                            value: formatPesosCorto(saldoTotal),
-                            color: saldoTotal > 0
-                                ? AppTheme.danger
-                                : AppTheme.success,
+                            value: formatPesosSaldo(saldoTotal,
+                                confiable: app.saldosConfiables),
+                            color: !app.saldosConfiables
+                                ? AppTheme.textHint
+                                : saldoTotal > 0
+                                    ? AppTheme.danger
+                                    : AppTheme.success,
                           ),
                           _Stat(
                             label: 'Vencidos',
-                            value:
-                                '${app.clientesVencidosDeVendedor(vendedor.id)}',
-                            color: app.clientesVencidosDeVendedor(
-                                        vendedor.id) >
-                                    0
-                                ? AppTheme.danger
-                                : AppTheme.success,
+                            value: !app.saldosConfiables
+                                ? textoSaldoNoDisponible
+                                : '${app.clientesVencidosDeVendedor(vendedor.id)}',
+                            color: !app.saldosConfiables
+                                ? AppTheme.textHint
+                                : app.clientesVencidosDeVendedor(
+                                            vendedor.id) >
+                                        0
+                                    ? AppTheme.danger
+                                    : AppTheme.success,
                           ),
                         ],
                       ),
@@ -173,9 +186,11 @@ class VendedorDetalleScreen extends StatelessWidget {
                                           fontWeight: FontWeight.w500)),
                                   const SizedBox(height: 2),
                                   Text(
-                                    vencidos > 0
-                                        ? '$vencidos remito${vencidos == 1 ? '' : 's'} vencido${vencidos == 1 ? '' : 's'}'
-                                        : 'Sin remitos vencidos',
+                                    !app.saldosConfiables
+                                        ? 'Vencimientos no disponibles'
+                                        : vencidos > 0
+                                            ? '$vencidos remito${vencidos == 1 ? '' : 's'} vencido${vencidos == 1 ? '' : 's'}'
+                                            : 'Sin remitos vencidos',
                                     style: TextStyle(
                                         fontSize: 12,
                                         color: vencidos > 0
@@ -186,13 +201,16 @@ class VendedorDetalleScreen extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              formatPesosCorto(saldo),
+                              formatPesosSaldo(saldo,
+                                  confiable: app.saldosConfiables),
                               style: TextStyle(
-                                fontSize: 15,
+                                fontSize: app.saldosConfiables ? 15 : 12,
                                 fontWeight: FontWeight.w600,
-                                color: saldo > 0
-                                    ? AppTheme.danger
-                                    : AppTheme.textPrimary,
+                                color: !app.saldosConfiables
+                                    ? AppTheme.textHint
+                                    : saldo > 0
+                                        ? AppTheme.danger
+                                        : AppTheme.textPrimary,
                               ),
                             ),
                             const SizedBox(width: 8),

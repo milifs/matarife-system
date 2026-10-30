@@ -203,3 +203,66 @@ class StatusPill extends StatelessWidget {
 }
 
 enum StatusType { success, warning, danger, info }
+
+/// Barra que explica por qué no se ve ningún saldo.
+///
+/// Va arriba de cualquier pantalla que muestre saldos cuando
+/// `AppProvider.saldosConfiables` es false. Sin esto, la pantalla diría "no
+/// disponible" en todas las filas y nadie sabría por qué: con el aviso, el
+/// que lo ve sabe que es un permiso y no una falla, y a quién pedirlo.
+class AvisoSaldosNoDisponibles extends StatelessWidget {
+  /// Qué no se puede hacer por eso, si la pantalla quiere decirlo
+  /// ("No se puede registrar un pago", "No se puede emitir el comprobante").
+  final String? consecuencia;
+
+  const AvisoSaldosNoDisponibles({super.key, this.consecuencia});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.warningBg,
+        border: Border.all(color: AppTheme.warning.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.lock_outline, size: 18, color: AppTheme.warning),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Los saldos no están disponibles para tu usuario',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  consecuencia == null
+                      ? 'Tu rol no tiene permiso para ver los pagos, así que el '
+                          'saldo no se puede calcular. No es un error: pedile el '
+                          'permiso al administrador.'
+                      : '$consecuencia: tu rol no tiene permiso para ver los '
+                          'pagos, así que el saldo no se puede calcular. Pedile '
+                          'el permiso al administrador.',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
