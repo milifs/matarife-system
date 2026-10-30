@@ -305,7 +305,18 @@ class _TicketDetalleState extends State<_TicketDetalle> {
                     ),
                     const Divider(height: 24),
                     _fila('Módulo', t.modulo),
-                    _fila('Reportado por', t.reportadoPor ?? '—'),
+                    // El "(no lo ve en su lista)" no es un detalle: desde
+                    // v19.16 "mis últimos reclamos" filtra por
+                    // `reportado_por_id`, así que un ticket sin vincular le
+                    // deja la respuesta invisible a su autor. Si aparece,
+                    // conviene asignarlo a mano (ver la sección 3 de
+                    // `supabase_migration_soporte_reportado_por_id.sql`).
+                    _fila(
+                        'Reportado por',
+                        t.tieneDueno
+                            ? (t.reportadoPor ?? '—')
+                            : '${t.reportadoPor ?? '—'} '
+                                '(no lo ve en su lista)'),
                     if ((t.rol ?? '').isNotEmpty) _fila('Rol', t.rol!),
                     _fila('Fecha', formatFechaHora(t.creadoEn)),
                     _fila('App', '${t.appVersion ?? '—'} · '

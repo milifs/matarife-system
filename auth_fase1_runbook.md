@@ -157,6 +157,35 @@ Esto **tiene que correrse antes del PASO 5**.
 
 ---
 
+## PASO 4 bis — Correr la migración del dueño del ticket (2 min)
+
+SQL Editor → correr `supabase_migration_soporte_reportado_por_id.sql` **completa** (la
+columna, el índice y el backfill; son las secciones 1 y 2).
+
+Por qué acá: **el bundle de v19.16 manda siempre `reportado_por_id` al dar de alta un
+ticket**, así que sin esta columna reportar un problema empieza a fallar en cuanto deployes.
+Es el mismo patrón que las migraciones 18 y 19 del depósito: la lectura tolera que la
+columna no esté, la escritura no.
+
+Después del backfill, correr la verificación de la sección 3:
+
+```sql
+SELECT CASE WHEN reportado_por_id IS NULL
+            THEN 'sin vincular' ELSE 'vinculado' END AS estado,
+       count(*)
+FROM soportes
+GROUP BY 1;
+```
+
+Si aparece algún **"sin vincular"**, mirá con qué nombre quedó guardado (la segunda consulta
+de esa sección) y asignalo a mano. No se pierde — vos lo seguís viendo en la bandeja, y ahí
+figura como "(no lo ve en su lista)" — pero **a su autor deja de aparecerle en "mis últimos
+reclamos"**, porque desde v19.16 esa lista filtra por el id y ya no por el nombre.
+
+Esto también **tiene que correrse antes del PASO 5**.
+
+---
+
 ## PASO 5 — Deployar la app (10 min)
 
 Recién acá cambia algo para los usuarios.
@@ -235,9 +264,9 @@ entrada de la Fase 2.
 
 ## Cómo volver atrás si algo falla a mitad
 
-El orden de los pasos está pensado justo para esto: **hasta el PASO 4 inclusive, la app que
-está en producción no se enteró de nada.** Todo lo de la base es aditivo (una columna
-vacía, un índice, dos funciones nuevas, dos policies ampliadas): nada reemplaza ni borra
+El orden de los pasos está pensado justo para esto: **hasta el PASO 4 bis inclusive, la app
+que está en producción no se enteró de nada.** Todo lo de la base es aditivo (dos columnas
+vacías, dos índices, dos funciones nuevas, dos policies ampliadas): nada reemplaza ni borra
 nada de lo que ya andaba.
 
 | Si falla en… | Qué hacer | Qué ve el usuario |
@@ -246,14 +275,17 @@ nada de lo que ya andaba.
 | **PASO 2** (crear cuentas) | Seguir en otro momento, o borrar las que creaste (Authentication → el usuario → Delete user). Las que queden creadas y sin vincular **no molestan a nadie**. | Nada. |
 | **PASO 3** (vínculo) | Si quedó a medias, se arregla re-corriendo el bloque 5. Para desvincular todo: `update usuarios set auth_id = null;` (el perfil y la cuenta quedan intactos, solo se corta el puente). | Nada. |
 | **PASO 4** (bucket) | Para volver a como estaba: las dos policies originales están en `supabase_migration_soporte.sql`, bloque 3. Correrlas de nuevo. | Nada. |
+| **PASO 4 bis** (dueño del ticket) | Es aditivo: la columna vacía y un índice. Para volver atrás: `drop index if exists idx_soportes_reportado_por_id;` y `alter table soportes drop column if exists reportado_por_id;`. **Pero si ya deployaste, no la borres**: sin la columna el alta de tickets falla. Primero rollback del deploy. | Nada, mientras no hayas deployado. |
 | **PASO 5** (deploy) y la app no deja entrar a nadie | **Rollback del deploy**: Vercel → Deployments → el deployment anterior (`web-99unb7xxw`, v19.15) → **Promote to Production**. Vuelve el login viejo, que nunca dejó de funcionar porque los `password_hash` siguen ahí. | Unos minutos de login raro. Después, todo como antes. |
 | **PASO 5** y entra alguno pero no otro | **No hace falta rollback.** El que no entra, entra con su contraseña **vieja** (red del legacy). Revisar en Authentication → Users que su mail esté bien escrito y volver a correr el bloque 5. | Entra con la contraseña de siempre. |
 | **PASO 6** y alguien perdió su contraseña temporal | Authentication → Users → el usuario → **Reset password** (o Delete user y crearlo de nuevo, y volver a correr el bloque 5). | Entra con la contraseña vieja mientras tanto. |
 | **PASO 7** y alguien queda afuera | Volver `permitirLoginLegacy = true`, buildear y deployar. O más rápido: rollback del deploy en Vercel. | Vuelve a entrar con la contraseña vieja. |
 
-**El rollback que NO hay que hacer:** borrar `usuarios.auth_id` con la app nueva deployada.
+**Los dos rollbacks que NO hay que hacer:** borrar `usuarios.auth_id` con la app nueva deployada.
 Ahí sí nadie entra por el camino nuevo, y si además apagaste el legacy, nadie entra por
-ningún lado. Si hay que tocar la columna, **primero** rollback del deploy en Vercel.
+ningún lado. Y borrar `soportes.reportado_por_id` con la app nueva deployada: ahí nadie
+puede reportar un problema, que es justo la pantalla que se usa cuando algo anda mal. En los
+dos casos, si hay que tocar la columna, **primero** rollback del deploy en Vercel.
 
 ---
 
