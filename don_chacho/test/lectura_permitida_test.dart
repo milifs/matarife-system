@@ -25,6 +25,7 @@ void main() {
     'ver_consultas',
     'gestionar_proveedores',
     'gestionar_deposito',
+    'ver_kg_semana',
   });
 
   const cobrador = LecturaPermitida(permisos: {
@@ -200,6 +201,36 @@ void main() {
     test('para el admin siempre es vacío', () {
       expect(admin.noLegiblesDe([TablaLectura.pagos, TablaLectura.cargas]),
           isEmpty);
+    });
+  });
+
+  group('ver_kg_semana da lectura sobre los remitos', () {
+    // Las dos tarjetas de kg del Inicio salen de `remito_items`. Bajo RLS,
+    // sin lectura no habría error: saldrían en cero, que es peor.
+    const soloKg = LecturaPermitida(permisos: {'ver_kg_semana'});
+
+    test('un rol con ese permiso solo lee remitos y sus ítems', () {
+      expect(soloKg.puedeLeer(TablaLectura.remitos), isTrue);
+      expect(soloKg.puedeLeer(TablaLectura.remitoItems), isTrue);
+    });
+
+    test('pero no la plata', () {
+      // El permiso es un recorte del dashboard, no una puerta al saldo.
+      expect(soloKg.puedeVerSaldo, isFalse);
+      expect(soloKg.puedeLeer(TablaLectura.pagos), isFalse);
+      expect(soloKg.puedeLeer(TablaLectura.notasCreditoDebito), isFalse);
+      expect(soloKg.puedeLeer(TablaLectura.costosSemana), isFalse);
+    });
+
+    test('y sus saldos no son confiables, así que no se muestran', () {
+      // Lee remitos y no pagos: exactamente el caso que infla los saldos.
+      expect(soloKg.saldosConfiables, isFalse);
+    });
+
+    test('a la Secretaria no le cambia nada: ya leía remitos', () {
+      // Tiene `crear_remito` desde siempre. El arm nuevo está por los roles
+      // que el admin puede armar, no por ella.
+      expect(secretaria.puedeLeer(TablaLectura.remitos), isTrue);
     });
   });
 }

@@ -101,10 +101,17 @@ class LecturaPermitida {
   /// cualquier usuario activo. Preferir el lado permisivo acá es correcto —
   /// el que niega de verdad es Postgres, y este archivo solo evita preguntar
   /// de más y detecta el vacío engañoso.
+  /// `ver_kg_semana` (v19.17) entra en los remitos porque los kg de la
+  /// semana salen de `remito_items`. Hoy el único rol que lo tiene
+  /// (Secretaria) ya leía remitos por `crear_remito`, así que no cambia
+  /// nada; está por el rol que el admin puede armar con ese permiso solo,
+  /// que si no vería las dos tarjetas en cero.
   bool puedeLeer(String tabla) => switch (tabla) {
         TablaLectura.remitos ||
         TablaLectura.remitoItems =>
-          puedeVerSaldo || tiene('crear_remito'),
+          puedeVerSaldo ||
+              tiene('crear_remito') ||
+              tiene('ver_kg_semana'),
         TablaLectura.pagos ||
         TablaLectura.pagoMedios ||
         TablaLectura.notasCreditoDebito =>
