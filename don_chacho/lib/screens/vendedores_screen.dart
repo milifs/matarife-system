@@ -53,7 +53,25 @@ class VendedoresScreen extends StatelessWidget {
             );
           }
 
-          return ListView.builder(
+          return Column(
+            children: [
+              // La columna de pesos de cada vendedor es la suma de los saldos
+              // de su cartera: sin pagos, no se puede calcular.
+              if (!app.saldosConfiables)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: AvisoSaldosNoDisponibles(),
+                ),
+              Expanded(child: _lista(context, app)),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _lista(BuildContext context, AppProvider app) {
+    return ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: app.vendedores.length,
             itemBuilder: (context, index) {
@@ -111,13 +129,16 @@ class VendedoresScreen extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              formatPesosCorto(saldo),
+                              formatPesosSaldo(saldo,
+                                  confiable: app.saldosConfiables),
                               style: TextStyle(
-                                fontSize: 15,
+                                fontSize: app.saldosConfiables ? 15 : 12,
                                 fontWeight: FontWeight.w600,
-                                color: saldo > 0
-                                    ? AppTheme.danger
-                                    : AppTheme.textPrimary,
+                                color: !app.saldosConfiables
+                                    ? AppTheme.textHint
+                                    : saldo > 0
+                                        ? AppTheme.danger
+                                        : AppTheme.textPrimary,
                               ),
                             ),
                           ],
@@ -152,9 +173,6 @@ class VendedoresScreen extends StatelessWidget {
                 ),
               );
             },
-          );
-        },
-      ),
     );
   }
 

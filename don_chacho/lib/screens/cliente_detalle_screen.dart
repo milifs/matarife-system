@@ -187,6 +187,14 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              // Esta pantalla es casi toda saldo: el resumen de cuenta, los
+              // vencimientos y la lista de movimientos salen todos de
+              // `remitos − pagos ± notas`.
+              if (!app.saldosConfiables) ...[
+                const AvisoSaldosNoDisponibles(),
+                const SizedBox(height: 16),
+              ],
+
               // ── Tarjeta de info del cliente ──
               Card(
                 child: Padding(
@@ -314,24 +322,34 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
                         children: [
                           _Stat(
                             label: 'Saldo',
-                            value: formatPesos(saldo),
-                            color: saldo > 0
-                                ? AppTheme.danger
-                                : AppTheme.success,
+                            value: formatPesosSaldo(saldo,
+                                confiable: app.saldosConfiables),
+                            color: !app.saldosConfiables
+                                ? AppTheme.textHint
+                                : saldo > 0
+                                    ? AppTheme.danger
+                                    : AppTheme.success,
                           ),
                           _Stat(
                             label: 'Deuda vencida',
-                            value: formatPesos(deudaVencida),
-                            color: deudaVencida > 0
-                                ? AppTheme.danger
-                                : AppTheme.success,
+                            value: formatPesosSaldo(deudaVencida,
+                                confiable: app.saldosConfiables),
+                            color: !app.saldosConfiables
+                                ? AppTheme.textHint
+                                : deudaVencida > 0
+                                    ? AppTheme.danger
+                                    : AppTheme.success,
                           ),
                           _Stat(
                             label: 'Vencidos',
-                            value: '$cantVencidos',
-                            color: cantVencidos > 0
-                                ? AppTheme.danger
-                                : AppTheme.success,
+                            value: app.saldosConfiables
+                                ? '$cantVencidos'
+                                : textoSaldoNoDisponible,
+                            color: !app.saldosConfiables
+                                ? AppTheme.textHint
+                                : cantVencidos > 0
+                                    ? AppTheme.danger
+                                    : AppTheme.success,
                           ),
                         ],
                       ),
@@ -361,10 +379,14 @@ class _ClienteDetalleScreenState extends State<ClienteDetalleScreen> {
                     ),
                   if (saldo > 0) const SizedBox(width: 10),
                   Expanded(
+                    // El estado de cuenta es un PDF que se imprime o se manda
+                    // por WhatsApp: un saldo mal ahí sobrevive a la pantalla.
                     child: OutlinedButton.icon(
-                      onPressed: () => _exportarEstadoCuenta(
-                          context, app, _cliente, vendedor,
-                          remitosCliente, pagosCliente, saldo),
+                      onPressed: !app.saldosConfiables
+                          ? null
+                          : () => _exportarEstadoCuenta(
+                              context, app, _cliente, vendedor,
+                              remitosCliente, pagosCliente, saldo),
                       icon: const Icon(Icons.description_outlined,
                           size: 18),
                       label: const Text('Estado de cuenta'),

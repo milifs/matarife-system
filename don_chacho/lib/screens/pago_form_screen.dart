@@ -110,6 +110,17 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Acá no alcanza con no mostrar el número: `Pago.saldoAnterior` y
+          // `saldoNuevo` **se guardan en la fila del pago** y se imprimen en
+          // el recibo. Un saldo inflado quedaría escrito en la base para
+          // siempre y en un papel que ya está en la mano del cliente, así que
+          // el formulario se bloquea entero.
+          if (!app.saldosConfiables) ...[
+            const AvisoSaldosNoDisponibles(
+                consecuencia: 'No se puede registrar un pago'),
+            const SizedBox(height: 16),
+          ],
+
           // ── Cliente ──
           if (widget.clienteInicial != null) ...[
             Container(
@@ -275,13 +286,16 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
                                     fontSize: 11,
                                     color: AppTheme.textSecondary)),
                             Text(
-                              formatPesos(saldoCliente),
+                              formatPesosSaldo(saldoCliente,
+                                  confiable: app.saldosConfiables),
                               style: TextStyle(
-                                fontSize: 18,
+                                fontSize: app.saldosConfiables ? 18 : 14,
                                 fontWeight: FontWeight.w600,
-                                color: saldoCliente > 0
-                                    ? AppTheme.danger
-                                    : AppTheme.success,
+                                color: !app.saldosConfiables
+                                    ? AppTheme.textHint
+                                    : saldoCliente > 0
+                                        ? AppTheme.danger
+                                        : AppTheme.success,
                               ),
                             ),
                           ],
@@ -300,13 +314,16 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
                                       fontSize: 11,
                                       color: AppTheme.textSecondary)),
                               Text(
-                                formatPesos(saldoVencido),
+                                formatPesosSaldo(saldoVencido,
+                                    confiable: app.saldosConfiables),
                                 style: TextStyle(
-                                  fontSize: 14,
+                                  fontSize: app.saldosConfiables ? 14 : 12,
                                   fontWeight: FontWeight.w600,
-                                  color: saldoVencido > 0
-                                      ? AppTheme.danger
-                                      : AppTheme.success,
+                                  color: !app.saldosConfiables
+                                      ? AppTheme.textHint
+                                      : saldoVencido > 0
+                                          ? AppTheme.danger
+                                          : AppTheme.success,
                                 ),
                               ),
                             ],
@@ -321,13 +338,16 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
                                       fontSize: 11,
                                       color: AppTheme.textSecondary)),
                               Text(
-                                formatPesos(saldoCliente - _montoTotal),
+                                formatPesosSaldo(saldoCliente - _montoTotal,
+                                    confiable: app.saldosConfiables),
                                 style: TextStyle(
-                                  fontSize: 14,
+                                  fontSize: app.saldosConfiables ? 14 : 12,
                                   fontWeight: FontWeight.w600,
-                                  color: (saldoCliente - _montoTotal) > 0
-                                      ? AppTheme.danger
-                                      : AppTheme.success,
+                                  color: !app.saldosConfiables
+                                      ? AppTheme.textHint
+                                      : (saldoCliente - _montoTotal) > 0
+                                          ? AppTheme.danger
+                                          : AppTheme.success,
                                 ),
                               ),
                             ],
@@ -485,10 +505,12 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
               children: [
                 Expanded(
                   child: ElevatedButton(
-                    onPressed:
-                        _guardando || _clienteId == null || _montoTotal <= 0
-                            ? null
-                            : _guardarPago,
+                    onPressed: _guardando ||
+                            _clienteId == null ||
+                            _montoTotal <= 0 ||
+                            !app.saldosConfiables
+                        ? null
+                        : _guardarPago,
                     child: _guardando
                         ? const SizedBox(
                             height: 20,
@@ -501,10 +523,11 @@ class _PagoFormScreenState extends State<PagoFormScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed:
-                        _clienteId == null || _montoTotal <= 0
-                            ? null
-                            : () => _guardarYCompartir(),
+                    onPressed: _clienteId == null ||
+                            _montoTotal <= 0 ||
+                            !app.saldosConfiables
+                        ? null
+                        : () => _guardarYCompartir(),
                     icon: const Icon(Icons.share, size: 18),
                     label: const Text('Guardar + Recibo'),
                   ),

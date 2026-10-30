@@ -655,13 +655,13 @@ DROP POLICY IF EXISTS usuarios_delete ON usuarios;
 CREATE POLICY usuarios_delete ON usuarios FOR DELETE TO authenticated
   USING (tiene_permiso('gestionar_usuarios'));
 
--- OJO con el UPDATE de la fila propia: tal como está, un usuario podría
--- cambiarse su propio `rol_id` o su `activo` por la API REST. La política no
--- puede comparar contra el valor viejo de otra columna, así que taparlo del
--- todo necesita un TRIGGER que rechace el cambio de `rol_id`, `activo` y
--- `auth_id` cuando no lo hace alguien con `gestionar_usuarios`. **Queda
--- anotado como pendiente de la Fase 2**: es una escalada de privilegios real,
--- aunque hoy nadie en la empresa sabría explotarla.
+-- OJO con el UPDATE de la fila propia: por sí sola, esta política deja que
+-- un usuario se cambie su propio `rol_id` o su `activo` por la API REST. No
+-- puede comparar contra el valor viejo de otra columna, así que taparlo
+-- necesita un TRIGGER — está escrito, en
+-- `supabase_migration_usuarios_sin_autoascenso.sql`, y es **prerequisito de
+-- encender RLS en `usuarios`** (grupo 4 del punto 7). Sin ese trigger, esta
+-- política es una escalada de privilegios real.
 
 
 -- ════════════════════════════════════════════════════════════
@@ -719,6 +719,10 @@ CREATE POLICY usuarios_delete ON usuarios FOR DELETE TO authenticated
 --   mal, nadie entra y la app no se puede arreglar desde la app. Conviene
 --   además esperar a que la Fase 3 haya borrado `password_hash`, que es el
 --   único dato sensible que queda acá.
+--   **Prerequisito**: correr primero
+--   `supabase_migration_usuarios_sin_autoascenso.sql`. Encender RLS en
+--   `usuarios` sin ese trigger habilita que cualquiera se cambie su propio
+--   `rol_id` por la API REST (ver la nota al pie de la sección 6).
 --     ALTER TABLE permisos             ENABLE ROW LEVEL SECURITY;
 --     ALTER TABLE roles                ENABLE ROW LEVEL SECURITY;
 --     ALTER TABLE rol_permisos         ENABLE ROW LEVEL SECURITY;
