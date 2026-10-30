@@ -52,6 +52,14 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
           return Column(
             children: [
+              // Sin lectura sobre pagos no hay saldo que mostrar, y la columna
+              // de pesos de esta lista es justamente un saldo.
+              if (!app.saldosConfiables)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: AvisoSaldosNoDisponibles(),
+                ),
+
               // ── Barra de búsqueda ──
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -192,9 +200,11 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                                       FontWeight.w500)),
                                           const SizedBox(height: 2),
                                           Text(
-                                            vencidos > 0
-                                                ? '$vencidos remito${vencidos == 1 ? '' : 's'} vencido${vencidos == 1 ? '' : 's'}'
-                                                : 'Sin remitos vencidos',
+                                            !app.saldosConfiables
+                                                ? 'Vencimientos no disponibles'
+                                                : vencidos > 0
+                                                    ? '$vencidos remito${vencidos == 1 ? '' : 's'} vencido${vencidos == 1 ? '' : 's'}'
+                                                    : 'Sin remitos vencidos',
                                             style: TextStyle(
                                                 fontSize: 12,
                                                 color: vencidos > 0
@@ -214,13 +224,17 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                         tooltip: 'Abrir WhatsApp',
                                       ),
                                     Text(
-                                      formatPesosCorto(saldo),
+                                      formatPesosSaldo(saldo,
+                                          confiable: app.saldosConfiables),
                                       style: TextStyle(
-                                        fontSize: 15,
+                                        fontSize:
+                                            app.saldosConfiables ? 15 : 12,
                                         fontWeight: FontWeight.w600,
-                                        color: saldo > 0
-                                            ? AppTheme.danger
-                                            : AppTheme.textPrimary,
+                                        color: !app.saldosConfiables
+                                            ? AppTheme.textHint
+                                            : saldo > 0
+                                                ? AppTheme.danger
+                                                : AppTheme.textPrimary,
                                       ),
                                     ),
                                     const SizedBox(width: 4),

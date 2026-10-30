@@ -97,6 +97,15 @@ class _NotaCdFormScreenState extends State<NotaCdFormScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Igual que el pago: el comprobante de la nota se emite con el
+          // saldo del cliente adentro, y eso se imprime o se manda. Si el
+          // saldo no se sabe, no se emite nada.
+          if (!app.saldosConfiables) ...[
+            const AvisoSaldosNoDisponibles(
+                consecuencia: 'No se puede registrar la nota'),
+            const SizedBox(height: 16),
+          ],
+
           // ── Tipo ──
           SegmentedButton<String>(
             segments: const [
@@ -290,13 +299,16 @@ class _NotaCdFormScreenState extends State<NotaCdFormScreen> {
                                     fontSize: 11,
                                     color: AppTheme.textSecondary)),
                             Text(
-                              formatPesos(saldoCliente),
+                              formatPesosSaldo(saldoCliente,
+                                  confiable: app.saldosConfiables),
                               style: TextStyle(
-                                fontSize: 18,
+                                fontSize: app.saldosConfiables ? 18 : 14,
                                 fontWeight: FontWeight.w600,
-                                color: saldoCliente > 0
-                                    ? AppTheme.danger
-                                    : AppTheme.success,
+                                color: !app.saldosConfiables
+                                    ? AppTheme.textHint
+                                    : saldoCliente > 0
+                                        ? AppTheme.danger
+                                        : AppTheme.success,
                               ),
                             ),
                           ],
@@ -384,7 +396,10 @@ class _NotaCdFormScreenState extends State<NotaCdFormScreen> {
           const SizedBox(height: 24),
 
           ElevatedButton(
-            onPressed: _guardando || _clienteId == null || _monto <= 0
+            onPressed: _guardando ||
+                    _clienteId == null ||
+                    _monto <= 0 ||
+                    !app.saldosConfiables
                 ? null
                 : _guardar,
             child: _guardando
@@ -399,7 +414,10 @@ class _NotaCdFormScreenState extends State<NotaCdFormScreen> {
           ),
           const SizedBox(height: 10),
           OutlinedButton.icon(
-            onPressed: _guardando || _clienteId == null || _monto <= 0
+            onPressed: _guardando ||
+                    _clienteId == null ||
+                    _monto <= 0 ||
+                    !app.saldosConfiables
                 ? null
                 : _guardarYEnviar,
             icon: const Icon(Icons.share, size: 18),
@@ -495,19 +513,31 @@ class _NotaCdFormScreenState extends State<NotaCdFormScreen> {
                   if ((nota.registradoPor ?? '').isNotEmpty)
                     _filaLectura('Registrado por', nota.registradoPor!),
                   const Divider(height: 24),
-                  _filaLectura('Saldo actual del cliente',
-                      formatPesos(saldoCliente),
-                      valueColor: saldoCliente > 0
-                          ? AppTheme.danger
-                          : AppTheme.success,
+                  _filaLectura(
+                      'Saldo actual del cliente',
+                      formatPesosSaldo(saldoCliente,
+                          confiable: app.saldosConfiables),
+                      valueColor: !app.saldosConfiables
+                          ? AppTheme.textHint
+                          : saldoCliente > 0
+                              ? AppTheme.danger
+                              : AppTheme.success,
                       bold: true),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 16),
+          // El comprobante lleva el saldo del cliente impreso.
+          if (!app.saldosConfiables) ...[
+            const AvisoSaldosNoDisponibles(
+                consecuencia: 'No se puede emitir el comprobante'),
+            const SizedBox(height: 16),
+          ],
           OutlinedButton.icon(
-            onPressed: () => _descargarComprobante(app, nota),
+            onPressed: !app.saldosConfiables
+                ? null
+                : () => _descargarComprobante(app, nota),
             icon: const Icon(Icons.picture_as_pdf, size: 18),
             label: const Text('Descargar comprobante'),
           ),
