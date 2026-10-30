@@ -38,6 +38,7 @@ void main() {
     'gestionar_clientes',
     'ver_consultas',
     'gestionar_deposito',
+    'ver_kg_semana',
   ]);
   final deposito = rol('Encargado de Deposito', permisos: ['gestionar_deposito']);
   final secretaria = rol('Secretaria', permisos: [
@@ -46,6 +47,7 @@ void main() {
     'gestionar_clientes',
     'ver_consultas',
     'gestionar_deposito',
+    'ver_kg_semana',
   ]);
   final cobrador = rol('Cobrador', permisos: [
     'crear_pago',
@@ -85,6 +87,43 @@ void main() {
       expect(secretaria.tienePermiso('crear_pago'), isTrue);
       expect(cobrador.tienePermiso('crear_pago'), isTrue);
       expect(admin.tienePermiso('crear_pago'), isTrue);
+    });
+  });
+
+  group('las dos tarjetas de kg piden ver_kg_semana', () {
+    // Pedido de Joaquín: que la secretaria vea los kg de novillo y de cerdo
+    // de la semana, y nada más de Inicio. Es el primer recorte del dashboard
+    // que se le puede dar a un rol, así que lo que importa es que sea un
+    // recorte y no una puerta: el permiso no vuelve admin a nadie.
+
+    test('la Secretaria lo tiene', () {
+      expect(secretaria.tienePermiso('ver_kg_semana'), isTrue);
+    });
+
+    test('y sigue sin ser admin', () {
+      // Ve el Inicio recortado (`_inicioKgSemana`), no el dashboard: el
+      // saldo a cobrar, los costos, las ganancias y la deuda de los
+      // vendedores quedan del otro lado del `if (!app.esAdmin)`.
+      expect(usuarioCon(secretaria).esAdmin, isFalse);
+    });
+
+    test('Rocío Cejas no lo ve: el Encargado de Depósito no lo tiene', () {
+      // La otra mitad del pedido. Su rol sigue con un solo permiso, así que
+      // le queda el Inicio sin plata de v19.14.
+      expect(deposito.tienePermiso('ver_kg_semana'), isFalse);
+      expect(deposito.permisoIds, ['gestionar_deposito']);
+    });
+
+    test('el Cobrador tampoco', () {
+      // No se lo pidió nadie. Si algún día lo necesita, es una fila en
+      // rol_permisos desde Gestión de Usuarios, no un cambio de código.
+      expect(cobrador.tienePermiso('ver_kg_semana'), isFalse);
+    });
+
+    test('el admin lo tiene por es_admin, aunque no lo necesite', () {
+      // Él ve el dashboard entero por rol; el permiso está para que no haya
+      // ninguno que el administrador no tenga.
+      expect(admin.tienePermiso('ver_kg_semana'), isTrue);
     });
   });
 }

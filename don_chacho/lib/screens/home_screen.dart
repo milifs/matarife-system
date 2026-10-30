@@ -99,18 +99,17 @@ class _HomeScreenState extends State<HomeScreen> {
           // de cada vendedor son la plata del negocio de conjunto. Lo veía
           // cualquier rol, incluido el Encargado de Depósito, que no tiene
           // ninguna otra pantalla con plata.
-          if (!app.esAdmin) return _inicioSinPlata(app);
+          if (!app.esAdmin) {
+            // El único recorte del dashboard que hoy se le puede dar a un
+            // rol: los kg de la semana, sin un peso a la vista (v19.17).
+            if (app.tienePermiso('ver_kg_semana')) return _inicioKgSemana(app);
+            return _inicioSinPlata(app);
+          }
 
           final vencidos = app.clientesConSaldoVencido();
-          final kgPorTipo = app.kgVendidosSemanasPorTipo(_semanaRef);
-          final mediasPorTipo = app.mediasVendidasSemanasPorTipo(_semanaRef);
           final gananciaPorTipo = app.gananciaSemanalPorTipo(_semanaRef);
           final costoSemana = app.costoParaFecha(_semanaRef);
 
-          final kgNovillo = kgPorTipo['Novillo'] ?? 0;
-          final kgCerdo = kgPorTipo['Cerdo'] ?? 0;
-          final mediasNovillo = mediasPorTipo['Novillo'] ?? 0;
-          final mediasCerdo = mediasPorTipo['Cerdo'] ?? 0;
           final gananciaNovillo = gananciaPorTipo['Novillo'] ?? 0;
           final gananciaCerdo = gananciaPorTipo['Cerdo'] ?? 0;
           final descuentoTransf = app.descuentoTransferenciasSemana(_semanaRef);
@@ -122,36 +121,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.chevron_left),
-                      iconSize: 22,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      tooltip: 'Semana anterior',
-                      onPressed: () => setState(() => _semanaRef =
-                          _semanaRef.subtract(const Duration(days: 7))),
-                    ),
-                    Text(
-                      'Semana ${formatRangoSemana(_semanaRef)}',
-                      style: const TextStyle(
-                          fontSize: 13, color: AppTheme.textSecondary),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.chevron_right),
-                      iconSize: 22,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      tooltip: 'Semana siguiente',
-                      onPressed: _esSemanaActual
-                          ? null
-                          : () => setState(() => _semanaRef =
-                              _semanaRef.add(const Duration(days: 7))),
-                    ),
-                  ],
-                ),
+                _selectorSemana(),
                 const SizedBox(height: 16),
 
                 // ── Saldo a cobrar ──
@@ -169,33 +139,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 // (Desde acá abajo siempre es el admin: el resto no llega.)
                 ...[
                   // ── Kg vendidos por tipo ──
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _KpiCard(
-                          label: 'Kg novillo semana',
-                          value: _ocultar(formatKg(kgNovillo)),
-                          valueColor: AppTheme.textPrimary,
-                          subtitle: !_ofuscado && mediasNovillo > 0
-                              ? '$mediasNovillo medias'
-                              : null,
-                          onTap: () => _verDesglose(context, 'Novillo'),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _KpiCard(
-                          label: 'Kg cerdo semana',
-                          value: _ocultar(formatKg(kgCerdo)),
-                          valueColor: AppTheme.textPrimary,
-                          subtitle: !_ofuscado && mediasCerdo > 0
-                              ? '$mediasCerdo medias'
-                              : null,
-                          onTap: () => _verDesglose(context, 'Cerdo'),
-                        ),
-                      ),
-                    ],
-                  ),
+                  _tarjetasKg(app),
                   const SizedBox(height: 10),
 
                   // ── Costo por kg por tipo ──
@@ -336,6 +280,103 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// Las flechas `< >` de la semana. Las comparten el dashboard del dueño y
+  /// el Inicio recortado de `ver_kg_semana`: los dos miran la misma semana.
+  Widget _selectorSemana() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.chevron_left),
+          iconSize: 22,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          tooltip: 'Semana anterior',
+          onPressed: () => setState(
+              () => _semanaRef = _semanaRef.subtract(const Duration(days: 7))),
+        ),
+        Text(
+          'Semana ${formatRangoSemana(_semanaRef)}',
+          style:
+              const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+        ),
+        IconButton(
+          icon: const Icon(Icons.chevron_right),
+          iconSize: 22,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          tooltip: 'Semana siguiente',
+          onPressed: _esSemanaActual
+              ? null
+              : () => setState(
+                  () => _semanaRef = _semanaRef.add(const Duration(days: 7))),
+        ),
+      ],
+    );
+  }
+
+  /// Las dos tarjetas de kg de la semana. Son lo único del dashboard que ve
+  /// el rol con `ver_kg_semana`, así que viven en su propio método: lo que
+  /// se le muestra a ese rol tiene que ser exactamente esto y nada más.
+  Widget _tarjetasKg(AppProvider app) {
+    final kgPorTipo = app.kgVendidosSemanasPorTipo(_semanaRef);
+    final mediasPorTipo = app.mediasVendidasSemanasPorTipo(_semanaRef);
+
+    final kgNovillo = kgPorTipo['Novillo'] ?? 0;
+    final kgCerdo = kgPorTipo['Cerdo'] ?? 0;
+    final mediasNovillo = mediasPorTipo['Novillo'] ?? 0;
+    final mediasCerdo = mediasPorTipo['Cerdo'] ?? 0;
+
+    return Row(
+      children: [
+        Expanded(
+          child: _KpiCard(
+            label: 'Kg novillo semana',
+            value: _ocultar(formatKg(kgNovillo)),
+            valueColor: AppTheme.textPrimary,
+            subtitle: !_ofuscado && mediasNovillo > 0
+                ? '$mediasNovillo medias'
+                : null,
+            onTap: () => _verDesglose(context, 'Novillo'),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _KpiCard(
+            label: 'Kg cerdo semana',
+            value: _ocultar(formatKg(kgCerdo)),
+            valueColor: AppTheme.textPrimary,
+            subtitle:
+                !_ofuscado && mediasCerdo > 0 ? '$mediasCerdo medias' : null,
+            onTap: () => _verDesglose(context, 'Cerdo'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Inicio del rol con `ver_kg_semana` (v19.17): el selector de semana y las
+  /// dos tarjetas de kg, y se terminó. Ni saldo, ni costos, ni ganancias, ni
+  /// la lista de vendedores con su deuda.
+  ///
+  /// El desglose por cliente **sí** se abre y **sí** muestra los importes: es
+  /// lo que pidió el usuario explícitamente. El recorte es de la pantalla de
+  /// Inicio, no de la carne.
+  Widget _inicioKgSemana(AppProvider app) {
+    return RefreshIndicator(
+      onRefresh: () => app.cargarDatos(),
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _selectorSemana(),
+          const SizedBox(height: 16),
+          _tarjetasKg(app),
+          const SizedBox(height: 80),
+        ],
       ),
     );
   }

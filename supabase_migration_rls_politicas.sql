@@ -184,6 +184,11 @@ CREATE POLICY clientes_delete ON clientes FOR DELETE TO authenticated
   USING (tiene_permiso('gestionar_clientes'));
 
 -- ── remitos ─────────────────────────────────────────────────
+-- `ver_kg_semana` (v19.17) está en el SELECT porque los kg de la semana del
+-- Inicio salen de `remito_items`. Hoy no cambia nada —el único rol que lo
+-- tiene, Secretaria, ya leía remitos por `crear_remito`— pero cubre al rol
+-- que el admin puede armar con ese permiso solo.
+--
 -- El INSERT va `crear_remito OR confirmar_remito` y no solo `crear_remito`:
 -- confirmar una Nota de Pedido **crea un remito** (`confirmarNotaPedido`), así
 -- que un rol que pudiera confirmar sin poder crear no podría confirmar nada.
@@ -191,7 +196,7 @@ CREATE POLICY clientes_delete ON clientes FOR DELETE TO authenticated
 -- roles son configurables.
 DROP POLICY IF EXISTS remitos_select ON remitos;
 CREATE POLICY remitos_select ON remitos FOR SELECT TO authenticated
-  USING (puede_ver_saldo() OR tiene_permiso('crear_remito'));
+  USING (puede_ver_saldo() OR tiene_permiso('crear_remito') OR tiene_permiso('ver_kg_semana'));
 
 DROP POLICY IF EXISTS remitos_insert ON remitos;
 CREATE POLICY remitos_insert ON remitos FOR INSERT TO authenticated
@@ -213,7 +218,7 @@ CREATE POLICY remitos_delete ON remitos FOR DELETE TO authenticated
 -- `editar_remito` en el DELETE.
 DROP POLICY IF EXISTS remito_items_select ON remito_items;
 CREATE POLICY remito_items_select ON remito_items FOR SELECT TO authenticated
-  USING (puede_ver_saldo() OR tiene_permiso('crear_remito'));
+  USING (puede_ver_saldo() OR tiene_permiso('crear_remito') OR tiene_permiso('ver_kg_semana'));
 
 DROP POLICY IF EXISTS remito_items_insert ON remito_items;
 CREATE POLICY remito_items_insert ON remito_items FOR INSERT TO authenticated
