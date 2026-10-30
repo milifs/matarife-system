@@ -1234,7 +1234,20 @@ class TicketSoporte {
   String? adjuntoPath; // path dentro del bucket, no URL
   String estado; // 'abierto' | 'en_revision' | 'resuelto'
   String respuesta;
+  /// Nombre completo de quien lo reportó. Queda **para mostrar**: es el que
+  /// ve el admin en la bandeja, y es lo único que tienen los tickets viejos
+  /// que el backfill no pudo vincular.
   String? reportadoPor;
+
+  /// `usuarios.id` de quien lo reportó. **Es el campo que usa la política de
+  /// RLS** (`soportes_select` / `soportes_insert`), y por eso es el que la
+  /// app usa para filtrar: si la app filtrara por el nombre y la base por el
+  /// id, cada uno contestaría una pregunta distinta.
+  ///
+  /// Apunta al perfil y no a `auth.users`: si alguna vez hay que recrear la
+  /// cuenta de Auth de alguien, sus reclamos siguen siendo suyos.
+  String? reportadoPorId;
+
   String? rol;
   String? appVersion;
   String? plataforma;
@@ -1252,6 +1265,7 @@ class TicketSoporte {
     this.estado = 'abierto',
     this.respuesta = '',
     this.reportadoPor,
+    this.reportadoPorId,
     this.rol,
     this.appVersion,
     this.plataforma,
@@ -1265,6 +1279,11 @@ class TicketSoporte {
   bool get esEnRevision => estado == 'en_revision';
   bool get esResuelto => estado == 'resuelto';
   bool get tieneAdjunto => (adjuntoPath ?? '').isNotEmpty;
+
+  /// Si el ticket está atado a un perfil. Los que quedaron en `false` son los
+  /// viejos que el backfill no pudo vincular: el admin los sigue viendo en la
+  /// bandeja, pero su autor **no** los ve en "mis últimos reclamos".
+  bool get tieneDueno => reportadoPorId != null;
 
   /// Número formateado: S-0001
   String get numeroFormateado => 'S-${numero.toString().padLeft(4, '0')}';
@@ -1286,6 +1305,7 @@ class TicketSoporte {
         'estado': estado,
         'respuesta': respuesta,
         if (reportadoPor != null) 'reportado_por': reportadoPor,
+        if (reportadoPorId != null) 'reportado_por_id': reportadoPorId,
         if (rol != null) 'rol': rol,
         if (appVersion != null) 'app_version': appVersion,
         if (plataforma != null) 'plataforma': plataforma,
@@ -1304,6 +1324,10 @@ class TicketSoporte {
         estado: map['estado'] ?? 'abierto',
         respuesta: map['respuesta'] ?? '',
         reportadoPor: map['reportado_por'],
+        // Tolera que la columna no exista todavía: la migración 24 va antes
+        // del deploy, pero leer no tiene por qué romperse si el orden se
+        // invierte.
+        reportadoPorId: map['reportado_por_id'] as String?,
         rol: map['rol'],
         appVersion: map['app_version'],
         plataforma: map['plataforma'],

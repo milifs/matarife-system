@@ -794,15 +794,22 @@ class DatabaseService {
 
   /// Tickets ordenados por los que hay que mirar primero: bloqueantes arriba,
   /// y dentro de cada grupo los más nuevos primero.
-  /// Con `reportadoPor` trae solo los de ese usuario (para que vea en qué
+  /// Con `reportadoPorId` trae solo los de ese perfil (para que vea en qué
   /// quedaron los suyos).
+  ///
+  /// Filtra por `reportado_por_id` y **no** por el nombre, que es lo que hacía
+  /// hasta v19.16. El nombre completo no es único, renombrar a alguien le
+  /// borraba su historia y el match dependía de tildes y mayúsculas — y, sobre
+  /// todo, es por el id que filtra la política `soportes_select`: si la app
+  /// preguntara por el nombre y la base contestara por el id, un ticket podría
+  /// no aparecer sin que nada avise.
   Future<List<TicketSoporte>> getTicketsSoporte({
-    String? reportadoPor,
+    String? reportadoPorId,
   }) async {
     final data = await _paginado((from, to) {
       var query = _client.from('soportes').select();
-      if (reportadoPor != null) {
-        query = query.eq('reportado_por', reportadoPor);
+      if (reportadoPorId != null) {
+        query = query.eq('reportado_por_id', reportadoPorId);
       }
       return query
           .order('bloqueante', ascending: false)
